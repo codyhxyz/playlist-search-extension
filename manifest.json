@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Playlist Filter",
+  "version": "1.3.0",
+  "description": "Adds a playlist search tool on YouTube so you can find playlists quickly.",
+  "minimum_chrome_version": "114",
+  "homepage_url": "https://ydoc5212.github.io/playlist-search-extension/",
+  "content_scripts": [
+    {
+      "matches": [
+        "*://youtube.com/*",
+        "*://*.youtube.com/*"
+      ],
+      "js": ["vendor/minisearch.js", "content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_start"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

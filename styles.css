@@ -1,0 +1,91 @@
+.ytpf-inline {
+  --ytpf-bg: var(--yt-spec-menu-background, transparent);
+  --ytpf-border: var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.14));
+  --ytpf-text: var(--yt-spec-text-primary, currentColor);
+  --ytpf-muted: var(--yt-spec-text-secondary, currentColor);
+  --ytpf-accent: var(--yt-spec-call-to-action, var(--yt-spec-brand-button-background, #065fd4));
+
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 10px 16px 8px;
+  border-bottom: 1px solid var(--ytpf-border);
+  background: var(--ytpf-bg);
+}
+
+.ytpf-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ytpf-input {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  border: 1px solid var(--ytpf-border);
+  border-radius: 10px;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--ytpf-text);
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.ytpf-input::placeholder {
+  color: var(--ytpf-muted);
+}
+
+.ytpf-input:focus {
+  outline: 2px solid color-mix(in srgb, var(--ytpf-accent) 28%, transparent);
+  outline-offset: 1px;
+  border-color: var(--ytpf-accent);
+}
+
+.ytpf-clear {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  border: 1px solid var(--ytpf-border);
+  border-radius: 10px;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--ytpf-muted);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ytpf-clear-visible {
+  display: inline-flex;
+}
+
+.ytpf-clear:hover {
+  color: var(--ytpf-text);
+}
+
+.ytpf-meta {
+  margin: 6px 2px 0;
+  color: var(--ytpf-muted);
+  font-family: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ytpf-hidden {
+  display: none !important;
+}
+
+@media (max-width: 700px) {
+  .ytpf-inline {
+    padding: 8px 12px 6px;
+  }
+
+  .ytpf-input,
+  .ytpf-clear {
+    height: 34px;
+  }
+}
