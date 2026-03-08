@@ -5,6 +5,7 @@ Chrome extension that adds a search/filter bar to YouTube playlist modals and vi
 ## Features
 
 - **Inline search bar inside YouTube's Save to playlist modal**
+- **Inline filter on** `https://www.youtube.com/feed/playlists`
 - Real-time filtering with visible match count
 - Match highlighting in playlist names
 - Fuzzy matching for near-miss queries/typos
@@ -23,7 +24,7 @@ Chrome extension that adds a search/filter bar to YouTube playlist modals and vi
 
 ## How it works
 
-A content script watches YouTube's dynamic DOM, detects playlist option rows in Save dialogs/sheets, builds a BM25 index with MiniSearch, injects a native-looking inline search bar above the list, and hides/reorders rows as you type.
+A content script watches YouTube's dynamic DOM, detects playlist option rows in Save dialogs/sheets and playlist cards on `/feed/playlists`, builds a BM25 index with MiniSearch, injects a native-looking inline filter bar, and filters results as you type.
 
 ## Publish Assets
 

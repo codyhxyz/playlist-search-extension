@@ -7,6 +7,8 @@
 - [ ] Clear button resets results.
 - [ ] Escape key clears current query.
 - [ ] Paste works in search input.
+- [ ] Open `https://www.youtube.com/feed/playlists` and verify inline filter appears.
+- [ ] Typing on `/feed/playlists` filters playlist cards correctly.
 
 ## Ranking and Highlight
 - [ ] Exact matches rank above partial matches.

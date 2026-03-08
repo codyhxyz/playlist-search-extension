@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.0 - 2026-03-08
+- Added inline filtering support on `https://www.youtube.com/feed/playlists`.
+- Kept Save-dialog inline search and BM25 ranking behavior.
+- Updated CWS submission and QA docs to include playlist feed filtering support.
+
 ## 1.3.0 - 2026-03-08
 - Replaced heuristic ranking with BM25-backed ranking using bundled MiniSearch.
 - Added robust fallback behavior if BM25 is unavailable.

@@ -5,15 +5,19 @@
   const FILTER_CLASS = "ytpf-inline";
   const STYLE_ID = "ytpf-inline-style";
 
-  const HOST_SELECTOR =
+  const MODAL_HOST_SELECTOR =
     "ytd-add-to-playlist-renderer, yt-add-to-playlist-renderer, yt-contextual-sheet-layout, tp-yt-paper-dialog, [role='dialog']";
 
-  const DIRECT_ROW_SELECTOR =
+  const MODAL_ROW_SELECTOR =
     "ytd-playlist-add-to-option-renderer, yt-playlist-add-to-option-renderer, yt-checkbox-list-entry-renderer, yt-list-item-view-model, yt-collection-item-view-model";
+  const PAGE_ROW_SELECTOR =
+    "ytd-grid-playlist-renderer, ytd-playlist-renderer, ytd-compact-playlist-renderer";
+  const PAGE_ROOT_SELECTOR =
+    "ytd-browse[page-subtype='playlists'], ytd-page-manager, ytd-browse";
 
   const CHECKBOX_SELECTOR =
     "tp-yt-paper-checkbox, [role='checkbox'], input[type='checkbox']";
-  const RELEVANT_SELECTOR = `${HOST_SELECTOR}, ${DIRECT_ROW_SELECTOR}, ${CHECKBOX_SELECTOR}`;
+  const RELEVANT_SELECTOR = `${MODAL_HOST_SELECTOR}, ${MODAL_ROW_SELECTOR}, ${PAGE_ROW_SELECTOR}, ${CHECKBOX_SELECTOR}`;
 
   const ITEM_TEXT_SELECTOR =
     "#label, #video-title, .playlist-title, yt-formatted-string[id='label'], yt-formatted-string, span#label, a#video-title, h3";
@@ -85,6 +89,34 @@
       color: inherit;
       border-radius: 3px;
       padding: 0 1px;
+    }
+    .ytpf-inline-page {
+      position: static;
+      top: auto;
+      margin: 0 0 14px;
+      padding: 0;
+      border-bottom: none;
+      background: transparent;
+      max-width: 520px;
+    }
+    .ytpf-inline-page .ytpf-row {
+      padding: 6px;
+      border: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.14));
+      border-radius: 22px;
+      background: var(--yt-spec-base-background, #fff);
+    }
+    .ytpf-inline-page .ytpf-input {
+      border: none;
+      outline: none;
+      height: 34px;
+      border-radius: 16px;
+    }
+    .ytpf-inline-page .ytpf-input:focus {
+      outline: none;
+      border-color: transparent;
+    }
+    .ytpf-inline-page .ytpf-clear {
+      height: 34px;
     }
   `;
 
@@ -274,7 +306,9 @@
     if (isOurUiNode(node)) return false;
     if (node.matches(RELEVANT_SELECTOR)) return true;
     if (node.querySelector(RELEVANT_SELECTOR)) return true;
-    return Boolean(node.closest(HOST_SELECTOR));
+    if (node.closest(MODAL_HOST_SELECTOR)) return true;
+    if (isPlaylistsFeedPage() && node.closest(PAGE_ROOT_SELECTOR)) return true;
+    return false;
   }
 
   function shouldRefreshFromMutations(mutations) {
@@ -420,7 +454,7 @@
   }
 
   function findLikelyRow(checkbox, host) {
-    const explicit = checkbox.closest(DIRECT_ROW_SELECTOR);
+    const explicit = checkbox.closest(MODAL_ROW_SELECTOR);
     if (explicit && host.contains(explicit)) return explicit;
 
     let node = checkbox;
@@ -445,7 +479,7 @@
   }
 
   function collectRows(host) {
-    const directRows = unique(queryAllDeep(DIRECT_ROW_SELECTOR, host)).filter(
+    const directRows = unique(queryAllDeep(MODAL_ROW_SELECTOR, host)).filter(
       (row) =>
         (isVisible(row) || hiddenRows.has(row)) && getItemText(row).length > 0,
     );
@@ -475,7 +509,36 @@
     return { rows: genericRows, source: "generic" };
   }
 
-  function findMountPoint(rows, host) {
+  function isPlaylistsFeedPage() {
+    return window.location.pathname.startsWith("/feed/playlists");
+  }
+
+  function collectPageRows() {
+    return unique(queryAllDeep(PAGE_ROW_SELECTOR)).filter(
+      (row) =>
+        (isVisible(row) || hiddenRows.has(row)) && getItemText(row).length > 0,
+    );
+  }
+
+  function findPageHost(rows) {
+    return (
+      rows[0]?.closest("ytd-browse, ytd-page-manager") ||
+      document.querySelector(PAGE_ROOT_SELECTOR) ||
+      document.body
+    );
+  }
+
+  function findMountPoint(rows, host, surface) {
+    if (surface === "page") {
+      const first = rows[0];
+      if (first?.parentElement) {
+        return {
+          parent: first.parentElement,
+          before: first,
+        };
+      }
+    }
+
     const header =
       host.querySelector("#header, [slot='header'], .header") ||
       host.querySelector("#title, .title");
@@ -507,9 +570,12 @@
     };
   }
 
-  function createInlineFilterUi() {
+  function createInlineFilterUi(surface) {
     const root = document.createElement("section");
     root.className = FILTER_CLASS;
+    if (surface === "page") {
+      root.classList.add("ytpf-inline-page");
+    }
 
     const row = document.createElement("div");
     row.className = "ytpf-row";
@@ -517,7 +583,10 @@
     const input = document.createElement("input");
     input.className = "ytpf-input";
     input.type = "text";
-    input.placeholder = "Search playlists";
+    input.placeholder =
+      surface === "page"
+        ? "Filter playlists on this page"
+        : "Search playlists";
     input.setAttribute("aria-label", "Search playlists");
     input.autocomplete = "off";
     input.spellcheck = false;
@@ -579,7 +648,15 @@
     });
 
     if (ctrl.parent?.isConnected) {
-      const orderedRows = query ? matches.map((m) => m.row) : [...fullSet];
+      let orderedRows = [...fullSet];
+      if (query && ctrl.sortResults) {
+        const matchedRows = matches.map((m) => m.row);
+        const matchSet = new Set(matchedRows);
+        orderedRows = [
+          ...matchedRows,
+          ...fullSet.filter((row) => !matchSet.has(row)),
+        ];
+      }
       orderedRows.forEach((row) => {
         if (row.parentElement === ctrl.parent) {
           ctrl.parent.appendChild(row);
@@ -603,19 +680,25 @@
     const safeVisible = Math.max(0, matches.length);
 
     if (!query) {
-      ctrl.meta.textContent = `${safeTotal} playlists`;
+      ctrl.meta.textContent =
+        ctrl.surface === "page"
+          ? `${safeTotal} playlists on this page`
+          : `${safeTotal} playlists`;
       return;
     }
 
-    ctrl.meta.textContent = `${safeVisible} of ${safeTotal} playlists`;
+    ctrl.meta.textContent =
+      ctrl.surface === "page"
+        ? `${safeVisible} of ${safeTotal} playlists on this page`
+        : `${safeVisible} of ${safeTotal} playlists`;
   }
 
-  function attachHost(host, rows) {
-    const mount = findMountPoint(rows, host);
+  function attachHost(host, rows, surface = "modal") {
+    const mount = findMountPoint(rows, host, surface);
     if (!mount) return;
     ensureScopedStyles(mount.parent.getRootNode?.() || document);
 
-    const ui = createInlineFilterUi();
+    const ui = createInlineFilterUi(surface);
 
     if (mount.after) {
       mount.after.after(ui.root);
@@ -627,6 +710,7 @@
 
     const ctrl = {
       host,
+      surface,
       rows,
       bm25: createBm25Index(rows),
       root: ui.root,
@@ -634,6 +718,7 @@
       clear: ui.clear,
       meta: ui.meta,
       parent: rows[0]?.parentElement || null,
+      sortResults: surface === "modal",
     };
 
     ui.input.addEventListener("input", () => applyFilter(ctrl));
@@ -662,17 +747,23 @@
     });
   }
 
-  function upsertHost(host, rows) {
+  function upsertHost(host, rows, surface = "modal") {
     const existing = controllers.get(host);
 
     if (!existing) {
-      attachHost(host, rows);
+      attachHost(host, rows, surface);
       return;
     }
 
     if (!existing.root.isConnected) {
       teardownHost(host);
-      attachHost(host, rows);
+      attachHost(host, rows, surface);
+      return;
+    }
+
+    if (existing.surface !== surface) {
+      teardownHost(host);
+      attachHost(host, rows, surface);
       return;
     }
 
@@ -690,21 +781,33 @@
     existing.rows = rows;
     existing.bm25 = createBm25Index(rows);
     existing.parent = rows[0]?.parentElement || existing.parent;
+    existing.sortResults = surface === "modal";
     applyFilter(existing);
   }
 
   function refresh() {
     const activeHosts = new Set();
 
-    queryAllDeep(HOST_SELECTOR)
+    queryAllDeep(MODAL_HOST_SELECTOR)
       .filter(isVisible)
       .forEach((host) => {
         const { rows } = collectRows(host);
         if (!rows.length) return;
 
         activeHosts.add(host);
-        upsertHost(host, rows);
+        upsertHost(host, rows, "modal");
       });
+
+    if (isPlaylistsFeedPage()) {
+      const pageRows = collectPageRows();
+      if (pageRows.length) {
+        const pageHost = findPageHost(pageRows);
+        if (pageHost) {
+          activeHosts.add(pageHost);
+          upsertHost(pageHost, pageRows, "page");
+        }
+      }
+    }
 
     for (const host of [...controllerHosts]) {
       if (!activeHosts.has(host) || !host.isConnected) {
