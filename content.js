@@ -4,20 +4,27 @@
   const HIDDEN_CLASS = "ytpf-hidden";
   const FILTER_CLASS = "ytpf-inline";
   const STYLE_ID = "ytpf-inline-style";
+  const MODAL_EXPANDED_CLASS = "ytpf-modal-expanded";
+  const MODAL_INLINE_CLASS = "ytpf-inline-modal";
 
   const MODAL_HOST_SELECTOR =
     "ytd-add-to-playlist-renderer, yt-add-to-playlist-renderer, yt-contextual-sheet-layout, tp-yt-paper-dialog, [role='dialog']";
 
   const MODAL_ROW_SELECTOR =
     "ytd-playlist-add-to-option-renderer, yt-playlist-add-to-option-renderer, yt-checkbox-list-entry-renderer, yt-list-item-view-model, yt-collection-item-view-model";
-  const PAGE_ROW_SELECTOR =
-    "ytd-grid-playlist-renderer, ytd-playlist-renderer, ytd-compact-playlist-renderer";
-  const PAGE_ROOT_SELECTOR =
-    "ytd-browse[page-subtype='playlists'], ytd-page-manager, ytd-browse";
+  const PLAYLISTS_GRID_SELECTOR = "ytd-rich-grid-renderer";
+  const PLAYLISTS_CONTENTS_SELECTOR = ":scope > #contents";
+  const PLAYLISTS_OUTER_ROW_SELECTOR = "ytd-rich-item-renderer, ytd-rich-grid-media";
+  const PLAYLIST_RENDERER_SELECTOR =
+    "ytd-grid-playlist-renderer, ytd-playlist-renderer, ytd-compact-playlist-renderer, yt-lockup-view-model, yt-collection-item-view-model";
+  const PLAYLISTS_FEED_PATH_RE = /^\/feed\/playlists\/?$/;
+  const PLAYLIST_LINK_SELECTOR =
+    "a[href*='/playlist?list='], a[href*='youtube.com/playlist?list=']";
 
   const CHECKBOX_SELECTOR =
     "tp-yt-paper-checkbox, [role='checkbox'], input[type='checkbox']";
-  const RELEVANT_SELECTOR = `${MODAL_HOST_SELECTOR}, ${MODAL_ROW_SELECTOR}, ${PAGE_ROW_SELECTOR}, ${CHECKBOX_SELECTOR}`;
+  const MODAL_RELEVANT_SELECTOR = `${MODAL_HOST_SELECTOR}, ${MODAL_ROW_SELECTOR}, ${CHECKBOX_SELECTOR}`;
+  const PAGE_RELEVANT_SELECTOR = `${PLAYLISTS_GRID_SELECTOR}, ${PLAYLISTS_OUTER_ROW_SELECTOR}, ${PLAYLIST_RENDERER_SELECTOR}`;
 
   const ITEM_TEXT_SELECTOR =
     "#label, #video-title, .playlist-title, yt-formatted-string[id='label'], yt-formatted-string, span#label, a#video-title, h3";
@@ -90,26 +97,79 @@
       border-radius: 3px;
       padding: 0 1px;
     }
+    .ytpf-inline-modal {
+      padding: 6px 12px 4px;
+      border-bottom-color: var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.08));
+    }
+    .ytpf-inline-modal .ytpf-row {
+      gap: 6px;
+    }
+    .ytpf-inline-modal .ytpf-input {
+      height: 32px;
+      border-radius: 16px;
+      padding: 0 10px;
+      font-size: 13px;
+    }
+    .ytpf-inline-modal .ytpf-clear {
+      height: 32px;
+      border-radius: 16px;
+      padding: 0 10px;
+      font-size: 11px;
+    }
+    .ytpf-inline-modal .ytpf-meta-inline {
+      margin: 0;
+      padding: 0 8px;
+      height: 24px;
+      border-radius: 12px;
+      border: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.12));
+      background: var(--yt-spec-badge-chip-background, rgba(0, 0, 0, 0.04));
+      color: var(--yt-spec-text-secondary, #606060);
+      display: inline-flex;
+      align-items: center;
+      white-space: nowrap;
+      font-size: 11px;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .ytpf-inline-modal .ytpf-meta:not(.ytpf-meta-inline) {
+      display: none;
+    }
+    .ytpf-modal-expanded #playlists,
+    .ytpf-modal-expanded #contents,
+    .ytpf-modal-expanded yt-checkbox-list-renderer,
+    .ytpf-modal-expanded [role='listbox'] {
+      max-height: min(68vh, 720px) !important;
+      overflow-y: auto !important;
+    }
+    .ytpf-modal-expanded tp-yt-paper-dialog {
+      max-height: min(84vh, 860px) !important;
+    }
     .ytpf-inline-page {
       position: static;
       top: auto;
-      margin: 0 0 14px;
+      z-index: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 100%;
+      margin: 0 0 16px;
       padding: 0;
-      border-bottom: none;
       background: transparent;
-      max-width: 520px;
+      border-bottom: none;
+      grid-column: 1 / -1;
     }
     .ytpf-inline-page .ytpf-row {
-      padding: 6px;
-      border: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.14));
-      border-radius: 22px;
+      width: min(100%, 640px);
+      padding: 4px;
+      border: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.12));
+      border-radius: 999px;
       background: var(--yt-spec-base-background, #fff);
     }
     .ytpf-inline-page .ytpf-input {
-      border: none;
-      outline: none;
       height: 34px;
-      border-radius: 16px;
+      border: none;
+      border-radius: 999px;
+      padding: 0 14px;
     }
     .ytpf-inline-page .ytpf-input:focus {
       outline: none;
@@ -117,6 +177,13 @@
     }
     .ytpf-inline-page .ytpf-clear {
       height: 34px;
+      border-radius: 999px;
+      border-color: transparent;
+      padding: 0 14px;
+    }
+    .ytpf-inline-page .ytpf-meta {
+      margin: 0 12px;
+      font-size: 11px;
     }
   `;
 
@@ -219,6 +286,20 @@
       .trim();
   }
 
+  function closestComposed(node, selector) {
+    let cur = node;
+    while (cur) {
+      if (cur.matches?.(selector)) return cur;
+      if (cur.parentElement) {
+        cur = cur.parentElement;
+        continue;
+      }
+      const root = cur.getRootNode?.();
+      cur = root instanceof ShadowRoot ? root.host : null;
+    }
+    return null;
+  }
+
   function createBm25Index(rows) {
     if (typeof MiniSearch !== "function") return null;
 
@@ -243,7 +324,9 @@
   }
 
   function searchWithBm25(ctrl, query) {
-    if (!ctrl.bm25) {
+    const useLiteralMatch = query.length < 2;
+
+    if (!ctrl.bm25 || useLiteralMatch) {
       return ctrl.rows
         .map((row) => {
           const text = getItemText(row);
@@ -304,10 +387,15 @@
   function nodeTouchesRelevantSurface(node) {
     if (!(node instanceof Element)) return false;
     if (isOurUiNode(node)) return false;
-    if (node.matches(RELEVANT_SELECTOR)) return true;
-    if (node.querySelector(RELEVANT_SELECTOR)) return true;
+
+    if (node.matches(MODAL_RELEVANT_SELECTOR)) return true;
+    if (node.querySelector(MODAL_RELEVANT_SELECTOR)) return true;
     if (node.closest(MODAL_HOST_SELECTOR)) return true;
-    if (isPlaylistsFeedPage() && node.closest(PAGE_ROOT_SELECTOR)) return true;
+
+    if (!isPlaylistsFeedPage()) return false;
+    if (node.matches(PAGE_RELEVANT_SELECTOR)) return true;
+    if (node.querySelector(PAGE_RELEVANT_SELECTOR)) return true;
+    if (node.closest(PLAYLISTS_GRID_SELECTOR)) return true;
     return false;
   }
 
@@ -510,31 +598,116 @@
   }
 
   function isPlaylistsFeedPage() {
-    return window.location.pathname.startsWith("/feed/playlists");
+    return PLAYLISTS_FEED_PATH_RE.test(window.location.pathname);
   }
 
-  function collectPageRows() {
-    return unique(queryAllDeep(PAGE_ROW_SELECTOR)).filter(
-      (row) =>
-        (isVisible(row) || hiddenRows.has(row)) && getItemText(row).length > 0,
-    );
+  function getGridContents(grid) {
+    if (!grid) return null;
+    const direct = grid.querySelector(PLAYLISTS_CONTENTS_SELECTOR);
+    if (direct) return direct;
+    return Array.from(grid.children).find((child) => child.id === "contents") || null;
   }
 
-  function findPageHost(rows) {
-    return (
-      rows[0]?.closest("ytd-browse, ytd-page-manager") ||
-      document.querySelector(PAGE_ROOT_SELECTOR) ||
-      document.body
+  function hasPlaylistLink(node) {
+    if (!node) return false;
+    if (node.querySelector?.(PLAYLIST_LINK_SELECTOR)) return true;
+    return Boolean(queryAllDeep(PLAYLIST_LINK_SELECTOR, node).length);
+  }
+
+  function hasPlaylistRenderer(node) {
+    if (!node) return false;
+    if (node.querySelector?.(PLAYLIST_RENDERER_SELECTOR)) return true;
+    return Boolean(queryAllDeep(PLAYLIST_RENDERER_SELECTOR, node).length);
+  }
+
+  function toOuterPlaylistRow(node, contents) {
+    if (!node || !contents) return null;
+    const outer = closestComposed(node, PLAYLISTS_OUTER_ROW_SELECTOR);
+    if (outer && contents.contains(outer)) return outer;
+    if (node.matches?.(PLAYLISTS_OUTER_ROW_SELECTOR) && contents.contains(node)) {
+      return node;
+    }
+    return null;
+  }
+
+  function collectFeedPageSurface() {
+    if (!isPlaylistsFeedPage()) return null;
+
+    const grids = unique(queryAllDeep(PLAYLISTS_GRID_SELECTOR)).filter(
+      (grid) => grid && grid.isConnected,
     );
+    if (!grids.length) return null;
+
+    let best = null;
+
+    grids.forEach((grid) => {
+      const contents = getGridContents(grid);
+      if (!contents) return;
+
+      const outerRowsFromRenderers = unique(
+        queryAllDeep(PLAYLIST_RENDERER_SELECTOR, contents)
+          .filter(hasPlaylistLink)
+          .map((renderer) => toOuterPlaylistRow(renderer, contents))
+          .filter(Boolean),
+      ).filter((row) => !row.classList.contains(FILTER_CLASS));
+
+      const outerRowsFromLinks = unique(
+        queryAllDeep(PLAYLIST_LINK_SELECTOR, contents)
+          .map((link) => toOuterPlaylistRow(link, contents))
+          .filter(Boolean),
+      ).filter((row) => !row.classList.contains(FILTER_CLASS));
+
+      const rows = (
+        outerRowsFromRenderers.length
+          ? outerRowsFromRenderers
+          : outerRowsFromLinks.length
+            ? outerRowsFromLinks
+            : unique(queryAllDeep(PLAYLISTS_OUTER_ROW_SELECTOR, contents))
+      ).filter(
+        (row) =>
+          !row.classList.contains(FILTER_CLASS) &&
+          hasPlaylistRenderer(row) &&
+          (hasPlaylistLink(row) || hiddenRows.has(row)),
+      );
+
+      if (!rows.length) return;
+
+      const visibleRows = rows.filter((row) => isVisible(row) || hiddenRows.has(row));
+      const candidate = {
+        contents,
+        rows,
+        score: [
+          isVisible(contents) ? 1 : 0,
+          visibleRows.length,
+          rows.length,
+        ],
+      };
+
+      if (!best) {
+        best = candidate;
+        return;
+      }
+
+      const [a0, a1, a2] = candidate.score;
+      const [b0, b1, b2] = best.score;
+      if (a0 > b0 || (a0 === b0 && (a1 > b1 || (a1 === b1 && a2 > b2)))) {
+        best = candidate;
+      }
+    });
+
+    if (!best) return null;
+    return {
+      host: best.rows[0]?.parentElement || best.contents,
+      rows: best.rows,
+    };
   }
 
   function findMountPoint(rows, host, surface) {
     if (surface === "page") {
-      const first = rows[0];
-      if (first?.parentElement) {
+      if (rows[0]?.parentElement === host) {
         return {
-          parent: first.parentElement,
-          before: first,
+          parent: host,
+          before: rows[0],
         };
       }
     }
@@ -575,6 +748,8 @@
     root.className = FILTER_CLASS;
     if (surface === "page") {
       root.classList.add("ytpf-inline-page");
+    } else {
+      root.classList.add(MODAL_INLINE_CLASS);
     }
 
     const row = document.createElement("div");
@@ -584,9 +759,7 @@
     input.className = "ytpf-input";
     input.type = "text";
     input.placeholder =
-      surface === "page"
-        ? "Filter playlists on this page"
-        : "Search playlists";
+      surface === "page" ? "Filter this page" : "Search playlists";
     input.setAttribute("aria-label", "Search playlists");
     input.autocomplete = "off";
     input.spellcheck = false;
@@ -600,14 +773,34 @@
     row.appendChild(input);
     row.appendChild(clear);
 
-    const meta = document.createElement("p");
-    meta.className = "ytpf-meta";
+    const meta = document.createElement(surface === "modal" ? "span" : "p");
+    meta.className =
+      surface === "modal" ? "ytpf-meta ytpf-meta-inline" : "ytpf-meta";
     meta.setAttribute("aria-live", "polite");
 
-    root.appendChild(row);
-    root.appendChild(meta);
+    if (surface === "modal") {
+      row.appendChild(meta);
+      root.appendChild(row);
+    } else {
+      root.appendChild(row);
+      root.appendChild(meta);
+    }
 
     return { root, input, clear, meta };
+  }
+
+  function guardModalUiInteractions(ui, surface) {
+    if (surface !== "modal") return;
+
+    const stop = (event) => {
+      event.stopPropagation();
+    };
+
+    ["click", "mousedown", "pointerdown", "touchstart"].forEach((type) => {
+      ui.root.addEventListener(type, stop);
+      ui.input.addEventListener(type, stop);
+      ui.clear.addEventListener(type, stop);
+    });
   }
 
   function teardownHost(host) {
@@ -618,6 +811,9 @@
       showRow(row);
       restoreHighlight(row);
     });
+    if (ctrl.surface === "modal") {
+      ctrl.host.classList.remove(MODAL_EXPANDED_CLASS);
+    }
     ctrl.root.remove();
 
     controllers.delete(host);
@@ -647,16 +843,13 @@
       }
     });
 
-    if (ctrl.parent?.isConnected) {
-      let orderedRows = [...fullSet];
-      if (query && ctrl.sortResults) {
-        const matchedRows = matches.map((m) => m.row);
-        const matchSet = new Set(matchedRows);
-        orderedRows = [
-          ...matchedRows,
-          ...fullSet.filter((row) => !matchSet.has(row)),
-        ];
-      }
+    if (query && ctrl.sortResults && ctrl.parent?.isConnected) {
+      const matchedRows = matches.map((m) => m.row);
+      const matchedSet = new Set(matchedRows);
+      const orderedRows = [
+        ...matchedRows,
+        ...fullSet.filter((row) => !matchedSet.has(row)),
+      ];
       orderedRows.forEach((row) => {
         if (row.parentElement === ctrl.parent) {
           ctrl.parent.appendChild(row);
@@ -699,6 +892,10 @@
     ensureScopedStyles(mount.parent.getRootNode?.() || document);
 
     const ui = createInlineFilterUi(surface);
+    guardModalUiInteractions(ui, surface);
+    if (surface === "modal") {
+      host.classList.add(MODAL_EXPANDED_CLASS);
+    }
 
     if (mount.after) {
       mount.after.after(ui.root);
@@ -743,7 +940,7 @@
       if (ui.root.isConnected && ui.root.getClientRects().length === 0) {
         host.insertBefore(ui.root, host.firstElementChild || null);
       }
-      if (ui.input.isConnected) ui.input.focus();
+      if (surface === "modal" && ui.input.isConnected) ui.input.focus();
     });
   }
 
@@ -798,15 +995,10 @@
         upsertHost(host, rows, "modal");
       });
 
-    if (isPlaylistsFeedPage()) {
-      const pageRows = collectPageRows();
-      if (pageRows.length) {
-        const pageHost = findPageHost(pageRows);
-        if (pageHost) {
-          activeHosts.add(pageHost);
-          upsertHost(pageHost, pageRows, "page");
-        }
-      }
+    const pageSurface = collectFeedPageSurface();
+    if (pageSurface) {
+      activeHosts.add(pageSurface.host);
+      upsertHost(pageSurface.host, pageSurface.rows, "page");
     }
 
     for (const host of [...controllerHosts]) {
