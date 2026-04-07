@@ -12,27 +12,50 @@
 </head>
 <body>
   <h1>YouTube Playlist Filter Privacy Policy</h1>
-  <p><strong>Last updated:</strong> March 8, 2026</p>
+  <p><strong>Last updated:</strong> April 7, 2026</p>
 
   <h2>Overview</h2>
   <p>
     YouTube Playlist Filter is a Chrome extension that adds an in-page search bar to YouTube's
-    playlist selection interfaces.
+    playlist selection interfaces. It also uses the YouTube Data API to fetch your playlist names
+    and save videos to your playlists.
   </p>
 
   <h2>Data Collection</h2>
   <p>
-    This extension does <strong>not</strong> collect, store, transmit, or sell personal data.
+    This extension does <strong>not</strong> collect, store, transmit, or sell personal data to the
+    extension developer or any third party. No analytics, tracking, or remote logging is performed.
+  </p>
+
+  <h2>YouTube Data API Usage</h2>
+  <p>
+    The extension communicates with the following Google services and no other external servers:
+  </p>
+  <ul>
+    <li><code>googleapis.com</code> &mdash; to call the YouTube Data API
+      (<code>playlists.list</code> for fetching playlist names,
+      <code>playlistItems.insert</code> for saving videos to playlists)</li>
+    <li><code>oauth2.googleapis.com</code> &mdash; to handle OAuth 2.0 authentication and
+      token refresh</li>
+  </ul>
+  <p>
+    These requests are made directly from your browser to Google. The extension developer does
+    <strong>not</strong> operate any intermediate servers and never receives your data.
+  </p>
+
+  <h2>Authentication and Local Storage</h2>
+  <p>
+    When you sign in, OAuth tokens (access token and refresh token) are stored locally in
+    <code>chrome.storage</code> on your device. These tokens are used solely to authenticate
+    YouTube Data API requests and are never transmitted to the extension developer or any
+    server other than Google's OAuth and API endpoints listed above.
   </p>
 
   <h2>Permissions and Processing</h2>
   <p>
-    The extension runs only as a content script on <code>youtube.com</code> pages to read playlist
-    names currently visible in the page and filter them locally in your browser.
-  </p>
-  <p>
-    All processing is done on-device. No analytics, tracking, remote logging, or external API calls
-    are performed by the extension.
+    The extension runs as a content script on <code>youtube.com</code> pages and uses a background
+    service worker to manage API calls and token storage. Playlist filtering is performed locally
+    in your browser.
   </p>
 
   <h2>Third-Party Code</h2>

@@ -11,10 +11,9 @@
   const MODAL_HYDRATE_MAX_PASSES = 24;
   const MODAL_HYDRATE_STABLE_ROUNDS = 2;
   const MODAL_API_RESULTS_LIMIT = 24;
-  const MODAL_API_STRICT_MODE = true;
   const MODAL_API_CAP_THRESHOLD = 200;
   const MODAL_API_TOOLTIP_TEXT =
-    "YouTube only loads 200 playlists. If you have more than 200 playlists, we use the YouTube API to fetch all playlists. This requires authorizing the extension to fetch your playlists.";
+    "YouTube caps at 200 playlists. Authorize to load all of them.";
 
   const MODAL_HOST_SELECTOR =
     "ytd-add-to-playlist-renderer, yt-add-to-playlist-renderer, yt-contextual-sheet-layout, tp-yt-paper-dialog, [role='dialog']";
@@ -52,17 +51,22 @@
       align-items: center;
       gap: 8px;
     }
-    .ytpf-input {
+    .ytpf-input-wrap {
+      position: relative;
       flex: 1;
       min-width: 0;
+    }
+    .ytpf-input {
+      width: 100%;
       height: 36px;
       border: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.2));
       border-radius: 18px;
-      padding: 0 12px;
+      padding: 0 32px 0 12px;
       background: transparent;
       color: var(--yt-spec-text-primary, #0f0f0f);
       font-family: Roboto, Arial, sans-serif;
       font-size: 14px;
+      box-sizing: border-box;
     }
     .ytpf-input::placeholder {
       color: var(--yt-spec-text-secondary, #606060);
@@ -74,23 +78,28 @@
     }
     .ytpf-clear {
       display: none;
+      position: absolute;
+      right: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 22px;
+      height: 22px;
       align-items: center;
       justify-content: center;
-      height: 36px;
-      border: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.2));
-      border-radius: 18px;
-      padding: 0 12px;
+      border: none;
+      border-radius: 50%;
+      padding: 0;
       background: transparent;
       color: var(--yt-spec-text-secondary, #606060);
-      font-family: Roboto, Arial, sans-serif;
-      font-size: 12px;
-      font-weight: 500;
+      font-size: 16px;
+      line-height: 1;
       cursor: pointer;
     }
     .ytpf-clear-visible {
       display: inline-flex;
     }
     .ytpf-clear:hover {
+      background: var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.1));
       color: var(--yt-spec-text-primary, #0f0f0f);
     }
     .ytpf-meta {
@@ -106,6 +115,26 @@
       border-radius: 3px;
       padding: 0 1px;
     }
+    .ytpf-connect-bar {
+      margin-top: 6px;
+      text-align: center;
+    }
+    .ytpf-connect-bar button {
+      height: 26px;
+      border: 1px solid rgba(240, 180, 0, 0.5);
+      border-radius: 13px;
+      padding: 0 12px;
+      background: transparent;
+      color: #7a5900;
+      font-family: Roboto, Arial, sans-serif;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .ytpf-connect-bar button:hover {
+      background: rgba(240, 180, 0, 0.15);
+    }
     .ytpf-inline-modal {
       padding: 6px 12px 4px;
       border-bottom-color: var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.08));
@@ -116,133 +145,57 @@
     .ytpf-inline-modal .ytpf-input {
       height: 32px;
       border-radius: 16px;
-      padding: 0 10px;
+      padding: 0 28px 0 10px;
       font-size: 13px;
     }
-    .ytpf-inline-modal .ytpf-clear {
-      height: 32px;
-      border-radius: 16px;
-      padding: 0 10px;
-      font-size: 11px;
-    }
-    .ytpf-inline-modal .ytpf-meta-inline {
-      margin: 0;
-      padding: 0 8px;
-      height: 24px;
-      border-radius: 12px;
-      border: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.12));
-      background: var(--yt-spec-badge-chip-background, rgba(0, 0, 0, 0.04));
-      color: var(--yt-spec-text-secondary, #606060);
-      display: inline-flex;
-      align-items: center;
-      white-space: nowrap;
-      font-size: 11px;
-      line-height: 1;
-      font-variant-numeric: tabular-nums;
-    }
-    .ytpf-inline-modal .ytpf-meta:not(.ytpf-meta-inline) {
+    .ytpf-inline-modal .ytpf-meta {
       display: none;
     }
-    .ytpf-api-panel {
-      display: none;
-      margin-top: 6px;
-      border: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.1));
-      border-radius: 12px;
-      background: var(--yt-spec-base-background, #fff);
-      overflow: hidden;
-    }
-    .ytpf-api-panel-visible {
-      display: block;
-    }
-    .ytpf-api-head {
+    .ytpf-synth-row {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      padding: 6px 8px;
-      border-bottom: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.08));
+      padding: 8px 16px;
+      gap: 12px;
+      min-height: 48px;
+      cursor: default;
     }
-    .ytpf-api-status {
-      margin: 0;
-      color: var(--yt-spec-text-secondary, #606060);
-      font-size: 11px;
-      line-height: 1.3;
-    }
-    .ytpf-api-actions {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
-    .ytpf-api-btn {
-      height: 24px;
-      border: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.14));
-      border-radius: 12px;
-      padding: 0 8px;
-      background: transparent;
-      color: var(--yt-spec-text-secondary, #606060);
-      font-size: 11px;
-      font-weight: 500;
-      cursor: pointer;
-      white-space: nowrap;
-    }
-    .ytpf-api-btn:hover {
-      color: var(--yt-spec-text-primary, #0f0f0f);
-    }
-    .ytpf-api-list {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-      max-height: 240px;
-      overflow-y: auto;
-    }
-    .ytpf-api-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      padding: 6px 8px;
-      border-top: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.06));
-    }
-    .ytpf-api-item:first-child {
-      border-top: none;
-    }
-    .ytpf-api-title {
-      min-width: 0;
+    .ytpf-synth-title {
       flex: 1;
+      min-width: 0;
       color: var(--yt-spec-text-primary, #0f0f0f);
-      font-size: 12px;
+      font-family: Roboto, Arial, sans-serif;
+      font-size: 14px;
       line-height: 1.3;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .ytpf-api-count {
-      color: var(--yt-spec-text-secondary, #606060);
-      font-size: 11px;
-      font-variant-numeric: tabular-nums;
-      margin-left: 4px;
-    }
-    .ytpf-api-add {
-      height: 24px;
+    .ytpf-synth-add {
+      height: 28px;
       border: 1px solid rgba(6, 95, 212, 0.42);
-      border-radius: 12px;
-      padding: 0 9px;
+      border-radius: 14px;
+      padding: 0 12px;
       background: transparent;
       color: var(--yt-spec-call-to-action, #065fd4);
-      font-size: 11px;
+      font-family: Roboto, Arial, sans-serif;
+      font-size: 12px;
       font-weight: 600;
       cursor: pointer;
       white-space: nowrap;
+      flex-shrink: 0;
     }
-    .ytpf-api-add:hover {
-      color: var(--yt-spec-text-primary, #0f0f0f);
+    .ytpf-synth-add:hover {
+      background: rgba(6, 95, 212, 0.08);
     }
-    .ytpf-api-empty {
-      padding: 8px;
+    .ytpf-synth-add:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    .ytpf-synth-saved {
       color: var(--yt-spec-text-secondary, #606060);
-      font-size: 11px;
+      font-family: Roboto, Arial, sans-serif;
+      font-size: 12px;
+      flex-shrink: 0;
     }
     .ytpf-modal-expanded #playlists,
     .ytpf-modal-expanded #contents,
@@ -279,17 +232,11 @@
       height: 34px;
       border: none;
       border-radius: 999px;
-      padding: 0 14px;
+      padding: 0 32px 0 14px;
     }
     .ytpf-inline-page .ytpf-input:focus {
       outline: none;
       border-color: transparent;
-    }
-    .ytpf-inline-page .ytpf-clear {
-      height: 34px;
-      border-radius: 999px;
-      border-color: transparent;
-      padding: 0 14px;
     }
     .ytpf-inline-page .ytpf-meta {
       margin: 0 12px;
@@ -841,6 +788,13 @@
       }
     }
 
+    if (surface === "modal" && rows[0]?.parentElement) {
+      return {
+        parent: rows[0].parentElement,
+        before: rows[0],
+      };
+    }
+
     const header =
       host.querySelector("#header, [slot='header'], .header") ||
       host.querySelector("#title, .title");
@@ -898,54 +852,32 @@
     const clear = document.createElement("button");
     clear.className = "ytpf-clear";
     clear.type = "button";
-    clear.textContent = "Clear";
+    clear.textContent = "\u00d7";
     clear.setAttribute("aria-label", "Clear search");
 
-    row.appendChild(input);
-    row.appendChild(clear);
+    const inputWrap = document.createElement("div");
+    inputWrap.className = "ytpf-input-wrap";
+    inputWrap.appendChild(input);
+    inputWrap.appendChild(clear);
+    row.appendChild(inputWrap);
 
-    const meta = document.createElement(surface === "modal" ? "span" : "p");
-    meta.className =
-      surface === "modal" ? "ytpf-meta ytpf-meta-inline" : "ytpf-meta";
+    const meta = document.createElement("span");
+    meta.className = "ytpf-meta";
     meta.setAttribute("aria-live", "polite");
 
-    let apiPanel = null;
-    let apiStatus = null;
-    let apiActions = null;
-    let apiList = null;
-
     if (surface === "modal") {
-      row.appendChild(meta);
       root.appendChild(row);
-
-      apiPanel = document.createElement("section");
-      apiPanel.className = "ytpf-api-panel";
-
-      const apiHead = document.createElement("div");
-      apiHead.className = "ytpf-api-head";
-
-      apiStatus = document.createElement("p");
-      apiStatus.className = "ytpf-api-status";
-      apiStatus.textContent = "All-playlist search is available with API auth.";
-
-      apiActions = document.createElement("div");
-      apiActions.className = "ytpf-api-actions";
-
-      apiHead.appendChild(apiStatus);
-      apiHead.appendChild(apiActions);
-
-      apiList = document.createElement("ul");
-      apiList.className = "ytpf-api-list";
-
-      apiPanel.appendChild(apiHead);
-      apiPanel.appendChild(apiList);
-      root.appendChild(apiPanel);
     } else {
       root.appendChild(row);
       root.appendChild(meta);
     }
 
-    return { root, input, clear, meta, apiPanel, apiStatus, apiActions, apiList };
+    return {
+      root,
+      input,
+      clear,
+      meta,
+    };
   }
 
   function guardModalUiInteractions(ui, surface) {
@@ -955,10 +887,22 @@
       event.stopPropagation();
     };
 
-    ["click", "mousedown", "pointerdown", "touchstart"].forEach((type) => {
+    [
+      "click",
+      "mousedown",
+      "mouseup",
+      "pointerdown",
+      "pointerup",
+      "touchstart",
+      "touchend",
+      "dblclick",
+      "auxclick",
+      "contextmenu",
+      "tap",
+      "focus",
+      "focusin",
+    ].forEach((type) => {
       ui.root.addEventListener(type, stop);
-      ui.input.addEventListener(type, stop);
-      ui.clear.addEventListener(type, stop);
     });
   }
 
@@ -1004,8 +948,8 @@
   }
 
   function shouldHydrateModal(ctrl) {
-    if (shouldUseApiStrictMode(ctrl)) return false;
     if (ctrl.surface !== "modal") return false;
+    if (Array.isArray(apiSessionCache.playlists) && apiSessionCache.playlists.length > 0) return false;
     if (ctrl.hydrationRunning) return false;
     if (!ctrl.host.isConnected) return false;
 
@@ -1032,8 +976,6 @@
     let lastScrollHeight = container.scrollHeight;
 
     try {
-      ctrl.meta.textContent = "Loading playlists...";
-
       while (
         passes < MODAL_HYDRATE_MAX_PASSES &&
         nowMs() - startedAt < MODAL_HYDRATE_TIMEOUT_MS
@@ -1106,6 +1048,14 @@
 
   function runtimeMessage(message) {
     return new Promise((resolve, reject) => {
+      if (
+        typeof chrome === "undefined" ||
+        !chrome.runtime ||
+        typeof chrome.runtime.sendMessage !== "function"
+      ) {
+        reject(new Error("Extension context unavailable. Reload the page and try again."));
+        return;
+      }
       chrome.runtime.sendMessage(message, (response) => {
         const error = chrome.runtime.lastError;
         if (error) {
@@ -1154,31 +1104,7 @@
     return "";
   }
 
-  function ensureApiActionButton(parent, key, label, handler) {
-    if (!parent) return null;
-    let button = parent.querySelector(`button[data-ytpf-action='${key}']`);
-    if (!button) {
-      button = document.createElement("button");
-      button.type = "button";
-      button.className = "ytpf-api-btn";
-      button.dataset.ytpfAction = key;
-      button.addEventListener("click", handler);
-      parent.appendChild(button);
-    }
-    button.textContent = label;
-    return button;
-  }
 
-  function clearApiActionButtons(parent, keepKeys = []) {
-    if (!parent) return;
-    const keep = new Set(keepKeys);
-    Array.from(parent.querySelectorAll("button[data-ytpf-action]")).forEach((button) => {
-      const key = button.dataset.ytpfAction || "";
-      if (!keep.has(key)) {
-        button.remove();
-      }
-    });
-  }
 
   function searchApiPlaylists(playlists, query) {
     if (!query) return [];
@@ -1210,287 +1136,104 @@
     return Math.max(0, ctrl?.rows?.length || 0) >= MODAL_API_CAP_THRESHOLD;
   }
 
-  function shouldUseApiStrictMode(ctrl) {
-    return (
-      ctrl?.surface === "modal" &&
-      MODAL_API_STRICT_MODE &&
-      Array.isArray(apiSessionCache.playlists) &&
-      apiSessionCache.playlists.length > 0
-    );
+  function connectApi(ctrl, options = {}) {
+    if (!ctrl || ctrl.apiBusy || ctrl.apiSaving) return;
+    const forceReauth = Boolean(options.forceReauth);
+    if (forceReauth) {
+      apiSessionCache.playlists = null;
+      apiSessionCache.fetchedAt = 0;
+    }
+
+    ctrl.apiBusy = true;
+    ctrl.apiNotice = "";
+    renderModalApiUi(ctrl, normalizeText(ctrl.input.value));
+
+    runtimeMessage({ type: "YTPF_CONNECT", forceReauth })
+      .then((response) => {
+        apiSessionCache.authStatus = response.status;
+        return loadAllPlaylistsFromApi(ctrl, {
+          forceRefresh: true,
+          interactive: false,
+        });
+      })
+      .then((playlists) => {
+        if (!Array.isArray(playlists) || playlists.length === 0) {
+          ctrl.apiNotice =
+            "No playlists found \u2014 try a different account?";
+          return;
+        }
+      })
+      .catch((error) => {
+        ctrl.apiNotice = formatConnectError(error, apiSessionCache.authStatus);
+      })
+      .finally(() => {
+        ctrl.apiBusy = false;
+        renderModalApiUi(ctrl, normalizeText(ctrl.input.value));
+      });
+  }
+
+  function getModalApiPromptState(ctrl) {
+    const auth = apiSessionCache.authStatus || {};
+    const hasToken = Boolean(auth.tokenValid || auth.hasRefreshToken);
+    const hasApiLibrary =
+      Array.isArray(apiSessionCache.playlists) && apiSessionCache.playlists.length > 0;
+    const cappedAtYoutubeLimit = modalAppearsCapped(ctrl);
+    const needsPrompt = cappedAtYoutubeLimit && (!hasToken || !hasApiLibrary);
+    return {
+      cappedAtYoutubeLimit,
+      hasToken,
+      hasApiLibrary,
+      needsPrompt,
+    };
+  }
+
+  function clearSynthRows(ctrl) {
+    ctrl.synthRows.forEach((el) => el.remove());
+    ctrl.synthRows = [];
   }
 
   function renderModalApiUi(ctrl, query) {
-    if (ctrl.surface !== "modal" || !ctrl.apiPanel) return;
+    if (ctrl.surface !== "modal") return;
 
-    const auth = apiSessionCache.authStatus || {};
-    const hasClientId = Boolean(auth.hasClientId);
-    const hasClientSecret = Boolean(auth.hasClientSecret);
-    const usingDefaultClientId = auth.usingDefaultClientId !== false;
-    const hasToken = Boolean(auth.tokenValid || auth.hasRefreshToken);
+    clearSynthRows(ctrl);
+
+    const { hasApiLibrary } = getModalApiPromptState(ctrl);
     const hasPlaylists = Array.isArray(apiSessionCache.playlists);
-    const loading = Boolean(ctrl.apiBusy);
-    const saving = Boolean(ctrl.apiSaving);
     const hasQuery = Boolean(query);
-    const needsSecret = Boolean(ctrl.apiNeedsSecret);
-    const cappedAtYoutubeLimit = modalAppearsCapped(ctrl);
-    const showCustomClientControls = Boolean(
-      ctrl.apiShowCustomClientControls || !usingDefaultClientId,
-    );
-    const shouldOfferApiConnect =
-      cappedAtYoutubeLimit || showCustomClientControls || !usingDefaultClientId || needsSecret;
 
-    const results = hasPlaylists && hasQuery
-      ? searchApiPlaylists(apiSessionCache.playlists, query)
-      : [];
+    if (!hasQuery || !hasPlaylists || !hasApiLibrary) return;
+    if (!ctrl.parent?.isConnected) return;
 
-    const shouldShowPanel =
-      loading ||
-      saving ||
-      Boolean(ctrl.apiNotice) ||
-      (hasPlaylists && hasQuery) ||
-      (!hasToken && shouldOfferApiConnect) ||
-      (hasToken && !hasPlaylists && shouldOfferApiConnect);
+    // Only show API playlists not already in YouTube's list
+    const ytTitles = new Set();
+    ctrl.rows.forEach((row) => {
+      const t = getItemText(row);
+      if (t) ytTitles.add(t);
+    });
 
-    ctrl.apiPanel.classList.toggle("ytpf-api-panel-visible", shouldShowPanel);
-    if (!shouldShowPanel) {
-      return;
-    }
+    const results = searchApiPlaylists(apiSessionCache.playlists, query)
+      .filter((p) => !ytTitles.has(normalizeText(p.title || "")));
 
-    ctrl.apiStatus.title = cappedAtYoutubeLimit ? MODAL_API_TOOLTIP_TEXT : "";
-
-    if (loading) {
-      ctrl.apiStatus.textContent = "Loading full playlist library...";
-    } else if (saving) {
-      ctrl.apiStatus.textContent = "Saving to playlist...";
-    } else if (ctrl.apiNotice) {
-      ctrl.apiStatus.textContent = ctrl.apiNotice;
-    } else if (!hasClientId) {
-      ctrl.apiStatus.textContent = "OAuth client not configured.";
-    } else if (!hasToken) {
-      ctrl.apiStatus.textContent = needsSecret
-        ? "This OAuth client requires a secret. Click Set Secret, then Connect."
-        : cappedAtYoutubeLimit
-          ? "YouTube stopped at 200 playlists. Connect to search all playlists."
-        : showCustomClientControls && !usingDefaultClientId
-          ? "Connect with your custom OAuth client."
-          : "YouTube loaded fewer than 200 playlists. API connect is hidden.";
-    } else if (!hasPlaylists) {
-      ctrl.apiStatus.textContent = "Load all playlists from your YouTube account.";
-    } else if (!hasQuery) {
-      ctrl.apiStatus.textContent = `${apiSessionCache.playlists.length} playlists loaded via API.`;
-    } else {
-      ctrl.apiStatus.textContent = `${results.length} API match${results.length === 1 ? "" : "es"}`;
-    }
-
-    const visibleActions = [];
-    const setClientId = () => {
-      const value = window.prompt(
-        "Paste your Google OAuth client ID for this extension (....apps.googleusercontent.com):",
-        "",
-      );
-      if (value === null) return;
-      const trimmed = value.trim();
-      if (!trimmed) {
-        ctrl.apiNotice = "Client ID cannot be empty.";
-        renderModalApiUi(ctrl, normalizeText(ctrl.input.value));
-        return;
-      }
-      ctrl.apiBusy = true;
-      ctrl.apiNotice = "";
-      renderModalApiUi(ctrl, normalizeText(ctrl.input.value));
-      runtimeMessage({ type: "YTPF_SET_OAUTH_CLIENT_ID", clientId: trimmed })
-        .then(() => runtimeMessage({ type: "YTPF_GET_AUTH_STATUS" }))
-        .then((response) => {
-          apiSessionCache.authStatus = response.status;
-          apiSessionCache.playlists = null;
-          apiSessionCache.fetchedAt = 0;
-          ctrl.apiNeedsSecret = false;
-          ctrl.apiShowCustomClientControls = true;
-          ctrl.apiNotice = "Client ID saved.";
-        })
-        .catch((error) => {
-          ctrl.apiNotice = normalizeErrorMessage(error);
-        })
-        .finally(() => {
-          ctrl.apiBusy = false;
-          renderModalApiUi(ctrl, normalizeText(ctrl.input.value));
-        });
-    };
-
-    const setClientSecret = () => {
-      const value = window.prompt(
-        "Paste your Google OAuth client secret (leave blank to clear):",
-        "",
-      );
-      if (value === null) return;
-      ctrl.apiBusy = true;
-      ctrl.apiNotice = "";
-      renderModalApiUi(ctrl, normalizeText(ctrl.input.value));
-      runtimeMessage({ type: "YTPF_SET_OAUTH_CLIENT_SECRET", clientSecret: value })
-        .then(() => runtimeMessage({ type: "YTPF_GET_AUTH_STATUS" }))
-        .then((response) => {
-          apiSessionCache.authStatus = response.status;
-          apiSessionCache.playlists = null;
-          apiSessionCache.fetchedAt = 0;
-          ctrl.apiNeedsSecret = false;
-          ctrl.apiShowCustomClientControls = true;
-          ctrl.apiNotice = value.trim() ? "Client secret saved." : "Client secret cleared.";
-        })
-        .catch((error) => {
-          ctrl.apiNotice = normalizeErrorMessage(error);
-        })
-        .finally(() => {
-          ctrl.apiBusy = false;
-          renderModalApiUi(ctrl, normalizeText(ctrl.input.value));
-        });
-    };
-
-    const useCustomClientIdLabel = usingDefaultClientId ? "Use Custom ID" : "Update Client ID";
-    if (showCustomClientControls || !hasClientId) {
-      ensureApiActionButton(ctrl.apiActions, "set-client-id", useCustomClientIdLabel, setClientId);
-      visibleActions.push("set-client-id");
-    }
-
-    if (!usingDefaultClientId) {
-      ensureApiActionButton(ctrl.apiActions, "use-built-in", "Use Built-in ID", () => {
-        ctrl.apiBusy = true;
-        ctrl.apiNotice = "";
-        renderModalApiUi(ctrl, normalizeText(ctrl.input.value));
-        runtimeMessage({ type: "YTPF_SET_OAUTH_CLIENT_ID", clientId: "" })
-          .then(() => runtimeMessage({ type: "YTPF_GET_AUTH_STATUS" }))
-          .then((response) => {
-            apiSessionCache.authStatus = response.status;
-            apiSessionCache.playlists = null;
-            apiSessionCache.fetchedAt = 0;
-            ctrl.apiNeedsSecret = false;
-            ctrl.apiShowCustomClientControls = false;
-            ctrl.apiNotice = "Switched to built-in OAuth client.";
-          })
-          .catch((error) => {
-            ctrl.apiNotice = normalizeErrorMessage(error);
-          })
-          .finally(() => {
-            ctrl.apiBusy = false;
-            renderModalApiUi(ctrl, normalizeText(ctrl.input.value));
-          });
-      });
-      visibleActions.push("use-built-in");
-    }
-
-    if (needsSecret || hasClientSecret || !usingDefaultClientId) {
-      const secretLabel = hasClientSecret ? "Update Secret" : "Set Secret";
-      ensureApiActionButton(ctrl.apiActions, "set-client-secret", secretLabel, setClientSecret);
-      visibleActions.push("set-client-secret");
-    }
-
-    if (!hasClientId) {
-      // No connect/reload until a valid client ID exists.
-    } else if (!hasToken && shouldOfferApiConnect) {
-      ensureApiActionButton(ctrl.apiActions, "connect", "Connect", () => {
-        ctrl.apiBusy = true;
-        ctrl.apiNotice = "";
-        renderModalApiUi(ctrl, normalizeText(ctrl.input.value));
-        runtimeMessage({ type: "YTPF_CONNECT" })
-          .then((response) => {
-            apiSessionCache.authStatus = response.status;
-            ctrl.apiNeedsSecret = false;
-            ctrl.apiShowCustomClientControls =
-              apiSessionCache.authStatus?.usingDefaultClientId === false;
-            return loadAllPlaylistsFromApi(ctrl, {
-              forceRefresh: true,
-              interactive: true,
-            });
-          })
-          .catch((error) => {
-            const raw = normalizeErrorMessage(error);
-            if (/client secret/i.test(raw) && /missing|required|invalid/i.test(raw)) {
-              ctrl.apiNeedsSecret = true;
-            }
-            if (shouldRevealCustomClientControls(raw)) {
-              ctrl.apiShowCustomClientControls = true;
-            }
-            ctrl.apiNotice = formatConnectError(error, apiSessionCache.authStatus);
-          })
-          .finally(() => {
-            ctrl.apiBusy = false;
-            renderModalApiUi(ctrl, normalizeText(ctrl.input.value));
-          });
-      });
-      const connectBtn = ctrl.apiActions.querySelector("button[data-ytpf-action='connect']");
-      if (connectBtn) {
-        connectBtn.title = cappedAtYoutubeLimit ? MODAL_API_TOOLTIP_TEXT : "";
-      }
-      visibleActions.push("connect");
-    } else {
-      ensureApiActionButton(ctrl.apiActions, "reload", "Reload", () => {
-        ctrl.apiBusy = true;
-        ctrl.apiNotice = "";
-        renderModalApiUi(ctrl, normalizeText(ctrl.input.value));
-        loadAllPlaylistsFromApi(ctrl, {
-          forceRefresh: true,
-          interactive: true,
-        })
-          .then(() => {
-            ctrl.apiNotice = "Playlist library refreshed.";
-          })
-          .catch((error) => {
-            ctrl.apiNotice = normalizeErrorMessage(error);
-          })
-          .finally(() => {
-            ctrl.apiBusy = false;
-            renderModalApiUi(ctrl, normalizeText(ctrl.input.value));
-          });
-      });
-      visibleActions.push("reload");
-    }
-
-    clearApiActionButtons(ctrl.apiActions, visibleActions);
-    ctrl.apiList.textContent = "";
-
-    if (loading || saving) {
-      return;
-    }
-
-    if (!hasQuery || !hasPlaylists) {
-      return;
-    }
-
-    if (!results.length) {
-      const empty = document.createElement("li");
-      empty.className = "ytpf-api-empty";
-      empty.textContent = "No API playlist matches for this query.";
-      ctrl.apiList.appendChild(empty);
-      return;
-    }
+    if (!results.length) return;
 
     results.forEach((playlist) => {
-      const item = document.createElement("li");
-      item.className = "ytpf-api-item";
+      const row = document.createElement("div");
+      row.className = "ytpf-synth-row";
 
       const title = document.createElement("span");
-      title.className = "ytpf-api-title";
-      title.textContent = playlist.title || "Untitled playlist";
-
-      const count = document.createElement("span");
-      count.className = "ytpf-api-count";
-      count.textContent = `${Number(playlist.itemCount || 0)}`;
-      title.appendChild(count);
+      title.className = "ytpf-synth-title";
+      title.textContent = playlist.title || "Untitled";
 
       const add = document.createElement("button");
       add.type = "button";
-      add.className = "ytpf-api-add";
-      add.textContent = "Add";
+      add.className = "ytpf-synth-add";
+      add.textContent = "Save";
       add.addEventListener("click", () => {
         const videoId = getCurrentVideoId(ctrl.host);
-        if (!videoId) {
-          ctrl.apiNotice = "Could not detect current video ID. Open a video page and retry.";
-          renderModalApiUi(ctrl, normalizeText(ctrl.input.value));
-          return;
-        }
+        if (!videoId) return;
 
-        ctrl.apiSaving = true;
-        ctrl.apiNotice = "";
-        renderModalApiUi(ctrl, normalizeText(ctrl.input.value));
+        add.disabled = true;
+        add.textContent = "Saving\u2026";
         runtimeMessage({
           type: "YTPF_SAVE_VIDEO",
           playlistId: playlist.id,
@@ -1498,20 +1241,21 @@
           interactive: true,
         })
           .then(() => {
-            ctrl.apiNotice = `Saved to ${playlist.title}`;
+            add.replaceWith(Object.assign(document.createElement("span"), {
+              className: "ytpf-synth-saved",
+              textContent: "Saved",
+            }));
           })
-          .catch((error) => {
-            ctrl.apiNotice = normalizeErrorMessage(error);
-          })
-          .finally(() => {
-            ctrl.apiSaving = false;
-            renderModalApiUi(ctrl, normalizeText(ctrl.input.value));
+          .catch(() => {
+            add.disabled = false;
+            add.textContent = "Retry";
           });
       });
 
-      item.appendChild(title);
-      item.appendChild(add);
-      ctrl.apiList.appendChild(item);
+      row.appendChild(title);
+      row.appendChild(add);
+      ctrl.parent.appendChild(row);
+      ctrl.synthRows.push(row);
     });
   }
 
@@ -1521,26 +1265,20 @@
     return message.replace(/^Error:\\s*/i, "");
   }
 
-  function shouldRevealCustomClientControls(message) {
-    return /redirect_uri_mismatch|invalid_client|unauthorized_client|access blocked/i.test(message);
-  }
-
   function formatConnectError(error, authStatus) {
     const message = normalizeErrorMessage(error);
-    if (/client secret/i.test(message) && /missing|required|invalid/i.test(message)) {
-      return "OAuth token exchange needs a client secret. Click Set Secret, then Connect again.";
-    }
-    if (/invalid_client|unauthorized_client|access blocked/i.test(message)) {
-      return "Built-in OAuth client was rejected. Click Use Custom ID and retry.";
-    }
     if (!/redirect_uri_mismatch/i.test(message)) {
       return message;
     }
-    const uri = authStatus?.redirectUri || "";
-    if (!uri) {
+    const uris = Array.isArray(authStatus?.redirectUris)
+      ? authStatus.redirectUris.filter(Boolean)
+      : authStatus?.redirectUri
+        ? [authStatus.redirectUri]
+        : [];
+    if (!uris.length) {
       return "OAuth redirect URI mismatch. Add this extension redirect URI to your Google OAuth client and retry.";
     }
-    return `OAuth redirect URI mismatch. Add this URI to your Google OAuth client: ${uri}`;
+    return `OAuth redirect URI mismatch. Add one of these URIs to your Google OAuth client: ${uris.join(" , ")}`;
   }
 
   async function loadAllPlaylistsFromApi(ctrl, options = {}) {
@@ -1574,7 +1312,6 @@
       }
 
       const auth = apiSessionCache.authStatus || {};
-      ctrl.apiShowCustomClientControls = auth.usingDefaultClientId === false;
       const canLoad = Boolean(auth.hasClientId) && Boolean(auth.tokenValid || auth.hasRefreshToken);
 
       if (canLoad && !apiSessionCache.playlists) {
@@ -1589,8 +1326,35 @@
       if (ctrl.apiToken === token) {
         ctrl.apiBusy = false;
         renderModalApiUi(ctrl, normalizeText(ctrl.input.value));
+        maybeShowConnectBar(ctrl);
       }
     }
+  }
+
+  function maybeShowConnectBar(ctrl) {
+    if (ctrl.surface !== "modal") return;
+    if (ctrl.root.querySelector(".ytpf-connect-bar")) return;
+
+    const auth = apiSessionCache.authStatus || {};
+    if (!auth.hasClientId) return;
+
+    const { needsPrompt } = getModalApiPromptState(ctrl);
+    if (!needsPrompt) return;
+
+    const bar = document.createElement("div");
+    bar.className = "ytpf-connect-bar";
+    bar.title = "YouTube only loads 200 playlists. Connect to search all of them.";
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "Load all playlists";
+    btn.addEventListener("click", () => {
+      bar.remove();
+      connectApi(ctrl);
+    });
+
+    bar.appendChild(btn);
+    ctrl.root.appendChild(bar);
   }
 
   function teardownHost(host) {
@@ -1603,8 +1367,7 @@
     ctrl.apiToken = (ctrl.apiToken || 0) + 1;
     ctrl.apiBusy = false;
     ctrl.apiSaving = false;
-    ctrl.apiNeedsSecret = false;
-    ctrl.apiShowCustomClientControls = false;
+    clearSynthRows(ctrl);
 
     ctrl.rows.forEach((row) => {
       showRow(row);
@@ -1626,17 +1389,6 @@
 
     suppressMutations(160);
 
-    if (shouldUseApiStrictMode(ctrl)) {
-      fullSet.forEach((row) => {
-        showRow(row);
-        restoreHighlight(row);
-      });
-      ctrl.clear.classList.toggle("ytpf-clear-visible", Boolean(query));
-      ctrl.meta.textContent = `${Math.max(0, ctrl.rows.length)} playlists`;
-      renderModalApiUi(ctrl, query);
-      return;
-    }
-
     if (!query) {
       matches = fullSet.map((row) => ({ row, score: 0, terms: [] }));
     } else {
@@ -1654,6 +1406,9 @@
     });
 
     if (query && ctrl.sortResults && ctrl.parent?.isConnected) {
+      const scrollContainer = findModalScrollContainer(ctrl);
+      const scrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
+
       const matchedRows = matches.map((m) => m.row);
       const matchedSet = new Set(matchedRows);
       const orderedRows = [
@@ -1665,6 +1420,10 @@
           ctrl.parent.appendChild(row);
         }
       });
+
+      if (scrollContainer) {
+        scrollContainer.scrollTop = scrollTop;
+      }
     }
 
     if (query) {
@@ -1679,24 +1438,19 @@
 
     ctrl.clear.classList.toggle("ytpf-clear-visible", Boolean(query));
 
+    if (query && ctrl.surface === "modal") {
+      const sc = findModalScrollContainer(ctrl);
+      if (sc) sc.scrollTop = 0;
+    }
+
     const safeTotal = Math.max(0, ctrl.rows.length);
     const safeVisible = Math.max(0, matches.length);
 
-    if (!query) {
-      ctrl.meta.textContent =
-        ctrl.surface === "page"
-          ? `${safeTotal} playlists on this page`
-          : `${safeTotal} playlists`;
-      if (ctrl.surface === "modal") {
-        renderModalApiUi(ctrl, query);
-      }
-      return;
-    }
-
-    ctrl.meta.textContent =
-      ctrl.surface === "page"
+    if (ctrl.surface === "page") {
+      ctrl.meta.textContent = query
         ? `${safeVisible} of ${safeTotal} playlists on this page`
-        : `${safeVisible} of ${safeTotal} playlists`;
+        : `${safeTotal} playlists on this page`;
+    }
 
     if (ctrl.surface === "modal") {
       renderModalApiUi(ctrl, query);
@@ -1731,12 +1485,9 @@
       input: ui.input,
       clear: ui.clear,
       meta: ui.meta,
-      apiPanel: ui.apiPanel,
-      apiStatus: ui.apiStatus,
-      apiActions: ui.apiActions,
-      apiList: ui.apiList,
       parent: rows[0]?.parentElement || null,
       sortResults: surface === "modal",
+      synthRows: [],
       hydrationToken: 0,
       hydrationRunning: false,
       hydrationPromise: null,
@@ -1744,8 +1495,6 @@
       apiBusy: false,
       apiSaving: false,
       apiNotice: "",
-      apiNeedsSecret: false,
-      apiShowCustomClientControls: false,
     };
 
     ui.input.addEventListener("input", () => {
@@ -1753,6 +1502,7 @@
       maybeStartModalHydration(ctrl);
     });
     ui.input.addEventListener("focus", () => {
+      suppressMutations(300);
       maybeStartModalHydration(ctrl);
     });
     ui.input.addEventListener("keydown", (event) => {
@@ -1776,14 +1526,12 @@
       if (ui.root.isConnected && ui.root.getClientRects().length === 0) {
         host.insertBefore(ui.root, host.firstElementChild || null);
       }
-      if (surface === "modal" && ui.input.isConnected) ui.input.focus();
     });
 
     if (surface === "modal") {
       setTimeout(() => {
         const liveCtrl = controllers.get(host);
         if (liveCtrl) {
-          maybeStartModalHydration(liveCtrl);
           bootstrapModalApi(liveCtrl);
         }
       }, 0);
@@ -1855,6 +1603,10 @@
 
     for (const host of [...controllerHosts]) {
       if (!activeHosts.has(host) || !host.isConnected) {
+        const ctrl = controllers.get(host);
+        if (ctrl && ctrl.root.contains(document.activeElement)) {
+          continue;
+        }
         teardownHost(host);
       }
     }

@@ -1,18 +1,14 @@
 "use strict";
 
 const STORAGE_KEYS = {
-  oauthClientId: "ytpf_oauth_client_id",
-  oauthClientSecret: "ytpf_oauth_client_secret",
-  useCustomOauthClient: "ytpf_use_custom_oauth_client",
-  customOauthModeVersion: "ytpf_custom_oauth_mode_version",
   token: "ytpf_oauth_token",
   refreshToken: "ytpf_oauth_refresh_token",
   playlistCache: "ytpf_playlist_cache",
+  authProfile: "ytpf_auth_profile",
 };
 
-const DEFAULT_OAUTH_CLIENT_ID =
-  "619930870075-vc2g35merl0go901o9vl60bqnpd5dam8.apps.googleusercontent.com";
-const CUSTOM_OAUTH_MODE_VERSION = 2;
+const DEFAULT_OAUTH_CLIENT_ID = "";
+const DEFAULT_OAUTH_CLIENT_SECRET = "";
 
 const YT_SCOPES = [
   "https://www.googleapis.com/auth/youtube.force-ssl",
@@ -22,6 +18,7 @@ const TOKEN_EARLY_EXPIRY_MS = 30_000;
 const PLAYLIST_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 let memoryPlaylistCache = null;
+let interactiveAuthInFlight = null;
 
 function storageGet(keys) {
   return chrome.storage.local.get(keys);
@@ -52,8 +49,13 @@ async function sha256Base64Url(input) {
   return base64UrlEncode(new Uint8Array(hash));
 }
 
+function candidateRedirectUris() {
+  const root = chrome.identity.getRedirectURL();
+  return root ? [root] : [];
+}
+
 function redirectUri() {
-  return chrome.identity.getRedirectURL();
+  return candidateRedirectUris()[0] || chrome.identity.getRedirectURL();
 }
 
 function parseJsonSafe(text) {
@@ -72,60 +74,11 @@ function normalizeError(error, fallback = "Request failed") {
 }
 
 async function getConfig() {
-  const stored = await storageGet([
-    STORAGE_KEYS.oauthClientId,
-    STORAGE_KEYS.oauthClientSecret,
-    STORAGE_KEYS.useCustomOauthClient,
-    STORAGE_KEYS.customOauthModeVersion,
-  ]);
-  const storedClientId = (stored[STORAGE_KEYS.oauthClientId] || "").trim();
-  const storedClientSecret = (stored[STORAGE_KEYS.oauthClientSecret] || "").trim();
-  const useCustomOauthClient = stored[STORAGE_KEYS.useCustomOauthClient] === true;
-  const customModeVersion = Number(stored[STORAGE_KEYS.customOauthModeVersion] || 0);
-  const hasCustomClientId =
-    useCustomOauthClient &&
-    customModeVersion === CUSTOM_OAUTH_MODE_VERSION &&
-    Boolean(storedClientId);
   return {
-    oauthClientId: hasCustomClientId
-      ? storedClientId
-      : DEFAULT_OAUTH_CLIENT_ID,
-    oauthClientSecret: hasCustomClientId ? storedClientSecret : "",
-    usingDefaultClientId: !hasCustomClientId,
+    oauthClientId: DEFAULT_OAUTH_CLIENT_ID,
+    oauthClientSecret: DEFAULT_OAUTH_CLIENT_SECRET,
+    usingDefaultClientId: true,
   };
-}
-
-async function setOauthClientId(clientId) {
-  const trimmed = String(clientId || "").trim();
-  if (!trimmed) {
-    await storageRemove([
-      STORAGE_KEYS.oauthClientId,
-      STORAGE_KEYS.oauthClientSecret,
-      STORAGE_KEYS.useCustomOauthClient,
-      STORAGE_KEYS.customOauthModeVersion,
-    ]);
-    return "";
-  }
-  await storageSet({
-    [STORAGE_KEYS.oauthClientId]: trimmed,
-    [STORAGE_KEYS.useCustomOauthClient]: true,
-    [STORAGE_KEYS.customOauthModeVersion]: CUSTOM_OAUTH_MODE_VERSION,
-  });
-  return trimmed;
-}
-
-async function setOauthClientSecret(clientSecret) {
-  const trimmed = String(clientSecret || "").trim();
-  if (!trimmed) {
-    await storageRemove([STORAGE_KEYS.oauthClientSecret]);
-    return "";
-  }
-  await storageSet({
-    [STORAGE_KEYS.oauthClientSecret]: trimmed,
-    [STORAGE_KEYS.useCustomOauthClient]: true,
-    [STORAGE_KEYS.customOauthModeVersion]: CUSTOM_OAUTH_MODE_VERSION,
-  });
-  return trimmed;
 }
 
 async function getStoredTokenBundle() {
@@ -159,6 +112,11 @@ async function clearAuth() {
     STORAGE_KEYS.token,
     STORAGE_KEYS.refreshToken,
     STORAGE_KEYS.playlistCache,
+    STORAGE_KEYS.authProfile,
+    "ytpf_oauth_client_id",
+    "ytpf_oauth_client_secret",
+    "ytpf_use_custom_oauth_client",
+    "ytpf_custom_oauth_mode_version",
   ]);
   memoryPlaylistCache = null;
 }
@@ -199,46 +157,30 @@ async function refreshAccessToken(clientId, refreshToken, clientSecret = "") {
   };
 }
 
-async function interactiveAuth(clientId, clientSecret = "") {
+async function interactiveAuthWithRedirect(clientId, clientSecret, redirectUriValue) {
   const verifier = randomString(96);
   const challenge = await sha256Base64Url(verifier);
+  const state = randomString(32);
 
   const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   authUrl.searchParams.set("client_id", clientId);
-  authUrl.searchParams.set("redirect_uri", redirectUri());
+  authUrl.searchParams.set("redirect_uri", redirectUriValue);
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("scope", YT_SCOPES.join(" "));
   authUrl.searchParams.set("access_type", "offline");
-  authUrl.searchParams.set("prompt", "consent");
+  authUrl.searchParams.set("prompt", "select_account consent");
   authUrl.searchParams.set("code_challenge", challenge);
   authUrl.searchParams.set("code_challenge_method", "S256");
+  authUrl.searchParams.set("state", state);
 
-  const redirectedTo = await chrome.identity.launchWebAuthFlow({
-    url: authUrl.toString(),
-    interactive: true,
-  });
-
-  if (!redirectedTo) {
-    throw new Error("Authorization was cancelled");
-  }
-
-  const redirectedUrl = new URL(redirectedTo);
-  const authError = redirectedUrl.searchParams.get("error");
-  if (authError) {
-    throw new Error(`Authorization failed: ${authError}`);
-  }
-
-  const code = redirectedUrl.searchParams.get("code");
-  if (!code) {
-    throw new Error("Authorization code was not returned");
-  }
+  const code = await openAuthTab(authUrl.toString(), redirectUriValue, state);
 
   const body = new URLSearchParams({
     code,
     client_id: clientId,
     code_verifier: verifier,
     grant_type: "authorization_code",
-    redirect_uri: redirectUri(),
+    redirect_uri: redirectUriValue,
   });
   if (clientSecret) {
     body.set("client_secret", clientSecret);
@@ -270,11 +212,113 @@ async function interactiveAuth(clientId, clientSecret = "") {
   };
 }
 
+function openAuthTab(authUrl, expectedRedirect, expectedState) {
+  return new Promise((resolve, reject) => {
+    let tabId = null;
+    let settled = false;
+
+    function cleanup() {
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      chrome.tabs.onRemoved.removeListener(onRemoved);
+    }
+
+    function settle(fn) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (tabId != null) {
+        chrome.tabs.remove(tabId).catch(() => {});
+      }
+      fn();
+    }
+
+    function onUpdated(id, changeInfo) {
+      if (id !== tabId || !changeInfo.url) return;
+      const url = changeInfo.url;
+      if (!url.startsWith(expectedRedirect)) return;
+
+      const params = new URL(url).searchParams;
+      const error = params.get("error");
+      if (error) {
+        settle(() => reject(new Error(`Authorization failed: ${error}`)));
+        return;
+      }
+
+      const returnedState = params.get("state");
+      if (returnedState !== expectedState) {
+        settle(() => reject(new Error("OAuth state mismatch")));
+        return;
+      }
+
+      const code = params.get("code");
+      if (!code) {
+        settle(() => reject(new Error("Authorization code was not returned")));
+        return;
+      }
+
+      settle(() => resolve(code));
+    }
+
+    function onRemoved(id) {
+      if (id !== tabId) return;
+      settle(() => reject(new Error("Authorization was cancelled")));
+    }
+
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.tabs.onRemoved.addListener(onRemoved);
+
+    chrome.tabs.create({ url: authUrl }).then((tab) => {
+      tabId = tab.id;
+      if (settled) {
+        chrome.tabs.remove(tabId).catch(() => {});
+      }
+    });
+  });
+}
+
+async function interactiveAuth(clientId, clientSecret = "") {
+  const redirectUris = candidateRedirectUris();
+  let lastError = null;
+
+  for (const redirectUriValue of redirectUris) {
+    try {
+      return await interactiveAuthWithRedirect(
+        clientId,
+        clientSecret,
+        redirectUriValue,
+      );
+    } catch (error) {
+      lastError = error;
+      const message = normalizeError(error, "").toLowerCase();
+      if (/cancelled|canceled|user_closed|user denied|access_denied/.test(message)) {
+        throw error;
+      }
+      // Only retry when a provider explicitly reports redirect mismatch.
+      if (!/redirect_uri_mismatch/.test(message)) {
+        throw error;
+      }
+      continue;
+    }
+  }
+
+  throw lastError || new Error("Authorization failed");
+}
+
 async function ensureAccessToken(options = {}) {
   const interactive = Boolean(options.interactive);
+  const forceReauth = Boolean(options.forceReauth);
   const { oauthClientId, oauthClientSecret } = await getConfig();
   if (!oauthClientId) {
     throw new Error("OAuth client ID is not configured");
+  }
+
+  if (forceReauth) {
+    await storageRemove([
+      STORAGE_KEYS.token,
+      STORAGE_KEYS.refreshToken,
+      STORAGE_KEYS.playlistCache,
+    ]);
+    memoryPlaylistCache = null;
   }
 
   const stored = await getStoredTokenBundle();
@@ -302,8 +346,18 @@ async function ensureAccessToken(options = {}) {
     throw new Error("Authentication required");
   }
 
-  const tokenBundle = await interactiveAuth(oauthClientId, oauthClientSecret);
-  await storeTokenBundle(tokenBundle);
+  if (!interactiveAuthInFlight) {
+    interactiveAuthInFlight = interactiveAuth(oauthClientId, oauthClientSecret)
+      .then(async (tokenBundle) => {
+        await storeTokenBundle(tokenBundle);
+        return tokenBundle;
+      })
+      .finally(() => {
+        interactiveAuthInFlight = null;
+      });
+  }
+
+  const tokenBundle = await interactiveAuthInFlight;
   return tokenBundle.access_token;
 }
 
@@ -390,6 +444,22 @@ async function loadPlaylistsFromApi(interactive) {
   return rows;
 }
 
+async function loadAuthChannels(interactive) {
+  const url = new URL("https://www.googleapis.com/youtube/v3/channels");
+  url.searchParams.set("part", "id,snippet");
+  url.searchParams.set("mine", "true");
+  url.searchParams.set("maxResults", "50");
+  const data = await youtubeRequest(url.toString(), { interactive });
+  const items = Array.isArray(data.items) ? data.items : [];
+  return items
+    .map((item) => ({
+      id: item?.id || "",
+      title: item?.snippet?.title || "Unknown channel",
+      customUrl: item?.snippet?.customUrl || "",
+    }))
+    .filter((item) => item.id);
+}
+
 async function getPlaylists(options = {}) {
   const forceRefresh = Boolean(options.forceRefresh);
   const interactive = Boolean(options.interactive);
@@ -465,6 +535,8 @@ async function saveVideoToPlaylist({ playlistId, videoId, interactive }) {
 async function getAuthStatus() {
   const config = await getConfig();
   const stored = await getStoredTokenBundle();
+  const profileStore = await storageGet([STORAGE_KEYS.authProfile]);
+  const authProfile = profileStore[STORAGE_KEYS.authProfile] || null;
   const hasToken = Boolean(stored.token?.access_token);
   const tokenValid = isTokenValid(stored.token);
   const hasRefreshToken = Boolean(stored.refreshToken);
@@ -474,9 +546,11 @@ async function getAuthStatus() {
     hasClientSecret: Boolean(config.oauthClientSecret),
     usingDefaultClientId: Boolean(config.usingDefaultClientId),
     redirectUri: redirectUri(),
+    redirectUris: candidateRedirectUris(),
     hasToken,
     hasRefreshToken,
     tokenValid,
+    authProfile: hasToken || hasRefreshToken ? authProfile : null,
   };
 }
 
@@ -488,20 +562,23 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return { status: await getAuthStatus() };
     }
 
-    if (type === "YTPF_SET_OAUTH_CLIENT_ID") {
-      const clientId = await setOauthClientId(message.clientId || "");
-      await clearAuth();
-      return { clientId };
-    }
-
-    if (type === "YTPF_SET_OAUTH_CLIENT_SECRET") {
-      const clientSecret = await setOauthClientSecret(message.clientSecret || "");
-      await clearAuth();
-      return { clientSecretSet: Boolean(clientSecret) };
-    }
-
     if (type === "YTPF_CONNECT") {
-      await ensureAccessToken({ interactive: true });
+      await ensureAccessToken({
+        interactive: true,
+        forceReauth: Boolean(message.forceReauth),
+      });
+      const channels = await loadAuthChannels(false);
+      if (!channels.length) {
+        throw new Error(
+          "Connected account has no accessible YouTube channel. If you use a Brand Account, switch to that channel in YouTube and reconnect.",
+        );
+      }
+      await storageSet({
+        [STORAGE_KEYS.authProfile]: {
+          channels,
+          updatedAt: Date.now(),
+        },
+      });
       return { status: await getAuthStatus() };
     }
 

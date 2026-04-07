@@ -8,7 +8,7 @@ YouTube Playlist Filter adds an inline search field to YouTube's "Save to playli
 - Data sold to third parties: `No`
 - Data used for purposes unrelated to core functionality: `No`
 - Creditworthiness or lending use: `No`
-- Authentication/account data collection: `No`
+- Authentication/account data collection: `Yes` — OAuth tokens for YouTube API playlist access; stored locally in chrome.storage, never sent to external servers.
 - Health, financial, location, web history, user activity collection: `No`
 
 ## URLs

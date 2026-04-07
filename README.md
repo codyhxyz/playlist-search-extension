@@ -1,21 +1,18 @@
-# YouTube Playlist Filter
+# YouTube Playlist Search
 
-Chrome extension that adds a search/filter bar to YouTube playlist modals and views.
+Can't find your playlist when saving a video? YouTube's "Save to playlist" modal has no search, and it only loads your most recent 200 playlists. If you have more, they're invisible.
+
+This extension adds a search bar directly inside YouTube's Save modal. Type to filter, and it searches all your playlists — even beyond the 200 cap — using the YouTube API.
 
 ## Features
 
-- **Inline search bar inside YouTube's Save to playlist modal**
-- **Inline filter on** `https://www.youtube.com/feed/playlists`
-- Optional API mode to load/search your full playlist library in Save modal
-- API-backed add-to-playlist action for playlists outside YouTube's modal subset
-- Real-time filtering with visible match count
-- Match highlighting in playlist names
-- Fuzzy matching for near-miss queries/typos
-- BM25 ranking powered by bundled MiniSearch
-- Keyboard support: `Escape` clears search
-- Paste works normally in the search field
-- Auto-matches YouTube dark/light theme
-- Built-in OAuth client for one-click API connect
+- **Search bar inside YouTube's Save to playlist modal** — filters as you type
+- **Loads all playlists** — YouTube caps at 200; the extension uses the YouTube API to find the rest
+- **Save to any playlist** — even ones YouTube didn't load in the modal
+- **Match highlighting** in playlist names
+- **BM25 ranking** for relevant results
+- **Works on `/feed/playlists`** too — filter your playlist library page
+- **Matches YouTube's theme** — dark and light mode
 
 ## Install
 
@@ -26,41 +23,28 @@ Chrome extension that adds a search/filter bar to YouTube playlist modals and vi
 
 ## How it works
 
-A content script watches YouTube's dynamic DOM, detects playlist option rows in Save dialogs/sheets and playlist cards on `/feed/playlists`, builds a BM25 index with MiniSearch, injects a native-looking inline filter bar, and filters results as you type.
+A content script detects YouTube's Save dialog, injects a search bar, and filters playlist rows as you type. If you have more than 200 playlists, a "Load all playlists" prompt appears — click it to authorize the extension to fetch your full library via the YouTube API.
 
-## API Mode (All Playlists)
+## Roadmap
 
-To search/add across your full playlist library (not just what YouTube modal currently renders):
+- **Semantic search** — find playlists by meaning, not just title match, using embeddings
+- **Playlist recommendations** — suggest relevant playlists based on the video you're watching
+- **Similar playlists** — when viewing a playlist, surface your most similar playlists
 
-1. Open YouTube and click Save on any video.
-2. Click **Connect** and grant access.
+## Privacy
 
-The Connect prompt is shown when the modal hits YouTube's 200-playlist cap.
+The extension only accesses your YouTube playlist names to power search. No data is stored on external servers — everything stays in your browser. See `docs/privacy-policy.html` for details.
 
-If built-in auth is rejected in your environment, use **Use Custom ID** and configure your own OAuth client.
+## Development
 
-The extension then paginates `playlists.list` and can add videos with `playlistItems.insert`.
+### Publish Assets
 
-## Publish Assets
+- Privacy policy: `docs/privacy-policy.html`
+- Support page: `docs/support.html`
+- Store submission: `store/CWS_SUBMISSION.md`
 
-- Privacy policy page source: `docs/privacy-policy.html`
-- Support page source: `docs/support.html`
-- Store submission answers: `store/CWS_SUBMISSION.md`
-- QA checklist: `QA_CHECKLIST.md`
-- Store images:
-  - `store-assets/screenshot-1.png` (1280x800)
-  - `store-assets/screenshot-2.png` (1280x800)
-  - `store-assets/small-promo-tile.png` (440x280)
-  - `store-assets/marquee-promo-tile.png` (1400x560)
-
-## Build Store ZIP
-
-Run:
+### Build Store ZIP
 
 ```bash
 scripts/build-store-zip.sh
 ```
-
-Output:
-
-- `dist/youtube-playlist-filter-<version>.zip`
