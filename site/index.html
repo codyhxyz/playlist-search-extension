@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YouTube Playlist Filter — Find any playlist instantly</title>
+<meta name="description" content="Search and filter your YouTube playlists from the save dialog. Break the 200 playlist limit.">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --yt-red: #FF0000;
+    --yt-dark-red: #CC0000;
+    --yt-bg: #0a0a0a;
+    --yt-surface: #181818;
+    --yt-text: #f1f1f1;
+    --yt-muted: rgba(255,255,255,0.55);
+  }
+
+  html {
+    scroll-behavior: smooth;
+    overflow-x: hidden;
+  }
+
+  body {
+    background: var(--yt-bg);
+    font-family: 'Inter', system-ui, sans-serif;
+    color: var(--yt-text);
+    overflow-x: hidden;
+  }
+
+  /* ── Radial background glow for backdrop-filter to pick up ── */
+  .bg-glow {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      radial-gradient(ellipse at 15% 20%, rgba(255,0,0,0.10) 0%, transparent 55%),
+      radial-gradient(ellipse at 85% 75%, rgba(204,0,0,0.07) 0%, transparent 50%),
+      radial-gradient(ellipse at 50% 50%, rgba(255,0,0,0.03) 0%, transparent 65%);
+  }
+
+  /* ── Slab container — clips decorative slabs to the viewport ── */
+  .slab-container {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  /* ── Frosted glass slabs ── */
+  .slab {
+    position: absolute;
+    pointer-events: auto;
+    will-change: transform;
+    cursor: crosshair;
+  }
+
+  /* Explosion fragments */
+  .shard {
+    position: fixed;
+    pointer-events: none;
+    z-index: 200;
+    will-change: transform, opacity;
+    animation: shard-fly 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+  }
+  @keyframes shard-fly {
+    0% {
+      opacity: 1;
+      transform: translate(0, 0) rotate(0deg) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(var(--shard-x), var(--shard-y)) rotate(var(--shard-r)) scale(0.3);
+    }
+  }
+
+  /* FAR layer — subtle, blurred */
+  .slab-far-1 {
+    z-index: 1;
+    width: 950px; height: 520px;
+    background: rgba(255,0,0,0.06);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,0,0,0.04);
+    transform: rotate(-25deg);
+    top: -200px; left: -320px;
+  }
+  .slab-far-2 {
+    z-index: 1;
+    width: 750px; height: 420px;
+    background: rgba(204,0,0,0.05);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border: 1px solid rgba(255,0,0,0.03);
+    transform: rotate(15deg);
+    top: 60vh; right: -280px;
+  }
+  .slab-far-3 {
+    z-index: 1;
+    width: 550px; height: 320px;
+    background: rgba(255,0,0,0.07);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    transform: rotate(-40deg);
+    top: 30vh; right: -120px;
+  }
+
+  /* MID layer — structural framing */
+  .slab-mid-1 {
+    z-index: 2;
+    width: 650px; height: 240px;
+    background: rgba(255,0,0,0.12);
+    backdrop-filter: blur(18px) saturate(1.4);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    border-top: 1px solid rgba(255,100,100,0.15);
+    border-left: 1px solid rgba(255,100,100,0.1);
+    transform: rotate(-20deg) skewX(-10deg);
+    top: -60px; left: -100px;
+  }
+  .slab-mid-2 {
+    z-index: 2;
+    width: 550px; height: 200px;
+    background: rgba(204,0,0,0.15);
+    backdrop-filter: blur(16px) saturate(1.3);
+    -webkit-backdrop-filter: blur(16px) saturate(1.3);
+    border-bottom: 1px solid rgba(255,80,80,0.12);
+    border-right: 1px solid rgba(255,80,80,0.08);
+    transform: rotate(25deg) skewX(5deg);
+    top: 70vh; right: -80px;
+  }
+  .slab-mid-3 {
+    z-index: 2;
+    width: 320px; height: 550px;
+    background: rgba(30,30,30,0.25);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-left: 1px solid rgba(255,255,255,0.06);
+    transform: rotate(-12deg);
+    top: 10vh; left: 38%;
+  }
+  .slab-mid-4 {
+    z-index: 2;
+    width: 420px; height: 180px;
+    background: rgba(255,0,0,0.10);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-top: 1px solid rgba(255,60,60,0.1);
+    transform: rotate(35deg);
+    top: 45vh; left: -70px;
+  }
+
+  /* NEAR layer — in front of content */
+  .slab-near-1 {
+    z-index: 100;
+    width: 520px; height: 210px;
+    background: rgba(255,0,0,0.35);
+    backdrop-filter: blur(30px) saturate(1.6);
+    -webkit-backdrop-filter: blur(30px) saturate(1.6);
+    border-top: 1px solid rgba(255,150,150,0.3);
+    border-left: 1px solid rgba(255,150,150,0.2);
+    transform: rotate(-22deg);
+    top: -100px; right: -120px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+  }
+  .slab-near-2 {
+    z-index: 100;
+    width: 420px; height: 160px;
+    background: rgba(204,0,0,0.30);
+    backdrop-filter: blur(25px) saturate(1.5);
+    -webkit-backdrop-filter: blur(25px) saturate(1.5);
+    border-bottom: 1px solid rgba(255,120,120,0.25);
+    border-right: 1px solid rgba(255,120,120,0.15);
+    transform: rotate(18deg);
+    top: 85vh; left: -100px;
+    box-shadow: 0 6px 30px rgba(0,0,0,0.35);
+  }
+  .slab-near-3 {
+    z-index: 100;
+    width: 270px; height: 110px;
+    background: rgba(15,15,15,0.60);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.05);
+    transform: rotate(-30deg);
+    top: 60vh; right: 40px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+
+  /* ── Content sections ── */
+  section {
+    position: relative;
+    z-index: 10;
+    pointer-events: none;
+  }
+  section *, footer * {
+    pointer-events: auto;
+  }
+
+  /* ── Hero ── */
+  .hero {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 70px;
+    padding: 80px 80px;
+  }
+  .hero-text {
+    max-width: 480px;
+  }
+  .hero-label {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--yt-red);
+    margin-bottom: 18px;
+  }
+  .hero-text h1 {
+    font-size: 56px;
+    font-weight: 900;
+    line-height: 1.05;
+    letter-spacing: -2px;
+    margin-bottom: 20px;
+  }
+  .hero-text p {
+    font-size: 18px;
+    color: var(--yt-muted);
+    line-height: 1.6;
+    margin-bottom: 32px;
+  }
+  .cta {
+    display: inline-block;
+    padding: 15px 36px;
+    background: var(--yt-red);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    border: none;
+    border-radius: 8px;
+    text-decoration: none;
+    letter-spacing: 0.3px;
+    transition: background 0.2s, transform 0.2s;
+    cursor: pointer;
+  }
+  .cta:hover {
+    background: var(--yt-dark-red);
+    transform: scale(1.03);
+  }
+
+  /* ── Dialog mock with hover interaction ── */
+  .dialog-wrap {
+    flex-shrink: 0;
+    transform: rotate(-10deg) scale(1);
+    transition: transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    cursor: default;
+  }
+  .dialog-wrap:hover {
+    transform: rotate(0deg) scale(1.08);
+  }
+  .dialog-link {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+    cursor: pointer;
+  }
+  .dialog {
+    width: 400px;
+    background: rgba(24, 24, 24, 0.92);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+    overflow: hidden;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+  .dialog-header {
+    padding: 16px 20px 12px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--yt-text);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .filter-bar {
+    padding: 10px 16px 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .filter-input-wrap { position: relative; }
+  .filter-input {
+    width: 100%;
+    height: 36px;
+    border: 1px solid rgba(255,0,0,0.4);
+    border-radius: 18px;
+    padding: 0 34px 0 14px;
+    background: rgba(255,255,255,0.04);
+    color: var(--yt-text);
+    font-family: inherit;
+    font-size: 14px;
+    outline: none;
+  }
+  .filter-clear {
+    position: absolute;
+    right: 8px; top: 50%;
+    transform: translateY(-50%);
+    border: none; background: none;
+    color: rgba(255,255,255,0.35);
+    font-size: 14px; cursor: pointer;
+  }
+  .filter-meta {
+    margin-top: 5px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.35);
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 20px;
+  }
+  .check {
+    width: 16px; height: 16px;
+    border: 2px solid #555;
+    border-radius: 3px;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .check.on {
+    background: var(--yt-red);
+    border-color: var(--yt-red);
+  }
+  .check.on::after {
+    content: '\2713'; color: white; font-size: 10px;
+    position: absolute; top: -1px; left: 2px;
+  }
+  .name { font-size: 14px; color: var(--yt-text); }
+  .name mark {
+    background: rgba(255,0,0,0.22);
+    color: var(--yt-text);
+    border-radius: 2px;
+    padding: 0 2px;
+  }
+
+  /* ── Open Source ── */
+  .oss {
+    padding: 120px 80px;
+    text-align: center;
+    max-width: 700px;
+    margin: 0 auto;
+    position: relative;
+  }
+  .oss-content {
+    position: relative;
+    z-index: 2;
+  }
+  /* Shelf — fanning toward the viewer */
+  .oss-shelf {
+    width: 340px;
+    margin: 0 auto;
+    perspective: 500px;
+  }
+  .oss-shelf-surface {
+    height: 40px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.07) 100%);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-top: 1px solid rgba(255,255,255,0.04);
+    border-radius: 2px;
+    transform: rotateX(50deg);
+    transform-origin: top center;
+  }
+  .gh-mark {
+    width: 40px;
+    height: 40px;
+    color: rgba(255,255,255,0.3);
+    margin-bottom: 16px;
+  }
+  .oss h3 {
+    font-size: 24px;
+    font-weight: 900;
+    margin-bottom: 12px;
+  }
+  .oss p {
+    font-size: 16px;
+    color: var(--yt-muted);
+    line-height: 1.6;
+  }
+  .oss a {
+    color: var(--yt-red);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+  .oss a:hover {
+    color: var(--yt-text);
+  }
+
+  /* ── Problem section ── */
+  .problem {
+    padding: 100px 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 70px;
+  }
+  .problem-text { max-width: 420px; }
+  .problem-text h2 {
+    font-size: 40px;
+    font-weight: 900;
+    letter-spacing: -1px;
+    margin-bottom: 16px;
+  }
+  .problem-text p {
+    font-size: 16px;
+    color: var(--yt-muted);
+    line-height: 1.6;
+  }
+  .compare {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .compare-card {
+    width: 340px;
+    background: rgba(24,24,24,0.8);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px;
+    padding: 22px 26px;
+  }
+  .compare-card.enhanced {
+    border-color: rgba(255,0,0,0.4);
+    box-shadow: 0 0 30px rgba(255,0,0,0.08);
+  }
+  .compare-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: rgba(255,255,255,0.35);
+    margin-bottom: 6px;
+  }
+  .compare-card.enhanced .compare-label { color: var(--yt-red); }
+  .compare-count {
+    font-size: 40px;
+    font-weight: 900;
+    margin-bottom: 4px;
+  }
+  .compare-desc {
+    font-size: 13px;
+    color: var(--yt-muted);
+  }
+  .compare-bar {
+    margin-top: 12px;
+    height: 6px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .compare-fill { height: 100%; border-radius: 3px; }
+  .compare-fill.limited { width: 24%; background: #555; }
+  .compare-fill.full {
+    width: 100%;
+    background: linear-gradient(90deg, var(--yt-dark-red), var(--yt-red));
+  }
+
+  /* ── Bottom CTA ── */
+  .bottom-cta {
+    text-align: center;
+    padding: 80px 80px 120px;
+  }
+  .bottom-cta h2 {
+    font-size: 36px;
+    font-weight: 900;
+    letter-spacing: -0.5px;
+    margin-bottom: 24px;
+  }
+
+  /* ── Footer ── */
+  footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 24px 40px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    pointer-events: auto;
+  }
+  .footer-links {
+    display: flex;
+    gap: 24px;
+  }
+  footer a {
+    color: rgba(255,255,255,0.35);
+    text-decoration: none;
+    font-size: 13px;
+    transition: color 0.2s;
+  }
+  footer a:hover { color: var(--yt-text); }
+
+  .built-by {
+    font-size: 13px;
+    color: rgba(255,255,255,0.2);
+  }
+  .built-by a {
+    color: rgba(255,255,255,0.35);
+  }
+  .built-by a:hover {
+    color: var(--yt-text);
+  }
+
+  /* ── Nav ── */
+  .topnav {
+    position: fixed;
+    top: 24px;
+    left: 28px;
+    z-index: 50;
+    pointer-events: auto;
+  }
+  .nav-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    opacity: 0.85;
+    transition: opacity 0.2s;
+  }
+  .nav-icon:hover {
+    opacity: 1;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 900px) {
+    .hero {
+      flex-direction: column; text-align: center;
+      gap: 40px; padding: 80px 24px;
+    }
+    .hero-text h1 { font-size: 36px; }
+    .hero-text p { font-size: 16px; }
+    .features { flex-direction: column; align-items: center; padding: 60px 24px; }
+    .problem { flex-direction: column; text-align: center; padding: 60px 24px; gap: 40px; }
+    .problem-text h2 { font-size: 30px; }
+    .compare-card { width: 100%; max-width: 340px; }
+    .dialog-wrap { transform: rotate(-6deg) scale(0.95); }
+    .dialog-wrap:hover { transform: rotate(0deg) scale(1.02); }
+    .dialog { width: min(340px, 85vw); }
+    .oss { padding: 80px 24px; }
+    .bottom-cta { padding: 60px 24px 80px; }
+    .bottom-cta h2 { font-size: 28px; }
+    .slab-near-1, .slab-near-2, .slab-near-3 { display: none; }
+    .slab-mid-1, .slab-mid-2, .slab-mid-3, .slab-mid-4 { opacity: 0.5; }
+    footer {
+      flex-direction: column;
+      gap: 16px;
+      text-align: center;
+      padding: 24px 20px;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .hero { padding: 60px 16px; min-height: auto; padding-top: 100px; }
+    .hero-text h1 { font-size: 28px; letter-spacing: -1px; }
+    .hero-text p { font-size: 15px; }
+    .hero-label { font-size: 11px; }
+    .cta { padding: 13px 28px; font-size: 14px; }
+    .dialog-wrap { transform: rotate(0deg) scale(0.9); }
+    .dialog-wrap:hover { transform: rotate(0deg) scale(0.95); }
+    .dialog { width: min(320px, 90vw); }
+    .problem { padding: 40px 16px; gap: 30px; }
+    .problem-text h2 { font-size: 26px; }
+    .compare-card { padding: 18px 20px; }
+    .compare-count { font-size: 32px; }
+    .oss { padding: 60px 16px; }
+    .oss h3 { font-size: 20px; }
+    .oss p { font-size: 14px; }
+    .bottom-cta { padding: 40px 16px 60px; }
+    .bottom-cta h2 { font-size: 24px; }
+    .slab-far-1, .slab-far-2, .slab-far-3,
+    .slab-mid-1, .slab-mid-2, .slab-mid-3, .slab-mid-4 { display: none; }
+    footer { padding: 20px 16px; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- Background glow for backdrop-filter -->
+  <div class="bg-glow"></div>
+
+  <!-- Slab container clips fixed-position slabs from expanding the viewport on mobile -->
+  <div class="slab-container">
+    <!-- Frosted glass slabs — parallax driven by JS -->
+    <!-- FAR -->
+    <div class="slab slab-far-1" data-speed="0.2"></div>
+    <div class="slab slab-far-2" data-speed="0.25"></div>
+    <div class="slab slab-far-3" data-speed="0.15"></div>
+    <!-- MID -->
+    <div class="slab slab-mid-1" data-speed="0.5"></div>
+    <div class="slab slab-mid-2" data-speed="0.55"></div>
+    <div class="slab slab-mid-3" data-speed="0.4"></div>
+    <div class="slab slab-mid-4" data-speed="0.45"></div>
+    <!-- NEAR -->
+    <div class="slab slab-near-1" data-speed="1.3"></div>
+    <div class="slab slab-near-2" data-speed="1.4"></div>
+    <div class="slab slab-near-3" data-speed="2.0"></div>
+  </div>
+
+  <!-- Nav -->
+  <nav class="topnav">
+    <a href="https://chromewebstore.google.com/detail/efgbkmnooapcpdpgmihemfpedchhmmek" target="_blank" rel="noopener"><img src="favicon.png" alt="YouTube Playlist Search" class="nav-icon"></a>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-text">
+      <div class="hero-label">You'll only like this if you have a ton of playlists</div>
+      <h1>Don't worry, YouTube. We added a search bar for playlists.</h1>
+      <p>Ctrl+F for your playlist collection. Built right into YouTube.</p>
+      <a class="cta" href="https://chromewebstore.google.com/detail/efgbkmnooapcpdpgmihemfpedchhmmek" target="_blank">Add to Chrome</a>
+    </div>
+    <div class="dialog-wrap">
+      <a href="https://chromewebstore.google.com/detail/efgbkmnooapcpdpgmihemfpedchhmmek" target="_blank" rel="noopener" class="dialog-link" title="Try it yourself">
+      <div class="dialog">
+        <div class="dialog-header">Save video to...</div>
+        <div class="filter-bar">
+          <div class="filter-input-wrap">
+            <input class="filter-input" value="lofi" readonly>
+            <button class="filter-clear">&#x2715;</button>
+          </div>
+          <div class="filter-meta">3 of 847 playlists</div>
+        </div>
+        <div class="row">
+          <div class="check"></div>
+          <span class="name"><mark>lofi</mark> study sessions</span>
+        </div>
+        <div class="row">
+          <div class="check on"></div>
+          <span class="name"><mark>lofi</mark> beats for focus</span>
+        </div>
+        <div class="row">
+          <div class="check"></div>
+          <span class="name">chill <mark>lofi</mark> & rain</span>
+        </div>
+      </div>
+      </a>
+    </div>
+  </section>
+
+  <!-- Open Source -->
+  <section class="oss">
+    <div class="oss-content">
+      <svg class="gh-mark" viewBox="0 0 98 96" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M48.854 0C21.839 0 0 22 0 49.217c0 21.756 13.993 40.172 33.405 46.69 2.427.49 3.316-1.059 3.316-2.362 0-1.141-.08-5.052-.08-9.127-13.59 2.934-16.42-5.867-16.42-5.867-2.184-5.704-5.42-7.17-5.42-7.17-4.448-3.015.324-3.015.324-3.015 4.934.326 7.523 5.052 7.523 5.052 4.367 7.496 11.404 5.378 14.235 4.074.404-3.178 1.699-5.378 3.074-6.6-10.839-1.141-22.243-5.378-22.243-24.283 0-5.378 1.94-9.778 5.014-13.2-.485-1.222-2.184-6.275.486-13.038 0 0 4.125-1.304 13.426 5.052a46.97 46.97 0 0 1 12.214-1.63c4.125 0 8.33.571 12.213 1.63 9.302-6.356 13.427-5.052 13.427-5.052 2.67 6.763.97 11.816.485 13.038 3.155 3.422 5.015 7.822 5.015 13.2 0 18.905-11.404 23.06-22.324 24.283 1.78 1.548 3.316 4.481 3.316 9.126 0 6.6-.08 11.897-.08 13.526 0 1.304.89 2.853 3.316 2.364 19.412-6.52 33.405-24.935 33.405-46.691C97.707 22 75.788 0 48.854 0z" fill="currentColor"/></svg>
+      <h3>Free Open Source Software</h3>
+      <p>I do it for the love of the game. <a href="https://github.com/ydoc5212/playlist-search-extension" target="_blank" rel="noopener">Contribute to the repository here.</a></p>
+    </div>
+    <div class="oss-shelf">
+      <div class="oss-shelf-surface"></div>
+    </div>
+  </section>
+
+  <!-- Problem -->
+  <section class="problem">
+    <div class="problem-text">
+      <h2>Break the 200 playlist limit</h2>
+      <p>YouTube's save dialog silently caps at 200 playlists. The rest just disappear. This extension loads your entire library through the YouTube API.</p>
+    </div>
+    <div class="compare">
+      <div class="compare-card">
+        <div class="compare-label">Without extension</div>
+        <div class="compare-count">200</div>
+        <div class="compare-desc">YouTube's built-in cap</div>
+        <div class="compare-bar"><div class="compare-fill limited"></div></div>
+      </div>
+      <div class="compare-card enhanced">
+        <div class="compare-label">With Playlist Filter</div>
+        <div class="compare-count">847</div>
+        <div class="compare-desc">All your playlists, searchable</div>
+        <div class="compare-bar"><div class="compare-fill full"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Bottom CTA -->
+  <section class="bottom-cta">
+    <h2>Your playlists miss you.</h2>
+    <a class="cta" href="https://chromewebstore.google.com/detail/efgbkmnooapcpdpgmihemfpedchhmmek" target="_blank">Add to Chrome, free forever</a>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="footer-links">
+      <a href="https://ydoc5212.github.io/playlist-search-extension/privacy-policy.html">Privacy Policy</a>
+      <a href="https://github.com/ydoc5212/playlist-search-extension">GitHub</a>
+    </div>
+    <span class="built-by">built by <a href="https://codyh.xyz" target="_blank" rel="noopener">cody h</a></span>
+  </footer>
+
+  <script defer src="/_vercel/insights/script.js"></script>
+  <script>
+    // Parallax: each slab moves at its own speed based on data-speed
+    const slabs = document.querySelectorAll('.slab');
+    const initialTops = new Map();
+
+    slabs.forEach(slab => {
+      initialTops.set(slab, parseFloat(getComputedStyle(slab).top) || 0);
+    });
+
+    let ticking = false;
+    function onScroll() {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const scrollY = window.scrollY;
+        slabs.forEach(slab => {
+          const speed = parseFloat(slab.dataset.speed) || 0.5;
+          const initialTop = initialTops.get(slab);
+          const offset = scrollY * (1 - speed);
+          // Preserve the existing transform and add translateY
+          const existingTransform = slab.style.transform || getComputedStyle(slab).transform;
+          // We need to use a wrapper approach — set CSS custom property
+          slab.style.setProperty('--parallax-y', `${-offset}px`);
+        });
+        ticking = false;
+      });
+    }
+
+    // Override: use CSS custom property for parallax offset
+    // Re-implement with translate added to existing transforms
+    const slabData = [];
+    slabs.forEach(slab => {
+      const cs = getComputedStyle(slab);
+      // Store the original CSS transform from the stylesheet
+      const rect = slab.getBoundingClientRect();
+      const speed = parseFloat(slab.dataset.speed) || 0.5;
+      slabData.push({ el: slab, speed });
+    });
+
+    // Use a simpler approach: wrap each slab's transform
+    // Read original transforms from computed style before any JS runs
+    const origTransforms = new Map();
+    slabs.forEach(slab => {
+      // Get the CSS-declared transform (before parallax)
+      origTransforms.set(slab, slab.style.cssText);
+    });
+
+    // Parallax via top offset (simpler, avoids transform conflicts)
+    function updateParallax() {
+      const scrollY = window.scrollY;
+      slabs.forEach(slab => {
+        const speed = parseFloat(slab.dataset.speed) || 0.5;
+        const offset = scrollY * (1 - speed);
+        slab.style.marginTop = `${-offset}px`;
+      });
+    }
+
+    window.addEventListener('scroll', () => {
+      requestAnimationFrame(updateParallax);
+    }, { passive: true });
+
+    // Explode slabs on click
+    function explodeSlab(slab, e) {
+      const rect = slab.getBoundingClientRect();
+      const bg = getComputedStyle(slab).background;
+      const shardCount = 12 + Math.floor(Math.random() * 8);
+
+      // Spawn shards from click point
+      for (let i = 0; i < shardCount; i++) {
+        const shard = document.createElement('div');
+        shard.className = 'shard';
+
+        // Random shard size
+        const w = 20 + Math.random() * (rect.width * 0.25);
+        const h = 15 + Math.random() * (rect.height * 0.2);
+        shard.style.width = w + 'px';
+        shard.style.height = h + 'px';
+
+        // Match the slab's visual style
+        shard.style.background = slab.style.background || bg;
+        shard.style.backdropFilter = 'blur(12px)';
+        shard.style.webkitBackdropFilter = 'blur(12px)';
+        shard.style.border = '1px solid rgba(255,100,100,0.15)';
+
+        // Position at click point
+        shard.style.left = (e.clientX - w / 2) + 'px';
+        shard.style.top = (e.clientY - h / 2) + 'px';
+
+        // Random fly direction
+        const angle = (Math.PI * 2 / shardCount) * i + (Math.random() - 0.5) * 0.8;
+        const dist = 150 + Math.random() * 350;
+        const dx = Math.cos(angle) * dist;
+        const dy = Math.sin(angle) * dist;
+        const rot = (Math.random() - 0.5) * 720;
+
+        shard.style.setProperty('--shard-x', dx + 'px');
+        shard.style.setProperty('--shard-y', dy + 'px');
+        shard.style.setProperty('--shard-r', rot + 'deg');
+
+        // Slight delay variation
+        shard.style.animationDelay = (Math.random() * 0.08) + 's';
+        shard.style.animationDuration = (0.6 + Math.random() * 0.5) + 's';
+
+        document.body.appendChild(shard);
+        shard.addEventListener('animationend', () => shard.remove());
+      }
+
+      // Fade out and disable clicks
+      slab.style.transition = 'opacity 0.3s ease-out';
+      slab.style.opacity = '0';
+      slab.style.pointerEvents = 'none';
+
+      // Respawn after a delay
+      setTimeout(() => {
+        slab.style.transition = 'opacity 3s ease-in';
+        slab.style.opacity = '';
+        setTimeout(() => { slab.style.pointerEvents = ''; }, 3000);
+      }, 8000);
+    }
+
+    slabs.forEach(slab => {
+      slab.addEventListener('click', (e) => explodeSlab(slab, e));
+    });
+  </script>
+
+</body>
+</html>
