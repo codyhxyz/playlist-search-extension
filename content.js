@@ -15,6 +15,17 @@
   const MODAL_API_TOOLTIP_TEXT =
     "YouTube caps at 200 playlists. Authorize to load all of them.";
 
+  const MSG_CONNECT = "YTPF_CONNECT";
+  const MSG_SAVE_VIDEO = "YTPF_SAVE_VIDEO";
+  const MSG_GET_PLAYLISTS = "YTPF_GET_PLAYLISTS";
+  const MSG_GET_AUTH_STATUS = "YTPF_GET_AUTH_STATUS";
+
+  const BM25_SEARCH_OPTIONS = {
+    prefix: true,
+    fuzzy: 0.2,
+    combineWith: "OR",
+  };
+
   const MODAL_HOST_SELECTOR =
     "ytd-add-to-playlist-renderer, yt-add-to-playlist-renderer, yt-contextual-sheet-layout, tp-yt-paper-dialog, [role='dialog']";
 
@@ -59,10 +70,10 @@
     .ytpf-input {
       width: 100%;
       height: 36px;
-      border: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.2));
+      border: 1px solid var(--yt-spec-text-secondary, rgba(0, 0, 0, 0.2));
       border-radius: 18px;
       padding: 0 32px 0 12px;
-      background: transparent;
+      background: var(--yt-spec-general-background-a, rgba(255, 255, 255, 0.08));
       color: var(--yt-spec-text-primary, #0f0f0f);
       font-family: Roboto, Arial, sans-serif;
       font-size: 14px;
@@ -121,11 +132,11 @@
     }
     .ytpf-connect-bar button {
       height: 26px;
-      border: 1px solid rgba(240, 180, 0, 0.5);
+      border: 1px solid var(--yt-spec-call-to-action, rgba(6, 95, 212, 0.5));
       border-radius: 13px;
       padding: 0 12px;
       background: transparent;
-      color: #7a5900;
+      color: var(--yt-spec-call-to-action, #065fd4);
       font-family: Roboto, Arial, sans-serif;
       font-size: 12px;
       font-weight: 600;
@@ -133,7 +144,7 @@
       white-space: nowrap;
     }
     .ytpf-connect-bar button:hover {
-      background: rgba(240, 180, 0, 0.15);
+      background: color-mix(in srgb, var(--yt-spec-call-to-action, #065fd4) 12%, transparent);
     }
     .ytpf-inline-modal {
       padding: 6px 12px 4px;
@@ -293,11 +304,9 @@
 
   function showRow(row) {
     if (!row) return;
-    const previousDisplay = hiddenRows.get(row);
-    if (previousDisplay === undefined) {
-      row.style.removeProperty("display");
-    } else if (previousDisplay) {
-      row.style.display = previousDisplay;
+    const prev = hiddenRows.get(row);
+    if (prev) {
+      row.style.display = prev;
     } else {
       row.style.removeProperty("display");
     }
@@ -341,8 +350,7 @@
   }
 
   function nowMs() {
-    if (window.performance?.now) return window.performance.now();
-    return Date.now();
+    return performance.now();
   }
 
   function waitMs(ms) {
@@ -360,6 +368,10 @@
       .toLowerCase()
       .replace(/\s+/g, " ")
       .trim();
+  }
+
+  function splitTerms(query) {
+    return (query || "").split(" ").filter(Boolean);
   }
 
   function closestComposed(node, selector) {
@@ -382,11 +394,7 @@
     const bm25 = new MiniSearch({
       fields: ["text"],
       storeFields: ["rowId"],
-      searchOptions: {
-        prefix: true,
-        fuzzy: 0.2,
-        combineWith: "OR",
-      },
+      searchOptions: BM25_SEARCH_OPTIONS,
     });
 
     const docs = rows.map((row, index) => ({
@@ -416,11 +424,7 @@
         })
         .filter(Boolean);
     }
-    const results = ctrl.bm25.search(query, {
-      prefix: true,
-      fuzzy: 0.2,
-      combineWith: "OR",
-    });
+    const results = ctrl.bm25.search(query, BM25_SEARCH_OPTIONS);
 
     const matches = [];
     const seenRows = new Set();
@@ -498,11 +502,9 @@
 
     if (el.getClientRects().length > 0) return true;
 
-    let checked = 0;
-    for (const child of el.children) {
-      if (checked > 10) break;
-      checked += 1;
-      if (child.getClientRects().length > 0) return true;
+    const children = el.children;
+    for (let i = 0; i < Math.min(children.length, 10); i++) {
+      if (children[i].getClientRects().length > 0) return true;
     }
 
     return false;
@@ -648,14 +650,10 @@
         (isVisible(row) || hiddenRows.has(row)) && getItemText(row).length > 0,
     );
 
-    if (directRows.length) {
-      return { rows: directRows, source: "direct" };
-    }
+    if (directRows.length) return directRows;
 
     const checkboxes = queryAllDeep(CHECKBOX_SELECTOR, host);
-    if (checkboxes.length < 2) {
-      return { rows: [], source: null };
-    }
+    if (checkboxes.length < 2) return [];
 
     const genericRows = unique(
       checkboxes
@@ -666,15 +664,19 @@
       return text.length >= 2 && text.length <= 200;
     });
 
-    if (genericRows.length < 3) {
-      return { rows: [], source: null };
-    }
-
-    return { rows: genericRows, source: "generic" };
+    if (genericRows.length < 3) return [];
+    return genericRows;
   }
 
+  let _feedPageCachePath = "";
+  let _feedPageCacheResult = false;
   function isPlaylistsFeedPage() {
-    return PLAYLISTS_FEED_PATH_RE.test(window.location.pathname);
+    const path = window.location.pathname;
+    if (path !== _feedPageCachePath) {
+      _feedPageCachePath = path;
+      _feedPageCacheResult = PLAYLISTS_FEED_PATH_RE.test(path);
+    }
+    return _feedPageCacheResult;
   }
 
   function getGridContents(grid) {
@@ -684,17 +686,14 @@
     return Array.from(grid.children).find((child) => child.id === "contents") || null;
   }
 
-  function hasPlaylistLink(node) {
+  function hasDeepMatch(node, selector) {
     if (!node) return false;
-    if (node.querySelector?.(PLAYLIST_LINK_SELECTOR)) return true;
-    return Boolean(queryAllDeep(PLAYLIST_LINK_SELECTOR, node).length);
+    if (node.querySelector?.(selector)) return true;
+    return Boolean(queryAllDeep(selector, node).length);
   }
 
-  function hasPlaylistRenderer(node) {
-    if (!node) return false;
-    if (node.querySelector?.(PLAYLIST_RENDERER_SELECTOR)) return true;
-    return Boolean(queryAllDeep(PLAYLIST_RENDERER_SELECTOR, node).length);
-  }
+  const hasPlaylistLink = (node) => hasDeepMatch(node, PLAYLIST_LINK_SELECTOR);
+  const hasPlaylistRenderer = (node) => hasDeepMatch(node, PLAYLIST_RENDERER_SELECTOR);
 
   function toOuterPlaylistRow(node, contents) {
     if (!node || !contents) return null;
@@ -704,6 +703,41 @@
       return node;
     }
     return null;
+  }
+
+  function collectGridRows(contents) {
+    const isNotFilter = (row) => !row.classList.contains(FILTER_CLASS);
+
+    const fromRenderers = unique(
+      queryAllDeep(PLAYLIST_RENDERER_SELECTOR, contents)
+        .filter(hasPlaylistLink)
+        .map((r) => toOuterPlaylistRow(r, contents))
+        .filter(Boolean),
+    ).filter(isNotFilter);
+
+    if (fromRenderers.length) return fromRenderers;
+
+    const fromLinks = unique(
+      queryAllDeep(PLAYLIST_LINK_SELECTOR, contents)
+        .map((link) => toOuterPlaylistRow(link, contents))
+        .filter(Boolean),
+    ).filter(isNotFilter);
+
+    if (fromLinks.length) return fromLinks;
+
+    return unique(queryAllDeep(PLAYLISTS_OUTER_ROW_SELECTOR, contents));
+  }
+
+  function scoreCandidate(contents, rows) {
+    const visibleRows = rows.filter((row) => isVisible(row) || hiddenRows.has(row));
+    return [isVisible(contents) ? 1 : 0, visibleRows.length, rows.length];
+  }
+
+  function compareCandidateScores(a, b) {
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) return a[i] - b[i];
+    }
+    return 0;
   }
 
   function collectFeedPageSurface() {
@@ -720,26 +754,7 @@
       const contents = getGridContents(grid);
       if (!contents) return;
 
-      const outerRowsFromRenderers = unique(
-        queryAllDeep(PLAYLIST_RENDERER_SELECTOR, contents)
-          .filter(hasPlaylistLink)
-          .map((renderer) => toOuterPlaylistRow(renderer, contents))
-          .filter(Boolean),
-      ).filter((row) => !row.classList.contains(FILTER_CLASS));
-
-      const outerRowsFromLinks = unique(
-        queryAllDeep(PLAYLIST_LINK_SELECTOR, contents)
-          .map((link) => toOuterPlaylistRow(link, contents))
-          .filter(Boolean),
-      ).filter((row) => !row.classList.contains(FILTER_CLASS));
-
-      const rows = (
-        outerRowsFromRenderers.length
-          ? outerRowsFromRenderers
-          : outerRowsFromLinks.length
-            ? outerRowsFromLinks
-            : unique(queryAllDeep(PLAYLISTS_OUTER_ROW_SELECTOR, contents))
-      ).filter(
+      const rows = collectGridRows(contents).filter(
         (row) =>
           !row.classList.contains(FILTER_CLASS) &&
           hasPlaylistRenderer(row) &&
@@ -748,26 +763,9 @@
 
       if (!rows.length) return;
 
-      const visibleRows = rows.filter((row) => isVisible(row) || hiddenRows.has(row));
-      const candidate = {
-        contents,
-        rows,
-        score: [
-          isVisible(contents) ? 1 : 0,
-          visibleRows.length,
-          rows.length,
-        ],
-      };
-
-      if (!best) {
-        best = candidate;
-        return;
-      }
-
-      const [a0, a1, a2] = candidate.score;
-      const [b0, b1, b2] = best.score;
-      if (a0 > b0 || (a0 === b0 && (a1 > b1 || (a1 === b1 && a2 > b2)))) {
-        best = candidate;
+      const score = scoreCandidate(contents, rows);
+      if (!best || compareCandidateScores(score, best.score) > 0) {
+        best = { contents, rows, score };
       }
     });
 
@@ -841,11 +839,9 @@
     const input = document.createElement("input");
     input.className = "ytpf-input";
     input.type = "text";
-    input.placeholder =
-      surface === "page"
-        ? "Filter this page"
-        : "Search playlists";
-    input.setAttribute("aria-label", "Search playlists");
+    const label = surface === "page" ? "Filter this page" : "Search playlists";
+    input.placeholder = label;
+    input.setAttribute("aria-label", label);
     input.autocomplete = "off";
     input.spellcheck = false;
 
@@ -865,10 +861,8 @@
     meta.className = "ytpf-meta";
     meta.setAttribute("aria-live", "polite");
 
-    if (surface === "modal") {
-      root.appendChild(row);
-    } else {
-      root.appendChild(row);
+    root.appendChild(row);
+    if (surface !== "modal") {
       root.appendChild(meta);
     }
 
@@ -950,7 +944,7 @@
   function shouldHydrateModal(ctrl) {
     if (ctrl.surface !== "modal") return false;
     if (Array.isArray(apiSessionCache.playlists) && apiSessionCache.playlists.length > 0) return false;
-    if (ctrl.hydrationRunning) return false;
+    if (ctrl.hydrationPromise) return false;
     if (!ctrl.host.isConnected) return false;
 
     const known = modalSessionCache.maxRowsSeen || 0;
@@ -965,7 +959,6 @@
     const container = findModalScrollContainer(ctrl);
     if (!container) return;
 
-    ctrl.hydrationRunning = true;
     ctrl.hydrationToken = (ctrl.hydrationToken || 0) + 1;
     const runToken = ctrl.hydrationToken;
     const startedAt = nowMs();
@@ -993,7 +986,7 @@
         if (!ctrl.host.isConnected) break;
         if (ctrl.hydrationToken !== runToken) break;
 
-        const nextRows = collectRows(ctrl.host).rows;
+        const nextRows = collectRows(ctrl.host);
         if (nextRows.length && !sameRows(ctrl.rows, nextRows)) {
           upsertHost(ctrl.host, nextRows, "modal");
         }
@@ -1029,9 +1022,7 @@
       if (finalCtrl === ctrl) {
         applyFilter(ctrl);
       }
-    } finally {
-      ctrl.hydrationRunning = false;
-    }
+    } finally { /* hydrationPromise cleared by caller's .finally() */ }
   }
 
   function maybeStartModalHydration(ctrl) {
@@ -1111,7 +1102,7 @@
     const normalizedQuery = normalizeText(query);
     if (!normalizedQuery) return [];
 
-    const terms = normalizedQuery.split(" ").filter(Boolean);
+    const terms = splitTerms(normalizedQuery);
     return playlists
       .map((playlist) => {
         const text = normalizeText(playlist.title);
@@ -1148,7 +1139,7 @@
     ctrl.apiNotice = "";
     renderModalApiUi(ctrl, normalizeText(ctrl.input.value));
 
-    runtimeMessage({ type: "YTPF_CONNECT", forceReauth })
+    runtimeMessage({ type: MSG_CONNECT, forceReauth })
       .then((response) => {
         apiSessionCache.authStatus = response.status;
         return loadAllPlaylistsFromApi(ctrl, {
@@ -1235,7 +1226,7 @@
         add.disabled = true;
         add.textContent = "Saving\u2026";
         runtimeMessage({
-          type: "YTPF_SAVE_VIDEO",
+          type: MSG_SAVE_VIDEO,
           playlistId: playlist.id,
           videoId,
           interactive: true,
@@ -1285,7 +1276,7 @@
     const forceRefresh = Boolean(options.forceRefresh);
     const interactive = Boolean(options.interactive);
     const response = await runtimeMessage({
-      type: "YTPF_GET_PLAYLISTS",
+      type: MSG_GET_PLAYLISTS,
       interactive,
       forceRefresh,
     });
@@ -1307,7 +1298,7 @@
 
     try {
       if (!apiSessionCache.authStatus) {
-        const authResponse = await runtimeMessage({ type: "YTPF_GET_AUTH_STATUS" });
+        const authResponse = await runtimeMessage({ type: MSG_GET_AUTH_STATUS });
         apiSessionCache.authStatus = authResponse.status;
       }
 
@@ -1362,7 +1353,6 @@
     if (!ctrl) return;
 
     ctrl.hydrationToken = (ctrl.hydrationToken || 0) + 1;
-    ctrl.hydrationRunning = false;
     ctrl.hydrationPromise = null;
     ctrl.apiToken = (ctrl.apiToken || 0) + 1;
     ctrl.apiBusy = false;
@@ -1385,15 +1375,13 @@
   function applyFilter(ctrl) {
     const query = normalizeText(ctrl.input.value);
     const fullSet = ctrl.rows;
-    let matches = [];
+    const isModal = ctrl.surface === "modal";
 
     suppressMutations(160);
 
-    if (!query) {
-      matches = fullSet.map((row) => ({ row, score: 0, terms: [] }));
-    } else {
-      matches = searchWithBm25(ctrl, query);
-    }
+    const matches = query
+      ? searchWithBm25(ctrl, query)
+      : fullSet.map((row) => ({ row, score: 0, terms: [] }));
 
     const matchSet = new Set(matches.map((m) => m.row));
     fullSet.forEach((row) => {
@@ -1405,8 +1393,9 @@
       }
     });
 
+    const scrollContainer = isModal ? findModalScrollContainer(ctrl) : null;
+
     if (query && ctrl.sortResults && ctrl.parent?.isConnected) {
-      const scrollContainer = findModalScrollContainer(ctrl);
       const scrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
 
       const matchedRows = matches.map((m) => m.row);
@@ -1427,10 +1416,9 @@
     }
 
     if (query) {
+      const fallbackTerms = splitTerms(query);
       matches.forEach((m) => {
-        const fallbackTerms = query.split(" ").filter(Boolean);
-        const terms = m.terms?.length ? m.terms : fallbackTerms;
-        applyHighlight(m.row, terms);
+        applyHighlight(m.row, m.terms?.length ? m.terms : fallbackTerms);
       });
     } else {
       fullSet.forEach(restoreHighlight);
@@ -1438,21 +1426,19 @@
 
     ctrl.clear.classList.toggle("ytpf-clear-visible", Boolean(query));
 
-    if (query && ctrl.surface === "modal") {
-      const sc = findModalScrollContainer(ctrl);
-      if (sc) sc.scrollTop = 0;
+    if (query && scrollContainer) {
+      scrollContainer.scrollTop = 0;
     }
 
-    const safeTotal = Math.max(0, ctrl.rows.length);
-    const safeVisible = Math.max(0, matches.length);
-
     if (ctrl.surface === "page") {
+      const safeTotal = Math.max(0, ctrl.rows.length);
+      const safeVisible = Math.max(0, matches.length);
       ctrl.meta.textContent = query
         ? `${safeVisible} of ${safeTotal} playlists on this page`
         : `${safeTotal} playlists on this page`;
     }
 
-    if (ctrl.surface === "modal") {
+    if (isModal) {
       renderModalApiUi(ctrl, query);
     }
   }
@@ -1489,7 +1475,6 @@
       sortResults: surface === "modal",
       synthRows: [],
       hydrationToken: 0,
-      hydrationRunning: false,
       hydrationPromise: null,
       apiToken: 0,
       apiBusy: false,
@@ -1539,6 +1524,7 @@
   }
 
   function upsertHost(host, rows, surface = "modal") {
+    if (!rows.length) return;
     const existing = controllers.get(host);
 
     if (!existing) {
@@ -1588,7 +1574,7 @@
     queryAllDeep(MODAL_HOST_SELECTOR)
       .filter(isVisible)
       .forEach((host) => {
-        const { rows } = collectRows(host);
+        const rows = collectRows(host);
         if (!rows.length) return;
 
         activeHosts.add(host);
