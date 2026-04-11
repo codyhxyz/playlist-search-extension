@@ -1,6 +1,7 @@
 node_modules/
 dist/
 oauth_config.json
+.oauth.local.json
 store-generated/
 store-generator/node_modules/
 .DS_Store

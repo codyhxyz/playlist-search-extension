@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "YouTube Playlist Search",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "Ctrl+F for your playlist collection. Built right into YouTube.",
   "minimum_chrome_version": "114",
   "homepage_url": "https://ydoc5212.github.io/playlist-search-extension/",

@@ -1521,6 +1521,7 @@
         if (liveCtrl) {
           bootstrapModalApi(liveCtrl);
         }
+        ui.input.focus();
       }, 0);
     }
   }

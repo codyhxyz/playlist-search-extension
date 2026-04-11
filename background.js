@@ -11,8 +11,19 @@ const STORAGE_KEYS = {
   customOauthVersion: "ytpf_custom_oauth_mode_version",
 };
 
-const DEFAULT_OAUTH_CLIENT_ID = "619930870075-9vhlm3etaolakv3824c12qnfivrkt408.apps.googleusercontent.com";
-const DEFAULT_OAUTH_CLIENT_SECRET = "";
+// NOTE: This is a Google "Web application" OAuth client used from a Chrome
+// extension. Google requires a client_secret for this client type, but in an
+// extension context the secret ships inside the .crx anyway — it is not
+// actually confidential. Security for this flow comes from PKCE plus the
+// Authorized redirect URI registered in Google Cloud Console, which restricts
+// auth codes to this extension's chromiumapp.org URL.
+//
+// The default ID/secret are left blank in source and injected at build time
+// from .oauth.local.json (gitignored) via scripts/build-store-zip.sh. Users
+// who build from source can either populate that file or configure a custom
+// OAuth client at runtime via the extension's settings.
+const DEFAULT_OAUTH_CLIENT_ID = "__OAUTH_CLIENT_ID__";
+const DEFAULT_OAUTH_CLIENT_SECRET = "__OAUTH_CLIENT_SECRET__";
 
 const YT_SCOPES = [
   "https://www.googleapis.com/auth/youtube.force-ssl",
