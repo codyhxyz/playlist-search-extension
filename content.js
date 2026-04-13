@@ -47,7 +47,7 @@
 
   const ITEM_TEXT_SELECTOR =
     "#label, #video-title, .playlist-title, yt-formatted-string[id='label'], yt-formatted-string, span#label, a#video-title, h3";
-  const INLINE_STYLE_TEXT = `
+  const FILTER_BASE_STYLES = `
     .ytpf-inline {
       position: sticky;
       top: 0;
@@ -126,26 +126,9 @@
       border-radius: 3px;
       padding: 0 1px;
     }
-    .ytpf-connect-bar {
-      margin-top: 6px;
-      text-align: center;
-    }
-    .ytpf-connect-bar button {
-      height: 26px;
-      border: 1px solid var(--yt-spec-call-to-action, rgba(6, 95, 212, 0.5));
-      border-radius: 13px;
-      padding: 0 12px;
-      background: transparent;
-      color: var(--yt-spec-call-to-action, #065fd4);
-      font-family: Roboto, Arial, sans-serif;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      white-space: nowrap;
-    }
-    .ytpf-connect-bar button:hover {
-      background: color-mix(in srgb, var(--yt-spec-call-to-action, #065fd4) 12%, transparent);
-    }
+  `;
+
+  const MODAL_STYLES = `
     .ytpf-inline-modal {
       padding: 6px 12px 4px;
       border-bottom-color: var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.08));
@@ -162,52 +145,9 @@
     .ytpf-inline-modal .ytpf-meta {
       display: none;
     }
-    .ytpf-synth-row {
-      display: flex;
-      align-items: center;
-      padding: 8px 16px;
-      gap: 12px;
-      min-height: 48px;
-      cursor: default;
-    }
-    .ytpf-synth-title {
-      flex: 1;
-      min-width: 0;
-      color: var(--yt-spec-text-primary, #0f0f0f);
-      font-family: Roboto, Arial, sans-serif;
-      font-size: 14px;
-      line-height: 1.3;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .ytpf-synth-add {
-      height: 28px;
-      border: 1px solid rgba(6, 95, 212, 0.42);
-      border-radius: 14px;
-      padding: 0 12px;
-      background: transparent;
-      color: var(--yt-spec-call-to-action, #065fd4);
-      font-family: Roboto, Arial, sans-serif;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-    .ytpf-synth-add:hover {
-      background: rgba(6, 95, 212, 0.08);
-    }
-    .ytpf-synth-add:disabled {
-      opacity: 0.5;
-      cursor: default;
-    }
-    .ytpf-synth-saved {
-      color: var(--yt-spec-text-secondary, #606060);
-      font-family: Roboto, Arial, sans-serif;
-      font-size: 12px;
-      flex-shrink: 0;
-    }
+  `;
+
+  const MODAL_EXPANDED_STYLES = `
     .ytpf-modal-expanded #playlists,
     .ytpf-modal-expanded #contents,
     .ytpf-modal-expanded yt-checkbox-list-renderer,
@@ -218,6 +158,9 @@
     .ytpf-modal-expanded tp-yt-paper-dialog {
       max-height: min(84vh, 860px) !important;
     }
+  `;
+
+  const PAGE_STYLES = `
     .ytpf-inline-page {
       position: static;
       top: auto;
@@ -255,6 +198,79 @@
     }
   `;
 
+  const PILL_BUTTON_STYLES = `
+    .ytpf-pill-btn {
+      height: 28px;
+      border: 1px solid rgba(6, 95, 212, 0.42);
+      border-radius: 14px;
+      padding: 0 12px;
+      background: transparent;
+      color: var(--yt-spec-call-to-action, #065fd4);
+      font-family: Roboto, Arial, sans-serif;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .ytpf-pill-btn:hover {
+      background: rgba(6, 95, 212, 0.08);
+    }
+    .ytpf-pill-btn:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+  `;
+
+  const SYNTH_STYLES = `
+    .ytpf-synth-row {
+      display: flex;
+      align-items: center;
+      padding: 8px 16px;
+      gap: 12px;
+      min-height: 48px;
+      cursor: default;
+    }
+    .ytpf-synth-title {
+      flex: 1;
+      min-width: 0;
+      color: var(--yt-spec-text-primary, #0f0f0f);
+      font-family: Roboto, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ytpf-synth-saved {
+      color: var(--yt-spec-text-secondary, #606060);
+      font-family: Roboto, Arial, sans-serif;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+  `;
+
+  const CONNECT_BAR_STYLES = `
+    .ytpf-connect-bar {
+      margin-top: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .ytpf-connect-msg {
+      font-family: Roboto, Arial, sans-serif;
+      font-size: 12px;
+      color: var(--yt-spec-text-secondary, #606060);
+    }
+    .ytpf-connect-error {
+      color: #c00;
+    }
+  `;
+
+  const ALL_STYLES = [FILTER_BASE_STYLES, MODAL_STYLES, MODAL_EXPANDED_STYLES, PAGE_STYLES, PILL_BUTTON_STYLES, SYNTH_STYLES, CONNECT_BAR_STYLES].join("\n");
+
   const textCache = new WeakMap();
   const hiddenRows = new WeakMap();
   const labelHtmlCache = new WeakMap();
@@ -282,7 +298,7 @@
 
     const style = document.createElement("style");
     style.id = STYLE_ID;
-    style.textContent = INLINE_STYLE_TEXT;
+    style.textContent = ALL_STYLES;
 
     if (rootNode instanceof ShadowRoot) {
       rootNode.appendChild(style);
@@ -1137,6 +1153,7 @@
 
     ctrl.apiBusy = true;
     ctrl.apiNotice = "";
+    renderConnectBar(ctrl);
     renderModalApiUi(ctrl, normalizeText(ctrl.input.value));
 
     runtimeMessage({ type: MSG_CONNECT, forceReauth })
@@ -1159,6 +1176,7 @@
       })
       .finally(() => {
         ctrl.apiBusy = false;
+        renderConnectBar(ctrl);
         renderModalApiUi(ctrl, normalizeText(ctrl.input.value));
       });
   }
@@ -1217,8 +1235,9 @@
 
       const add = document.createElement("button");
       add.type = "button";
-      add.className = "ytpf-synth-add";
+      add.className = "ytpf-pill-btn";
       add.textContent = "Save";
+      add.setAttribute("aria-label", `Save video to ${playlist.title || "playlist"}`);
       add.addEventListener("click", () => {
         const videoId = getCurrentVideoId(ctrl.host);
         if (!videoId) return;
@@ -1317,35 +1336,71 @@
       if (ctrl.apiToken === token) {
         ctrl.apiBusy = false;
         renderModalApiUi(ctrl, normalizeText(ctrl.input.value));
-        maybeShowConnectBar(ctrl);
+        renderConnectBar(ctrl);
       }
     }
   }
 
-  function maybeShowConnectBar(ctrl) {
+  function renderConnectBar(ctrl) {
     if (ctrl.surface !== "modal") return;
-    if (ctrl.root.querySelector(".ytpf-connect-bar")) return;
+
+    let bar = ctrl.root.querySelector(".ytpf-connect-bar");
 
     const auth = apiSessionCache.authStatus || {};
-    if (!auth.hasClientId) return;
+    if (!auth.hasClientId) {
+      if (bar) bar.remove();
+      return;
+    }
 
-    const { needsPrompt } = getModalApiPromptState(ctrl);
-    if (!needsPrompt) return;
+    const { needsPrompt, hasApiLibrary } = getModalApiPromptState(ctrl);
 
-    const bar = document.createElement("div");
-    bar.className = "ytpf-connect-bar";
-    bar.title = "YouTube only loads 200 playlists. Connect to search all of them.";
+    if (hasApiLibrary && !ctrl.apiNotice) {
+      if (bar) bar.remove();
+      return;
+    }
 
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.textContent = "Load all playlists";
-    btn.addEventListener("click", () => {
-      bar.remove();
-      connectApi(ctrl);
-    });
+    if (!needsPrompt && !ctrl.apiBusy && !ctrl.apiNotice) {
+      if (bar) bar.remove();
+      return;
+    }
 
-    bar.appendChild(btn);
-    ctrl.root.appendChild(bar);
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.className = "ytpf-connect-bar";
+      ctrl.root.appendChild(bar);
+    }
+
+    bar.textContent = "";
+
+    if (ctrl.apiBusy) {
+      const msg = document.createElement("span");
+      msg.className = "ytpf-connect-msg";
+      msg.textContent = "Connecting\u2026";
+      bar.appendChild(msg);
+    } else if (ctrl.apiNotice) {
+      const msg = document.createElement("span");
+      msg.className = "ytpf-connect-msg ytpf-connect-error";
+      msg.textContent = ctrl.apiNotice;
+      bar.appendChild(msg);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ytpf-pill-btn";
+      btn.textContent = "Retry";
+      btn.addEventListener("click", () => connectApi(ctrl, { forceReauth: true }));
+      bar.appendChild(btn);
+    } else if (needsPrompt) {
+      const msg = document.createElement("span");
+      msg.className = "ytpf-connect-msg";
+      msg.textContent = "YouTube only loads 200 playlists.";
+      bar.appendChild(msg);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ytpf-pill-btn";
+      btn.textContent = "Load all playlists";
+      btn.setAttribute("aria-label", "Load all playlists from your account");
+      btn.addEventListener("click", () => connectApi(ctrl));
+      bar.appendChild(btn);
+    }
   }
 
   function teardownHost(host) {
