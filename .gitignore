@@ -2,8 +2,16 @@ node_modules/
 dist/
 oauth_config.json
 .oauth.local.json
-store-generated/
-store-generator/node_modules/
 .DS_Store
-launch/
 *.zip
+
+# Internal / maintainer-only
+store/
+store-assets/
+store-generator/
+store-generated/
+scripts/
+docs/superpowers/
+launch/
+launch-strategy/
+QA_CHECKLIST.md
