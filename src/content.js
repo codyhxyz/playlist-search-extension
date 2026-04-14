@@ -326,6 +326,9 @@
   const labelHtmlCache = new WeakMap();
   const controllerHosts = new Set();
   const controllers = new WeakMap();
+  let _bodyObserver = null;
+  let _onNavigateFinish = null;
+  let _onPageDataUpdated = null;
   const apiSessionCache = {
     authStatus: null,
     playlists: null,
@@ -1172,8 +1175,17 @@
           });
       };
 
+      row.setAttribute("role", "button");
+      row.setAttribute("tabindex", "0");
+
       row.addEventListener("click", () => {
         if (!action.classList.contains(SYNTH_DONE_CLASS)) handleSave();
+      });
+      row.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          if (!action.classList.contains(SYNTH_DONE_CLASS)) handleSave();
+        }
       });
 
       row.appendChild(action);
@@ -1372,6 +1384,21 @@
 
     controllers.delete(host);
     controllerHosts.delete(host);
+
+    if (controllerHosts.size === 0) {
+      if (_bodyObserver) {
+        _bodyObserver.disconnect();
+        _bodyObserver = null;
+      }
+      if (_onNavigateFinish) {
+        window.removeEventListener("yt-navigate-finish", _onNavigateFinish);
+        _onNavigateFinish = null;
+      }
+      if (_onPageDataUpdated) {
+        window.removeEventListener("yt-page-data-updated", _onPageDataUpdated);
+        _onPageDataUpdated = null;
+      }
+    }
   }
 
   function applyFilter(ctrl) {
@@ -1618,20 +1645,22 @@
       return;
     }
 
-    const observer = new MutationObserver((mutations) => {
+    _bodyObserver = new MutationObserver((mutations) => {
       if (shouldRefreshFromMutations(mutations)) {
         scheduleRefresh();
       }
     });
-    observer.observe(document.body, { childList: true, subtree: true });
+    _bodyObserver.observe(document.body, { childList: true, subtree: true });
 
     refresh();
 
-    window.addEventListener("yt-navigate-finish", () => {
+    _onNavigateFinish = () => {
       setTimeout(refresh, 250);
-    });
+    };
+    _onPageDataUpdated = scheduleRefresh;
 
-    window.addEventListener("yt-page-data-updated", scheduleRefresh);
+    window.addEventListener("yt-navigate-finish", _onNavigateFinish);
+    window.addEventListener("yt-page-data-updated", _onPageDataUpdated);
   }
 
   start();

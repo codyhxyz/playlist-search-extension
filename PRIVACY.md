@@ -39,6 +39,18 @@ The extension runs as a content script on `youtube.com` pages and uses a backgro
 
 The extension bundles a local copy of MiniSearch for BM25-based ranking. No remote executable code is loaded at runtime.
 
+## Google API Services Compliance
+
+This extension's use and transfer to any other app of information received from Google APIs adheres to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.
+
+The extension also complies with the [YouTube API Services Terms of Service](https://developers.google.com/youtube/terms/api-services-terms-of-service).
+
+Specifically, the extension limits its use of data obtained through Google APIs to providing and improving the playlist search functionality described in this policy. It does not:
+
+- Transfer data to third parties unless necessary to provide the extension's core functionality
+- Use data for serving advertisements
+- Use data for purposes unrelated to the extension's playlist search and save features
+
 ## Changes
 
 If this policy changes, the updated version will be posted on this page with a new "Last updated" date.
