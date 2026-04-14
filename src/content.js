@@ -6,15 +6,11 @@
   const STYLE_ID = "ytpf-inline-style";
   const MODAL_EXPANDED_CLASS = "ytpf-modal-expanded";
   const MODAL_INLINE_CLASS = "ytpf-inline-modal";
-  const MODAL_HYDRATE_TIMEOUT_MS = 2500;
-  const MODAL_HYDRATE_IDLE_MS = 70;
-  const MODAL_HYDRATE_MAX_PASSES = 24;
-  const MODAL_HYDRATE_STABLE_ROUNDS = 2;
   const MODAL_API_RESULTS_LIMIT = 24;
   const MODAL_API_CAP_THRESHOLD = 200;
-  const MODAL_API_TOOLTIP_TEXT =
-    "YouTube caps at 200 playlists. Authorize to load all of them.";
-
+  const SYNTH_DONE_CLASS = "ytpf-synth-done";
+  const ICON_PLUS = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>';
+  const ICON_CHECK = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
   const MSG_CONNECT = "YTPF_CONNECT";
   const MSG_SAVE_VIDEO = "YTPF_SAVE_VIDEO";
   const MSG_GET_PLAYLISTS = "YTPF_GET_PLAYLISTS";
@@ -226,9 +222,43 @@
     .ytpf-synth-row {
       display: flex;
       align-items: center;
-      padding: 8px 16px;
-      gap: 12px;
-      min-height: 48px;
+      padding: 6px 16px 6px 20px;
+      min-height: 40px;
+      cursor: pointer;
+    }
+    .ytpf-synth-row:hover {
+      background: var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.05));
+    }
+    .ytpf-synth-row:has(.ytpf-synth-done) {
+      cursor: default;
+    }
+    .ytpf-synth-action {
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      border-radius: 50%;
+      color: var(--yt-spec-text-secondary, #606060);
+      padding: 0;
+    }
+    .ytpf-synth-action:hover {
+      color: var(--yt-spec-text-primary, #0f0f0f);
+    }
+    .ytpf-synth-action svg {
+      width: 20px;
+      height: 20px;
+    }
+    .ytpf-synth-action:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+    .ytpf-synth-action.ytpf-synth-done {
+      color: var(--yt-spec-call-to-action, #065fd4);
       cursor: default;
     }
     .ytpf-synth-title {
@@ -237,35 +267,54 @@
       color: var(--yt-spec-text-primary, #0f0f0f);
       font-family: Roboto, Arial, sans-serif;
       font-size: 14px;
-      line-height: 1.3;
+      line-height: 20px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-    }
-    .ytpf-synth-saved {
-      color: var(--yt-spec-text-secondary, #606060);
-      font-family: Roboto, Arial, sans-serif;
-      font-size: 12px;
-      flex-shrink: 0;
     }
   `;
 
   const CONNECT_BAR_STYLES = `
     .ytpf-connect-bar {
-      margin-top: 6px;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
+      gap: 10px;
       flex-wrap: wrap;
+      padding: 10px 16px;
+      border-top: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.1));
     }
     .ytpf-connect-msg {
       font-family: Roboto, Arial, sans-serif;
-      font-size: 12px;
+      font-size: 13px;
       color: var(--yt-spec-text-secondary, #606060);
     }
     .ytpf-connect-error {
       color: #c00;
+    }
+    .ytpf-chip-btn {
+      height: 32px;
+      border: none;
+      border-radius: 8px;
+      padding: 0 12px;
+      background: var(--yt-spec-badge-chip-color, rgba(0, 0, 0, 0.05));
+      color: var(--yt-spec-text-primary, #0f0f0f);
+      font-family: Roboto, Arial, sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .ytpf-chip-btn:hover {
+      background: var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.1));
+    }
+    .ytpf-chip-btn:active {
+      background: var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.15));
+    }
+    .ytpf-chip-btn:disabled {
+      opacity: 0.5;
+      cursor: default;
     }
   `;
 
@@ -276,11 +325,6 @@
   const labelHtmlCache = new WeakMap();
   const controllerHosts = new Set();
   const controllers = new WeakMap();
-  const modalSessionCache = {
-    hydrated: false,
-    maxRowsSeen: 0,
-    lastHydratedAtMs: 0,
-  };
   const apiSessionCache = {
     authStatus: null,
     playlists: null,
@@ -916,142 +960,6 @@
     });
   }
 
-  function findModalScrollContainer(ctrl) {
-    const candidates = [];
-    const seen = new Set();
-
-    function maybeAdd(node) {
-      if (!(node instanceof Element)) return;
-      if (!ctrl.host.contains(node)) return;
-      if (seen.has(node)) return;
-      seen.add(node);
-      candidates.push(node);
-    }
-
-    maybeAdd(ctrl.rows[0]?.parentElement);
-    maybeAdd(ctrl.rows[0]);
-    maybeAdd(ctrl.host.querySelector("#playlists"));
-    maybeAdd(ctrl.host.querySelector("#contents"));
-    maybeAdd(ctrl.host.querySelector("[role='listbox']"));
-    maybeAdd(ctrl.host.querySelector("yt-checkbox-list-renderer"));
-    maybeAdd(ctrl.host);
-
-    for (const candidate of candidates) {
-      let node = candidate;
-      while (node && node !== document.body) {
-        if (!(node instanceof Element)) break;
-        if (!ctrl.host.contains(node)) break;
-
-        const style = window.getComputedStyle(node);
-        const overflowY = style.overflowY || "";
-        const canScroll = node.scrollHeight - node.clientHeight > 12;
-        if (canScroll && (overflowY === "auto" || overflowY === "scroll")) {
-          return node;
-        }
-
-        if (node === ctrl.host) break;
-        node = node.parentElement;
-      }
-    }
-
-    return ctrl.host.querySelector("#playlists, #contents, [role='listbox']") || null;
-  }
-
-  function shouldHydrateModal(ctrl) {
-    if (ctrl.surface !== "modal") return false;
-    if (Array.isArray(apiSessionCache.playlists) && apiSessionCache.playlists.length > 0) return false;
-    if (ctrl.hydrationPromise) return false;
-    if (!ctrl.host.isConnected) return false;
-
-    const known = modalSessionCache.maxRowsSeen || 0;
-    if (!known) return true;
-    if (!modalSessionCache.hydrated) return true;
-    return ctrl.rows.length + 1 < known;
-  }
-
-  async function hydrateModalRows(ctrl) {
-    if (!shouldHydrateModal(ctrl)) return;
-
-    const container = findModalScrollContainer(ctrl);
-    if (!container) return;
-
-    ctrl.hydrationToken = (ctrl.hydrationToken || 0) + 1;
-    const runToken = ctrl.hydrationToken;
-    const startedAt = nowMs();
-
-    let passes = 0;
-    let stableRounds = 0;
-    let lastCount = ctrl.rows.length;
-    let lastScrollHeight = container.scrollHeight;
-
-    try {
-      while (
-        passes < MODAL_HYDRATE_MAX_PASSES &&
-        nowMs() - startedAt < MODAL_HYDRATE_TIMEOUT_MS
-      ) {
-        const liveCtrl = controllers.get(ctrl.host);
-        if (!liveCtrl || liveCtrl !== ctrl) break;
-        if (!ctrl.host.isConnected) break;
-        if (ctrl.hydrationToken !== runToken) break;
-
-        container.scrollTop = container.scrollHeight;
-        await waitMs(MODAL_HYDRATE_IDLE_MS);
-
-        const afterWaitCtrl = controllers.get(ctrl.host);
-        if (!afterWaitCtrl || afterWaitCtrl !== ctrl) break;
-        if (!ctrl.host.isConnected) break;
-        if (ctrl.hydrationToken !== runToken) break;
-
-        const nextRows = collectRows(ctrl.host);
-        if (nextRows.length && !sameRows(ctrl.rows, nextRows)) {
-          upsertHost(ctrl.host, nextRows, "modal");
-        }
-
-        const activeCtrl = controllers.get(ctrl.host);
-        if (!activeCtrl || activeCtrl !== ctrl) break;
-
-        const count = activeCtrl.rows.length;
-        const nextScrollHeight = container.scrollHeight;
-        if (count === lastCount && nextScrollHeight === lastScrollHeight) {
-          stableRounds += 1;
-        } else {
-          stableRounds = 0;
-        }
-
-        lastCount = count;
-        lastScrollHeight = nextScrollHeight;
-        passes += 1;
-
-        if (stableRounds >= MODAL_HYDRATE_STABLE_ROUNDS) {
-          break;
-        }
-      }
-
-      const finalCtrl = controllers.get(ctrl.host);
-      const finalCount = finalCtrl?.rows.length ?? lastCount;
-      modalSessionCache.maxRowsSeen = Math.max(modalSessionCache.maxRowsSeen, finalCount);
-      if (stableRounds >= MODAL_HYDRATE_STABLE_ROUNDS) {
-        modalSessionCache.hydrated = true;
-        modalSessionCache.lastHydratedAtMs = Date.now();
-      }
-
-      if (finalCtrl === ctrl) {
-        applyFilter(ctrl);
-      }
-    } finally { /* hydrationPromise cleared by caller's .finally() */ }
-  }
-
-  function maybeStartModalHydration(ctrl) {
-    if (!shouldHydrateModal(ctrl)) return;
-    if (ctrl.hydrationPromise) return;
-
-    const run = hydrateModalRows(ctrl).finally(() => {
-      if (ctrl.hydrationPromise === run) {
-        ctrl.hydrationPromise = null;
-      }
-    });
-    ctrl.hydrationPromise = run;
-  }
 
   function runtimeMessage(message) {
     return new Promise((resolve, reject) => {
@@ -1226,24 +1134,26 @@
     if (!results.length) return;
 
     results.forEach((playlist) => {
+      const label = playlist.title || "Untitled";
+
       const row = document.createElement("div");
       row.className = "ytpf-synth-row";
 
+      const action = document.createElement("button");
+      action.type = "button";
+      action.className = "ytpf-synth-action";
+      action.innerHTML = ICON_PLUS;
+      action.setAttribute("aria-label", `Save video to ${label}`);
+
       const title = document.createElement("span");
       title.className = "ytpf-synth-title";
-      title.textContent = playlist.title || "Untitled";
+      title.textContent = label;
 
-      const add = document.createElement("button");
-      add.type = "button";
-      add.className = "ytpf-pill-btn";
-      add.textContent = "Save";
-      add.setAttribute("aria-label", `Save video to ${playlist.title || "playlist"}`);
-      add.addEventListener("click", () => {
+      const handleSave = () => {
         const videoId = getCurrentVideoId(ctrl.host);
         if (!videoId) return;
 
-        add.disabled = true;
-        add.textContent = "Saving\u2026";
+        action.disabled = true;
         runtimeMessage({
           type: MSG_SAVE_VIDEO,
           playlistId: playlist.id,
@@ -1251,19 +1161,22 @@
           interactive: true,
         })
           .then(() => {
-            add.replaceWith(Object.assign(document.createElement("span"), {
-              className: "ytpf-synth-saved",
-              textContent: "Saved",
-            }));
+            action.disabled = false;
+            action.innerHTML = ICON_CHECK;
+            action.classList.add(SYNTH_DONE_CLASS);
           })
           .catch(() => {
-            add.disabled = false;
-            add.textContent = "Retry";
+            action.disabled = false;
+            action.innerHTML = ICON_PLUS;
           });
+      };
+
+      row.addEventListener("click", () => {
+        if (!action.classList.contains(SYNTH_DONE_CLASS)) handleSave();
       });
 
+      row.appendChild(action);
       row.appendChild(title);
-      row.appendChild(add);
       ctrl.parent.appendChild(row);
       ctrl.synthRows.push(row);
     });
@@ -1391,11 +1304,11 @@
     } else if (needsPrompt) {
       const msg = document.createElement("span");
       msg.className = "ytpf-connect-msg";
-      msg.textContent = "YouTube only loads 200 playlists.";
+      msg.textContent = "YouTube limits this list to the most recent 200 playlists. Connect to load your full library.";
       bar.appendChild(msg);
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "ytpf-pill-btn";
+      btn.className = "ytpf-chip-btn";
       btn.textContent = "Load all playlists";
       btn.setAttribute("aria-label", "Load all playlists from your account");
       btn.addEventListener("click", () => connectApi(ctrl));
@@ -1407,8 +1320,6 @@
     const ctrl = controllers.get(host);
     if (!ctrl) return;
 
-    ctrl.hydrationToken = (ctrl.hydrationToken || 0) + 1;
-    ctrl.hydrationPromise = null;
     ctrl.apiToken = (ctrl.apiToken || 0) + 1;
     ctrl.apiBusy = false;
     ctrl.apiSaving = false;
@@ -1529,8 +1440,6 @@
       parent: rows[0]?.parentElement || null,
       sortResults: surface === "modal",
       synthRows: [],
-      hydrationToken: 0,
-      hydrationPromise: null,
       apiToken: 0,
       apiBusy: false,
       apiSaving: false,
@@ -1539,11 +1448,9 @@
 
     ui.input.addEventListener("input", () => {
       applyFilter(ctrl);
-      maybeStartModalHydration(ctrl);
     });
     ui.input.addEventListener("focus", () => {
       suppressMutations(300);
-      maybeStartModalHydration(ctrl);
     });
     ui.input.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && ui.input.value) {
