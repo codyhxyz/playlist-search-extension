@@ -21,6 +21,7 @@
     prefix: true,
     fuzzy: 0.2,
     combineWith: "OR",
+    weights: { fuzzy: 0.1, prefix: 0.75 },
   };
 
   const MODAL_HOST_SELECTOR =
@@ -1482,8 +1483,25 @@
 
   function applyFilter(ctrl) {
     const query = normalizeText(ctrl.input.value);
-    const fullSet = ctrl.rows;
     const isModal = ctrl.surface === "modal";
+
+    if (isModal && ctrl.host?.isConnected) {
+      const freshRows = collectRows(ctrl.host);
+      if (freshRows.length > ctrl.rows.length) {
+        const nextSet = new Set(freshRows);
+        ctrl.rows.forEach((row) => {
+          if (!nextSet.has(row)) {
+            showRow(row);
+            restoreHighlight(row);
+          }
+        });
+        ctrl.rows = freshRows;
+        ctrl.bm25 = createBm25Index(freshRows);
+        ctrl.parent = freshRows[0]?.parentElement || ctrl.parent;
+      }
+    }
+
+    const fullSet = ctrl.rows;
 
     suppressMutations(160);
 
