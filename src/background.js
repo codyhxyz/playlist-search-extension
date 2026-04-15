@@ -383,7 +383,7 @@ async function youtubeRequest(url, options = {}) {
 
 async function loadPlaylistsFromApi(interactive) {
   let pageToken = "";
-  const rows = [];
+  const byId = new Map();
 
   do {
     const url = new URL("https://www.googleapis.com/youtube/v3/playlists");
@@ -398,19 +398,20 @@ async function loadPlaylistsFromApi(interactive) {
     const items = Array.isArray(data.items) ? data.items : [];
 
     items.forEach((item) => {
-      const title = item?.snippet?.title || "Untitled playlist";
-      rows.push({
-        id: item.id,
-        title,
-        itemCount: Number(item?.contentDetails?.itemCount || 0),
-        privacyStatus: item?.status?.privacyStatus || "private",
-      });
+      if (!byId.has(item.id)) {
+        byId.set(item.id, {
+          id: item.id,
+          title: item?.snippet?.title || "Untitled playlist",
+          itemCount: Number(item?.contentDetails?.itemCount || 0),
+          privacyStatus: item?.status?.privacyStatus || "private",
+        });
+      }
     });
 
     pageToken = data.nextPageToken || "";
   } while (pageToken);
 
-  return rows;
+  return [...byId.values()];
 }
 
 async function loadAuthChannels(interactive) {
