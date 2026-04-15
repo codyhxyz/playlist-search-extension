@@ -1550,7 +1550,7 @@
         if (liveCtrl) {
           bootstrapModalApi(liveCtrl);
         }
-        ui.input.focus();
+        ui.input.focus({ preventScroll: true });
       }, 0);
     }
   }
