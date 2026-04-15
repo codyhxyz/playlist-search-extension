@@ -8,6 +8,7 @@
   const MODAL_INLINE_CLASS = "ytpf-inline-modal";
   const MODAL_API_RESULTS_LIMIT = 24;
   const MODAL_API_CAP_THRESHOLD = 200;
+  const ROW_MATCH_CLASS = "ytpf-row-match";
   const SYNTH_DONE_CLASS = "ytpf-synth-done";
   const ICON_PLUS = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>';
   const ICON_CHECK = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
@@ -116,12 +117,15 @@
       font-size: 12px;
       font-variant-numeric: tabular-nums;
     }
-    .ytpf-mark {
-      background: rgba(255, 214, 10, 0.35);
-      color: inherit;
-      border-radius: 3px;
+    mark.ytpf-mark {
+      all: unset;
+      display: inline !important;
+      background-color: rgba(255, 255, 0, 0.4) !important;
+      color: inherit !important;
+      border-radius: 2px;
       padding: 0 1px;
     }
+    .ytpf-row-match {}
   `;
 
   const MODAL_STYLES = `
@@ -438,6 +442,10 @@
     return (query || "").split(" ").filter(Boolean);
   }
 
+  function parseQueryTerms(query) {
+    return splitTerms(query).map(normalizeText).filter(Boolean);
+  }
+
   function closestComposed(node, selector) {
     let cur = node;
     while (cur) {
@@ -600,8 +608,31 @@
     if (el) {
       const root = el.getRootNode();
       if (root instanceof ShadowRoot) ensureScopedStyles(root);
+      return el;
     }
-    return el;
+
+    // YouTube sometimes nests label text in elements that don't match
+    // ITEM_TEXT_SELECTOR. Walk down single-child chains to find the innermost
+    // text-bearing element so we can inject <mark> highlights.
+    const rowText = (row.textContent || "").trim();
+    if (!rowText) return null;
+
+    let candidate = row;
+    while (candidate) {
+      const children = Array.from(candidate.children).filter(
+        (child) => (child.textContent || "").trim().length > 0,
+      );
+      if (children.length !== 1) break;
+      candidate = children[0];
+    }
+
+    if (candidate !== row && (candidate.textContent || "").trim() === rowText) {
+      const root = candidate.getRootNode();
+      if (root instanceof ShadowRoot) ensureScopedStyles(root);
+      return candidate;
+    }
+
+    return null;
   }
 
   function escapeHtml(input) {
@@ -618,6 +649,7 @@
   }
 
   function restoreHighlight(row) {
+    row.classList.remove(ROW_MATCH_CLASS);
     const label = getLabelElement(row);
     if (!label) return;
     const original = labelHtmlCache.get(label);
@@ -660,36 +692,61 @@
     return merged;
   }
 
-  function applyHighlight(row, terms) {
+  function getTextNodes(el) {
+    const nodes = [];
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) nodes.push(node);
+    return nodes;
+  }
+
+  function applyHighlight(row, normalizedTerms) {
     const label = getLabelElement(row);
-    if (!label) return;
-
-    ensureOriginalLabelHtml(label);
-    const rawText = label.textContent || "";
-    if (!rawText) return;
-
-    const highlightTerms = terms.map(normalizeText).filter(Boolean);
-    const ranges = getHighlightRanges(rawText, highlightTerms);
-    if (!ranges.length) {
-      restoreHighlight(row);
+    if (!label) {
+      row.classList.add(ROW_MATCH_CLASS);
       return;
     }
 
-    let cursor = 0;
-    let html = "";
-    ranges.forEach((range) => {
-      if (range.from > cursor) {
-        html += escapeHtml(rawText.slice(cursor, range.from));
-      }
-      html += `<mark class="ytpf-mark">${escapeHtml(
-        rawText.slice(range.from, range.to),
-      )}</mark>`;
-      cursor = range.to;
-    });
-    if (cursor < rawText.length) {
-      html += escapeHtml(rawText.slice(cursor));
+    ensureOriginalLabelHtml(label);
+
+    // Restore first so we work from clean DOM each time
+    const original = labelHtmlCache.get(label);
+    if (original !== undefined && label.innerHTML !== original) {
+      label.innerHTML = original;
     }
-    label.innerHTML = html;
+
+    const textNodes = getTextNodes(label);
+    if (!textNodes.length) return;
+
+    let didHighlight = false;
+
+    textNodes.forEach((textNode) => {
+      const rawText = textNode.nodeValue || "";
+      const ranges = getHighlightRanges(rawText, normalizedTerms);
+      if (!ranges.length) return;
+
+      didHighlight = true;
+      const frag = document.createDocumentFragment();
+      let cursor = 0;
+      ranges.forEach((range) => {
+        if (range.from > cursor) {
+          frag.appendChild(document.createTextNode(rawText.slice(cursor, range.from)));
+        }
+        const mark = document.createElement("mark");
+        mark.className = "ytpf-mark";
+        mark.textContent = rawText.slice(range.from, range.to);
+        frag.appendChild(mark);
+        cursor = range.to;
+      });
+      if (cursor < rawText.length) {
+        frag.appendChild(document.createTextNode(rawText.slice(cursor)));
+      }
+      textNode.parentNode.replaceChild(frag, textNode);
+    });
+
+    if (!didHighlight) {
+      restoreHighlight(row);
+    }
   }
 
   function findLikelyRow(checkbox, host) {
@@ -1146,6 +1203,8 @@
 
     if (!results.length) return;
 
+    const synthTerms = parseQueryTerms(query);
+
     results.forEach((playlist) => {
       const label = playlist.title || "Untitled";
 
@@ -1160,7 +1219,13 @@
 
       const title = document.createElement("span");
       title.className = "ytpf-synth-title";
-      title.textContent = label;
+
+      const ranges = getHighlightRanges(label, synthTerms);
+      if (ranges.length) {
+        title.innerHTML = buildHighlightHtml(label, ranges);
+      } else {
+        title.textContent = label;
+      }
 
       const handleSave = () => {
         const videoId = getCurrentVideoId(ctrl.host);
@@ -1459,7 +1524,7 @@
     }
 
     if (query) {
-      const fallbackTerms = splitTerms(query);
+      const fallbackTerms = parseQueryTerms(query);
       matches.forEach((m) => {
         applyHighlight(m.row, m.terms?.length ? m.terms : fallbackTerms);
       });
