@@ -525,7 +525,10 @@
     if (!(node instanceof Element)) return false;
     if (node.id === STYLE_ID) return true;
     if (node.classList.contains(FILTER_CLASS)) return true;
-    return Boolean(node.closest(`.${FILTER_CLASS}`));
+    if (node.closest(`.${FILTER_CLASS}`)) return true;
+    if (node.classList.contains("ytpf-synth-row")) return true;
+    if (node.closest(".ytpf-synth-row")) return true;
+    return false;
   }
 
   function nodeTouchesRelevantSurface(node) {
@@ -1163,6 +1166,7 @@
         const videoId = getCurrentVideoId(ctrl.host);
         if (!videoId) return;
 
+        suppressMutations(160);
         action.disabled = true;
         runtimeMessage({
           type: MSG_SAVE_VIDEO,
@@ -1171,11 +1175,13 @@
           interactive: true,
         })
           .then(() => {
+            suppressMutations(160);
             action.disabled = false;
             action.innerHTML = ICON_CHECK;
             action.classList.add(SYNTH_DONE_CLASS);
           })
           .catch(() => {
+            suppressMutations(160);
             action.disabled = false;
             action.innerHTML = ICON_PLUS;
           });
@@ -1184,13 +1190,15 @@
       row.setAttribute("role", "button");
       row.setAttribute("tabindex", "0");
 
-      row.addEventListener("click", () => {
-        if (!action.classList.contains(SYNTH_DONE_CLASS)) handleSave();
+      row.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!action.classList.contains(SYNTH_DONE_CLASS) && !action.disabled) handleSave();
       });
       row.addEventListener("keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          if (!action.classList.contains(SYNTH_DONE_CLASS)) handleSave();
+          e.stopPropagation();
+          if (!action.classList.contains(SYNTH_DONE_CLASS) && !action.disabled) handleSave();
         }
       });
 
