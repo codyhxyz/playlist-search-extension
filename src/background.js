@@ -66,13 +66,8 @@ async function sha256Base64Url(input) {
   return base64UrlEncode(new Uint8Array(hash));
 }
 
-function candidateRedirectUris() {
-  const root = chrome.identity.getRedirectURL();
-  return root ? [root] : [];
-}
-
 function redirectUri() {
-  return candidateRedirectUris()[0] || chrome.identity.getRedirectURL();
+  return chrome.identity.getRedirectURL();
 }
 
 function parseJsonSafe(text) {
@@ -201,10 +196,10 @@ async function refreshAccessToken(clientId, refreshToken, clientSecret = "") {
   };
 }
 
-async function interactiveAuthWithRedirect(clientId, clientSecret, redirectUriValue) {
+async function interactiveAuth(clientId, clientSecret = "") {
   const verifier = randomString(96);
   const challenge = await sha256Base64Url(verifier);
-  const state = randomString(32);
+  const redirectUriValue = redirectUri();
 
   const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   authUrl.searchParams.set("client_id", clientId);
@@ -215,9 +210,26 @@ async function interactiveAuthWithRedirect(clientId, clientSecret, redirectUriVa
   authUrl.searchParams.set("prompt", "select_account consent");
   authUrl.searchParams.set("code_challenge", challenge);
   authUrl.searchParams.set("code_challenge_method", "S256");
-  authUrl.searchParams.set("state", state);
 
-  const code = await openAuthTab(authUrl.toString(), redirectUriValue, state);
+  const redirectedTo = await chrome.identity.launchWebAuthFlow({
+    url: authUrl.toString(),
+    interactive: true,
+  });
+
+  if (!redirectedTo) {
+    throw new Error("Authorization was cancelled");
+  }
+
+  const redirectedUrl = new URL(redirectedTo);
+  const authError = redirectedUrl.searchParams.get("error");
+  if (authError) {
+    throw new Error(`Authorization failed: ${authError}`);
+  }
+
+  const code = redirectedUrl.searchParams.get("code");
+  if (!code) {
+    throw new Error("Authorization code was not returned");
+  }
 
   const body = new URLSearchParams({
     code,
@@ -254,98 +266,6 @@ async function interactiveAuthWithRedirect(clientId, clientSecret, redirectUriVa
     expires_at: Date.now() + expiresInMs,
     refresh_token: data.refresh_token || null,
   };
-}
-
-function openAuthTab(authUrl, expectedRedirect, expectedState) {
-  return new Promise((resolve, reject) => {
-    let tabId = null;
-    let settled = false;
-
-    function cleanup() {
-      chrome.tabs.onUpdated.removeListener(onUpdated);
-      chrome.tabs.onRemoved.removeListener(onRemoved);
-    }
-
-    function settle(fn) {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      if (tabId != null) {
-        chrome.tabs.remove(tabId).catch(() => {});
-      }
-      fn();
-    }
-
-    function onUpdated(id, changeInfo) {
-      if (id !== tabId || !changeInfo.url) return;
-      const url = changeInfo.url;
-      if (!url.startsWith(expectedRedirect)) return;
-
-      const params = new URL(url).searchParams;
-      const error = params.get("error");
-      if (error) {
-        settle(() => reject(new Error(`Authorization failed: ${error}`)));
-        return;
-      }
-
-      const returnedState = params.get("state");
-      if (returnedState !== expectedState) {
-        settle(() => reject(new Error("OAuth state mismatch")));
-        return;
-      }
-
-      const code = params.get("code");
-      if (!code) {
-        settle(() => reject(new Error("Authorization code was not returned")));
-        return;
-      }
-
-      settle(() => resolve(code));
-    }
-
-    function onRemoved(id) {
-      if (id !== tabId) return;
-      settle(() => reject(new Error("Authorization was cancelled")));
-    }
-
-    chrome.tabs.onUpdated.addListener(onUpdated);
-    chrome.tabs.onRemoved.addListener(onRemoved);
-
-    chrome.tabs.create({ url: authUrl }).then((tab) => {
-      tabId = tab.id;
-      if (settled) {
-        chrome.tabs.remove(tabId).catch(() => {});
-      }
-    });
-  });
-}
-
-async function interactiveAuth(clientId, clientSecret = "") {
-  const redirectUris = candidateRedirectUris();
-  let lastError = null;
-
-  for (const redirectUriValue of redirectUris) {
-    try {
-      return await interactiveAuthWithRedirect(
-        clientId,
-        clientSecret,
-        redirectUriValue,
-      );
-    } catch (error) {
-      lastError = error;
-      const message = normalizeError(error, "").toLowerCase();
-      if (/cancelled|canceled|user_closed|user denied|access_denied/.test(message)) {
-        throw error;
-      }
-      // Only retry when a provider explicitly reports redirect mismatch.
-      if (!/redirect_uri_mismatch/.test(message)) {
-        throw error;
-      }
-      continue;
-    }
-  }
-
-  throw lastError || new Error("Authorization failed");
 }
 
 async function ensureAccessToken(options = {}) {
@@ -595,7 +515,6 @@ async function getAuthStatus() {
     hasClientSecret: Boolean(config.oauthClientSecret),
     usingDefaultClientId: Boolean(config.usingDefaultClientId),
     redirectUri: redirectUri(),
-    redirectUris: candidateRedirectUris(),
     hasToken,
     hasRefreshToken,
     tokenValid,
