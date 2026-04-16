@@ -39,7 +39,7 @@ For an in-depth look at the architecture, see [`architecture/overview.md`](archi
 
 ## Privacy
 
-The extension only accesses your YouTube playlist names to power search. No data is stored on external servers — everything stays in your browser. See the [privacy policy](https://ydoc5212.github.io/playlist-search-extension/privacy-policy.html) for details.
+The extension only accesses your YouTube playlist names to power search. No data is stored on external servers — everything stays in your browser. See the [privacy policy](https://playlist.codyh.xyz/privacy-policy.html) for details.
 
 ## Contributing
 

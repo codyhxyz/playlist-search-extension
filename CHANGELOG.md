@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.6.0 - 2026-04-16
+- Added welcome onboarding page with one-click permission grant and animated demo loop.
+- Rewrote privacy policy for the InnerTube architecture; removed all OAuth artifacts.
+- Restored save-modal filter for YouTube's new view-model dialog DOM.
+- Fixed scroll-container detection above the modal host for the new view-model sheet.
+- Narrowed content-script matches to `https://www.youtube.com/*` to reduce review risk.
+
+## 1.5.5 - 2026-04-16
+- Hardened save-modal: unified highlight builder and stopped transient filter-bar teardown.
+- Stopped injecting the filter bar into non-playlist dialogs.
+- Fixed title-based dedup dropping exact-match playlists; hardened fragile fallbacks.
+- Simplified paint logic and removed dead DOM-stub methods.
+- Dropped ™ from the extension name in manifest.
+
+## 1.5.3 - 2026-04-13
+- Migrated to YouTube's internal InnerTube API (same-origin, uses existing session — no OAuth).
+- Unified search architecture across save modal and `/feed/playlists`.
+- Fixed search ranking and inconsistent modal results.
+- Deduplicated API playlists by ID to prevent modal duplicates.
+- Fixed search highlight destroying playlist row DOM structure.
+- Restructured repo: `src/` for the extension, `private/` for maintainer files.
+
 ## 1.4.0 - 2026-03-08
 - Added inline filtering support on `https://www.youtube.com/feed/playlists`.
 - Kept Save-dialog inline search and BM25 ranking behavior.
