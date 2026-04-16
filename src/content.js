@@ -42,8 +42,14 @@
     weights: { fuzzy: 0.1, prefix: 0.75 },
   };
 
+  // Playlist-add renderers ONLY. Do NOT add tp-yt-paper-dialog,
+  // yt-contextual-sheet-layout, or any other generic dialog/sheet component:
+  // YouTube uses those for many non-playlist surfaces (e.g. the video upload
+  // Visibility step), and a broader selector causes the filter bar to inject
+  // into the wrong dialog — its public/unlisted/private options match the
+  // generic row selectors and collectRows happily returns them.
   const MODAL_HOST_SELECTOR =
-    "ytd-add-to-playlist-renderer, yt-add-to-playlist-renderer, yt-contextual-sheet-layout, tp-yt-paper-dialog";
+    "ytd-add-to-playlist-renderer, yt-add-to-playlist-renderer";
 
   const MODAL_ROW_SELECTOR =
     "ytd-playlist-add-to-option-renderer, yt-playlist-add-to-option-renderer, yt-checkbox-list-entry-renderer, yt-list-item-view-model, yt-collection-item-view-model";
@@ -1742,6 +1748,7 @@
       normalizeText,
       parseQueryTerms,
       BM25_SEARCH_OPTIONS,
+      MODAL_HOST_SELECTOR,
     });
   }
 })();

@@ -27,13 +27,17 @@ Both use the same `createInlineFilterUi(surface)` (content.js:975) builder. Styl
 
 ## Host detection
 
-YouTube ships many component variants depending on client version, A/B test bucket, and device. Rather than picking one selector, we list all known ones:
+YouTube ships many component variants depending on client version, A/B test bucket, and device. We match the playlist-specific renderers directly, then scope row discovery within that host:
 
 ```js
+// Playlist-add renderers only. Do NOT add tp-yt-paper-dialog or
+// yt-contextual-sheet-layout here — YouTube reuses those for many other
+// dialogs (e.g. the upload Visibility step), and broadening this selector
+// causes the filter bar to attach to unrelated surfaces.
 const MODAL_HOST_SELECTOR =
-  "ytd-add-to-playlist-renderer, yt-add-to-playlist-renderer, " +
-  "yt-contextual-sheet-layout, tp-yt-paper-dialog";
+  "ytd-add-to-playlist-renderer, yt-add-to-playlist-renderer";
 
+// Scoped to inside a playlist host, so generic row components are safe here.
 const MODAL_ROW_SELECTOR =
   "ytd-playlist-add-to-option-renderer, yt-playlist-add-to-option-renderer, " +
   "yt-checkbox-list-entry-renderer, yt-list-item-view-model, " +
@@ -43,7 +47,7 @@ const PLAYLISTS_GRID_SELECTOR = "ytd-rich-grid-renderer";
 const PLAYLISTS_FEED_PATH_RE = /^\/feed\/(playlists|library)\/?(\?.*)?$/;
 ```
 
-If YouTube renames or introduces a new variant, the fix is usually a one-line selector update here.
+If YouTube introduces a new playlist-add host variant, add its specific renderer tag here — not a generic container. `src/test-search.js` has a guard assertion that fails if the two generic components ever sneak back in.
 
 ## Shadow DOM traversal
 

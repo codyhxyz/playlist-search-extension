@@ -300,6 +300,21 @@ function buildIndex(domRows, apiPlaylists) {
 }
 
 // ---------------------------------------------------------------------------
+// Suite 1.5: MODAL_HOST_SELECTOR must not silently broaden.
+// Generic dialog components (tp-yt-paper-dialog, yt-contextual-sheet-layout)
+// are used across YouTube for many non-playlist surfaces — most visibly the
+// video upload Visibility step. If either sneaks back into MODAL_HOST_SELECTOR,
+// the extension starts injecting its filter bar into the wrong dialogs.
+// ---------------------------------------------------------------------------
+{
+  const sel = ytpf.MODAL_HOST_SELECTOR;
+  assert(typeof sel === "string" && sel.length > 0, "MODAL_HOST_SELECTOR should be a non-empty string");
+  assert(sel.includes("ytd-add-to-playlist-renderer"), "MODAL_HOST_SELECTOR must still match ytd-add-to-playlist-renderer");
+  assert(!sel.includes("tp-yt-paper-dialog"), "MODAL_HOST_SELECTOR must NOT include tp-yt-paper-dialog (matches any dialog, e.g. upload Visibility)");
+  assert(!sel.includes("yt-contextual-sheet-layout"), "MODAL_HOST_SELECTOR must NOT include yt-contextual-sheet-layout (matches any contextual sheet)");
+}
+
+// ---------------------------------------------------------------------------
 // Suite 2: highlight builders
 // ---------------------------------------------------------------------------
 
