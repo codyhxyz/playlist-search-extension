@@ -1264,93 +1264,82 @@
     const synthTerms = parseQueryTerms(query);
 
     limited.forEach((match) => {
-      // Defense-in-depth: one bad synth row must not break the user's keystroke.
-      // If anything throws (bad match data, missing helper, etc), log and skip.
       try {
-      const playlist = match.playlist;
-      const label = playlist.title || "Untitled";
+        const playlist = match.playlist;
+        const label = playlist.title || "Untitled";
 
-      const row = document.createElement("div");
-      row.className = "ytpf-synth-row";
+        const row = document.createElement("div");
+        row.className = "ytpf-synth-row";
 
-      const action = document.createElement("button");
-      action.type = "button";
-      action.className = "ytpf-synth-action";
-      action.innerHTML = ICON_PLUS;
-      action.setAttribute("aria-label", `Save video to ${label}`);
+        const action = document.createElement("button");
+        action.type = "button";
+        action.className = "ytpf-synth-action";
+        action.innerHTML = ICON_PLUS;
+        action.setAttribute("aria-label", `Save video to ${label}`);
 
-      const title = document.createElement("span");
-      title.className = "ytpf-synth-title";
+        const title = document.createElement("span");
+        title.className = "ytpf-synth-title";
 
-      const ranges = getHighlightRanges(label, synthTerms);
-      if (ranges.length) {
-        title.replaceChildren(buildHighlightFragment(label, ranges));
-      } else {
-        title.textContent = label;
-      }
+        const paintTitle = () => {
+          const rs = getHighlightRanges(label, synthTerms);
+          if (rs.length) title.replaceChildren(buildHighlightFragment(label, rs));
+          else title.textContent = label;
+        };
+        paintTitle();
 
-      const handleSave = () => {
-        const videoId = getCurrentVideoId(ctrl.host);
-        if (!videoId) {
-          console.warn("[ytpf] Could not determine video ID for save action");
-          action.innerHTML = ICON_PLUS;
-          title.style.color = "var(--yt-spec-text-secondary, #aaa)";
-          title.textContent = "Could not find video ID";
-          setTimeout(() => {
-            title.style.color = "";
-            const revertRanges = getHighlightRanges(label, synthTerms);
-            if (revertRanges.length) {
-              title.replaceChildren(buildHighlightFragment(label, revertRanges));
-            } else {
-              title.textContent = label;
-            }
-          }, 2000);
-          return;
-        }
-
-        suppressMutations(160);
-        action.disabled = true;
-        innertubeSaveVideo(playlist.id, videoId)
-          .then(() => {
-            suppressMutations(160);
-            action.disabled = false;
-            action.innerHTML = ICON_CHECK;
-            action.classList.add(SYNTH_DONE_CLASS);
-          })
-          .catch((err) => {
-            console.warn("[ytpf] Save to playlist failed:", err);
-            suppressMutations(160);
-            action.disabled = false;
+        const handleSave = () => {
+          const videoId = getCurrentVideoId(ctrl.host);
+          if (!videoId) {
+            console.warn("[ytpf] Could not determine video ID for save action");
             action.innerHTML = ICON_PLUS;
-          });
-      };
+            title.style.color = "var(--yt-spec-text-secondary, #aaa)";
+            title.textContent = "Could not find video ID";
+            setTimeout(() => {
+              title.style.color = "";
+              paintTitle();
+            }, 2000);
+            return;
+          }
 
-      row.setAttribute("role", "button");
-      row.setAttribute("tabindex", "0");
+          suppressMutations(160);
+          action.disabled = true;
+          innertubeSaveVideo(playlist.id, videoId)
+            .then(() => {
+              suppressMutations(160);
+              action.disabled = false;
+              action.innerHTML = ICON_CHECK;
+              action.classList.add(SYNTH_DONE_CLASS);
+            })
+            .catch((err) => {
+              console.warn("[ytpf] Save to playlist failed:", err);
+              suppressMutations(160);
+              action.disabled = false;
+              action.innerHTML = ICON_PLUS;
+            });
+        };
 
-      row.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (!action.classList.contains(SYNTH_DONE_CLASS) && !action.disabled) handleSave();
-      });
-      row.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
+        row.setAttribute("role", "button");
+        row.setAttribute("tabindex", "0");
+
+        row.addEventListener("click", (e) => {
           e.stopPropagation();
           if (!action.classList.contains(SYNTH_DONE_CLASS) && !action.disabled) handleSave();
-        }
-      });
+        });
+        row.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!action.classList.contains(SYNTH_DONE_CLASS) && !action.disabled) handleSave();
+          }
+        });
 
-      row.appendChild(action);
-      row.appendChild(title);
-      if (!ctrl.parent?.isConnected) return;
-      ctrl.parent.appendChild(row);
-      ctrl.synthRows.push(row);
+        row.appendChild(action);
+        row.appendChild(title);
+        if (!ctrl.parent?.isConnected) return;
+        ctrl.parent.appendChild(row);
+        ctrl.synthRows.push(row);
       } catch (err) {
-        console.warn(
-          "[ytpf] synth row failed",
-          match?.playlist?.id,
-          err,
-        );
+        console.warn("[ytpf] synth row failed", match?.playlist?.id, err);
       }
     });
   }
@@ -1742,12 +1731,7 @@
 
   start();
 
-  // Test hook: inert in the browser. When src/test-search.js evaluates this
-  // file in a node:vm sandbox, it sets __YTPF_TEST__ on the sandbox's
-  // globalThis and we hand the test suite the internal helpers it needs to
-  // cover. This keeps production code in a single IIFE (no exports) while
-  // giving tests a way to exercise "the call resolves at runtime" — the
-  // check that would have caught the buildHighlightHtml bug before it shipped.
+  // Inert in the browser; src/test-search.js sets __YTPF_TEST__ before eval.
   if (typeof globalThis !== "undefined" && typeof globalThis.__YTPF_TEST__ === "function") {
     globalThis.__YTPF_TEST__({
       buildHighlightFragment,
@@ -1757,6 +1741,7 @@
       applyHighlight,
       normalizeText,
       parseQueryTerms,
+      BM25_SEARCH_OPTIONS,
     });
   }
 })();
