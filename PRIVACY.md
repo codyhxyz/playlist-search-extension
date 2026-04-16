@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Last updated:** April 13, 2026
+**Last updated:** April 15, 2026
 
 ## Overview
 
@@ -8,46 +8,37 @@ YouTube Playlist Search is a Chrome extension that adds an in-page search bar to
 
 ## Data Collection
 
-This extension does **not** collect, store, transmit, or sell personal data to the extension developer or any third party. No analytics, tracking, or remote logging is performed.
+This extension does **not** collect, store, transmit, or sell personal data to the extension developer or any third party. No analytics, tracking, or remote logging is performed. The extension developer does not operate a backend server and never receives any of your data.
+
+No personally identifying information is ever read, stored, or transmitted. Your username, email, and profile photo are ignored by the extension.
 
 ## External Services
 
-The extension communicates with the following Google services and no other external servers:
+The extension only communicates with `youtube.com` — the same server you are already browsing. It does this by calling YouTube's internal "InnerTube" API (`https://www.youtube.com/youtubei/v1/*`) as a same-origin request from the YouTube tab you already have open. No requests are made to any other server, and no data is sent to the extension developer.
 
-- `youtube.com` — Fetches playlist data directly from YouTube
-- `oauth2.googleapis.com` — OAuth 2.0 authentication and token refresh
-- `accounts.google.com` — Google sign-in consent screen
+## Authentication
 
-These requests are made directly from your browser to Google. The extension developer does **not** operate any intermediate servers and never receives your data.
+The extension does **not** use OAuth, does **not** use `chrome.identity`, and does **not** obtain, store, or transmit any access tokens or refresh tokens.
 
-## Authentication and Local Storage
+Because InnerTube requests originate from a youtube.com page, your browser automatically attaches your existing YouTube session cookie — the same way it does when you click around YouTube normally. To satisfy InnerTube's authentication scheme, the extension reads the `SAPISID` cookie from `document.cookie` on the current YouTube tab and uses it to compute a short-lived `SAPISIDHASH` authentication header. The cookie value and the derived hash are only ever sent back to `youtube.com` itself as part of these same-origin API calls. They are never stored, logged, or transmitted anywhere else.
 
-When you sign in via Google OAuth 2.0 (`youtube.force-ssl` scope), the following data is stored locally in `chrome.storage.local` on your device:
+## Local Processing and Storage
 
-- OAuth access token and refresh token
-- Channel profile info (channel ID, title, custom URL)
-- Cached playlist data (refreshed every 6 hours)
-- Custom OAuth client configuration, if provided by the user
+The extension reads the following "website content" from the YouTube pages you visit:
 
-This data is used solely to authenticate and fetch your playlists. It is never transmitted to the extension developer or any server other than Google's OAuth endpoints.
+- Playlist titles and IDs (from the page DOM and from InnerTube API responses)
 
-## Permissions and Processing
+This data is indexed locally in your browser using MiniSearch so you can type-ahead search your playlists. The index lives only in the tab's memory — the extension does not use `chrome.storage`, `localStorage`, cookies, or any other persistent storage. A short (6-hour) in-memory cache of your playlist list may be kept while the tab is open; it is cleared when the tab closes.
 
-The extension runs as a content script on `youtube.com` pages and uses a background service worker to manage playlist fetching and token storage. Playlist data is read directly from YouTube pages. All filtering is performed locally in your browser.
+All search, ranking, and filtering is performed locally in your browser.
+
+## Permissions
+
+The extension requests **no** Chrome permissions and **no** host permissions. It runs only as a content script on `youtube.com` (and its subdomains), which is the only site it needs access to. There is no background service worker and no popup.
 
 ## Third-Party Code
 
-The extension bundles a local copy of MiniSearch for BM25-based ranking. No remote executable code is loaded at runtime.
-
-## Google API Services Compliance
-
-This extension's use and transfer to any other app of information received from Google APIs adheres to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.
-
-Specifically, the extension limits its use of data obtained through Google services to providing and improving the playlist search functionality described in this policy. It does not:
-
-- Transfer data to third parties unless necessary to provide the extension's core functionality
-- Use data for serving advertisements
-- Use data for purposes unrelated to the extension's playlist search and save features
+The extension bundles a local copy of MiniSearch for BM25-based ranking. MiniSearch runs entirely in your browser; no remote executable code is loaded at runtime, and no third-party SDKs are used.
 
 ## Changes
 

@@ -12,7 +12,7 @@
 </head>
 <body>
   <h1>YouTube Playlist Search Privacy Policy</h1>
-  <p><strong>Last updated:</strong> April 13, 2026</p>
+  <p><strong>Last updated:</strong> April 15, 2026</p>
 
   <h2>Overview</h2>
   <p>
@@ -25,69 +25,70 @@
   <p>
     This extension does <strong>not</strong> collect, store, transmit, or sell personal data to the
     extension developer or any third party. No analytics, tracking, or remote logging is performed.
+    The extension developer does not operate a backend server and never receives any of your data.
+  </p>
+  <p>
+    No personally identifying information is ever read, stored, or transmitted. Your username,
+    email, and profile photo are ignored by the extension.
   </p>
 
   <h2>External Services</h2>
   <p>
-    The extension communicates with the following Google services and no other external servers:
-  </p>
-  <ul>
-    <li><code>youtube.com</code> &mdash; Fetches playlist data directly from YouTube</li>
-    <li><code>oauth2.googleapis.com</code> &mdash; OAuth 2.0 authentication and
-      token refresh</li>
-    <li><code>accounts.google.com</code> &mdash; Google sign-in consent screen</li>
-  </ul>
-  <p>
-    These requests are made directly from your browser to Google. The extension developer does
-    <strong>not</strong> operate any intermediate servers and never receives your data.
+    The extension only communicates with <code>youtube.com</code> &mdash; the same server you are
+    already browsing. It does this by calling YouTube's internal "InnerTube" API
+    (<code>https://www.youtube.com/youtubei/v1/*</code>) as a same-origin request from the YouTube
+    tab you already have open. No requests are made to any other server, and no data is sent to
+    the extension developer.
   </p>
 
-  <h2>Authentication and Local Storage</h2>
+  <h2>Authentication</h2>
   <p>
-    When you sign in via Google OAuth 2.0 (<code>youtube.force-ssl</code> scope), the following
-    data is stored locally in <code>chrome.storage.local</code> on your device:
+    The extension does <strong>not</strong> use OAuth, does <strong>not</strong> use
+    <code>chrome.identity</code>, and does <strong>not</strong> obtain, store, or transmit any
+    access tokens or refresh tokens.
   </p>
-  <ul>
-    <li>OAuth access token and refresh token</li>
-    <li>Channel profile info (channel ID, title, custom URL)</li>
-    <li>Cached playlist data (refreshed every 6 hours)</li>
-    <li>Custom OAuth client configuration, if provided by the user</li>
-  </ul>
   <p>
-    This data is used solely to authenticate and fetch your playlists. It is never
-    transmitted to the extension developer or any server other than Google's OAuth and API
-    endpoints.
+    Because InnerTube requests originate from a youtube.com page, your browser automatically
+    attaches your existing YouTube session cookie &mdash; the same way it does when you click
+    around YouTube normally. To satisfy InnerTube's authentication scheme, the extension reads the
+    <code>SAPISID</code> cookie from <code>document.cookie</code> on the current YouTube tab and
+    uses it to compute a short-lived <code>SAPISIDHASH</code> authentication header. The cookie
+    value and the derived hash are only ever sent back to <code>youtube.com</code> itself as part
+    of these same-origin API calls. They are never stored, logged, or transmitted anywhere else.
   </p>
 
-  <h2>Permissions and Processing</h2>
+  <h2>Local Processing and Storage</h2>
   <p>
-    The extension runs as a content script on <code>youtube.com</code> pages and uses a background
-    service worker to manage playlist fetching and token storage. Playlist data is read directly
-    from YouTube pages. All filtering is performed locally in your browser.
+    The extension reads the following "website content" from the YouTube pages you visit:
+  </p>
+  <ul>
+    <li>Playlist titles and IDs (from the page DOM and from InnerTube API responses)</li>
+  </ul>
+  <p>
+    This data is indexed locally in your browser using MiniSearch so you can type-ahead search
+    your playlists. The index lives only in the tab's memory &mdash; the extension does not use
+    <code>chrome.storage</code>, <code>localStorage</code>, cookies, or any other persistent
+    storage. A short (6-hour) in-memory cache of your playlist list may be kept while the tab is
+    open; it is cleared when the tab closes.
+  </p>
+  <p>
+    All search, ranking, and filtering is performed locally in your browser.
+  </p>
+
+  <h2>Permissions</h2>
+  <p>
+    The extension requests <strong>no</strong> Chrome permissions and <strong>no</strong> host
+    permissions. It runs only as a content script on <code>youtube.com</code> (and its
+    subdomains), which is the only site it needs access to. There is no background service worker
+    and no popup.
   </p>
 
   <h2>Third-Party Code</h2>
   <p>
-    The extension bundles a local copy of MiniSearch for BM25-based ranking. No remote executable
-    code is loaded at runtime.
+    The extension bundles a local copy of MiniSearch for BM25-based ranking. MiniSearch runs
+    entirely in your browser; no remote executable code is loaded at runtime, and no third-party
+    SDKs are used.
   </p>
-
-  <h2>Google API Services Compliance</h2>
-  <p>
-    This extension's use and transfer to any other app of information received from Google APIs
-    adheres to the
-    <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>,
-    including the Limited Use requirements.
-  </p>
-  <p>
-    Specifically, the extension limits its use of data obtained through Google services to providing
-    and improving the playlist search functionality described in this policy. It does not:
-  </p>
-  <ul>
-    <li>Transfer data to third parties unless necessary to provide the extension's core functionality</li>
-    <li>Use data for serving advertisements</li>
-    <li>Use data for purposes unrelated to the extension's playlist search and save features</li>
-  </ul>
 
   <h2>Changes</h2>
   <p>

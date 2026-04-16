@@ -1,7 +1,5 @@
 node_modules/
 dist/
-oauth_config.json
-.oauth.local.json
 .DS_Store
 *.zip
 
