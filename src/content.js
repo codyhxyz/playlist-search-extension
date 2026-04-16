@@ -16,6 +16,16 @@
   const INNERTUBE_CLIENT_VERSION_FALLBACK = "2.20260206.01.00";
   const PLAYLIST_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
+  // Self-only diagnostics: when an in-product invariant fails we console.warn
+  // it live and append a short entry to a bounded ring buffer in
+  // chrome.storage.local for later inspection. Nothing leaves the machine.
+  // To read the ring in the devtools console (from a youtube.com tab):
+  //   chrome.storage.local.get("ytpfDiagnostics", (v) => console.table(v.ytpfDiagnostics))
+  const DIAG_STORAGE_KEY = "ytpfDiagnostics";
+  const DIAG_RING_SIZE = 20;
+  const DIAG_THROTTLE_MS = 30_000;
+  const DIAG_HTML_SNAPSHOT_MAX = 10_000;
+
   let _innertubeConfig = null;
   function getInnertubeConfig() {
     if (_innertubeConfig) return _innertubeConfig;
@@ -1319,7 +1329,13 @@
     clearSynthRows(ctrl);
 
     if (!query || !apiMatches.length) return;
-    if (!ctrl.parent?.isConnected) return;
+    if (!ctrl.parent?.isConnected) {
+      recordDiagnostic("synth_parent_disconnected", {
+        apiMatches: apiMatches.length,
+        query,
+      });
+      return;
+    }
 
     const limited = apiMatches.slice(0, MODAL_API_RESULTS_LIMIT);
     const synthTerms = parseQueryTerms(query);
@@ -1403,6 +1419,13 @@
         console.warn("[ytpf] synth row failed", match?.playlist?.id, err);
       }
     });
+
+    if (limited.length > 0 && ctrl.synthRows.length === 0) {
+      recordDiagnostic("synth_rows_none_rendered", {
+        attempted: limited.length,
+        query,
+      });
+    }
   }
 
   async function loadAllPlaylists() {
@@ -1609,6 +1632,7 @@
 
     if (isModal) {
       renderSynthRows(ctrl, apiMatches, query);
+      checkForVisibleDuplicates(ctrl);
     }
   }
 
@@ -1745,6 +1769,7 @@
         const rows = collectRows(host);
         if (!rows.length) return;
         upsertHost(host, rows, "modal");
+        scheduleFilterBarMountCheck(host);
       });
 
     const pageSurface = collectFeedPageSurface();
@@ -1764,6 +1789,105 @@
       const ctrl = controllers.get(host);
       if (ctrl && ctrl.root.contains(document.activeElement)) continue;
       teardownHost(host);
+    }
+  }
+
+  // ── Diagnostics ────────────────────────────────────────────────────────────
+  // Pure ring-buffer tail. Extracted so test-search.js can exercise it without
+  // a chrome.storage fake. Returns a new array — never mutates the input.
+  function appendToRing(ring, entry, maxSize) {
+    const next = Array.isArray(ring) ? ring.slice() : [];
+    next.push(entry);
+    while (next.length > maxSize) next.shift();
+    return next;
+  }
+
+  const _lastDiagAt = new Map();
+
+  async function recordDiagnostic(invariant, context = {}) {
+    try {
+      const now = Date.now();
+      const prev = _lastDiagAt.get(invariant) || 0;
+      if (now - prev < DIAG_THROTTLE_MS) return;
+      _lastDiagAt.set(invariant, now);
+
+      let version = "unknown";
+      let clientVersion = "unknown";
+      try { version = chrome?.runtime?.getManifest?.()?.version || "unknown"; } catch {}
+      try { clientVersion = getInnertubeConfig().clientVersion; } catch {}
+
+      const entry = {
+        invariant,
+        context,
+        path: (typeof location !== "undefined" && location.pathname) || "",
+        version,
+        clientVersion,
+        ts: now,
+      };
+      console.warn(`[ytpf] diagnostic: ${invariant}`, entry);
+
+      if (typeof chrome === "undefined" || !chrome?.storage?.local) return;
+      const stored = await chrome.storage.local.get(DIAG_STORAGE_KEY);
+      const nextRing = appendToRing(stored[DIAG_STORAGE_KEY], entry, DIAG_RING_SIZE);
+      await chrome.storage.local.set({ [DIAG_STORAGE_KEY]: nextRing });
+    } catch {
+      // Recording must never break the extension.
+    }
+  }
+
+  const _filterBarMountChecked = new WeakSet();
+  function scheduleFilterBarMountCheck(host) {
+    if (_filterBarMountChecked.has(host)) return;
+    _filterBarMountChecked.add(host);
+    setTimeout(() => {
+      if (!host.isConnected) return;
+      const mounted =
+        host.querySelector?.(`.${FILTER_CLASS}`) ||
+        queryAllDeep(`.${FILTER_CLASS}`, host).length > 0;
+      if (mounted) return;
+      const html = (host.outerHTML || "").slice(0, DIAG_HTML_SNAPSHOT_MAX);
+      recordDiagnostic("filter_bar_missing", {
+        host: host.tagName?.toLowerCase() || "unknown",
+        rowCount: collectRows(host).length,
+        htmlTruncated: html.length >= DIAG_HTML_SNAPSHOT_MAX,
+        html,
+      });
+    }, 2500);
+  }
+
+  function checkForVisibleDuplicates(ctrl) {
+    if (ctrl.surface !== "modal") return;
+
+    const domTitles = new Set();
+    ctrl.rows.forEach((row) => {
+      if (row.classList?.contains(HIDDEN_CLASS)) return;
+      const t = getItemText(row);
+      if (t) domTitles.add(t);
+    });
+
+    const synthCounts = new Map();
+    const collisions = [];
+    ctrl.synthRows.forEach((row) => {
+      const t = normalizeText(row.textContent || "");
+      if (!t) return;
+      synthCounts.set(t, (synthCounts.get(t) || 0) + 1);
+      if (domTitles.has(t)) collisions.push(t);
+    });
+    const synthDupes = [...synthCounts.entries()].filter(([, c]) => c > 1);
+
+    if (collisions.length) {
+      recordDiagnostic("dom_synth_title_collision", {
+        count: collisions.length,
+        query: ctrl.lastQuery || "",
+        samples: collisions.slice(0, 3),
+      });
+    }
+    if (synthDupes.length) {
+      recordDiagnostic("synth_row_duplicates", {
+        count: synthDupes.length,
+        query: ctrl.lastQuery || "",
+        samples: synthDupes.slice(0, 3).map(([title, c]) => ({ title, count: c })),
+      });
     }
   }
 
@@ -1815,6 +1939,8 @@
       parseQueryTerms,
       BM25_SEARCH_OPTIONS,
       MODAL_HOST_SELECTOR,
+      appendToRing,
+      DIAG_RING_SIZE,
     });
   }
 })();

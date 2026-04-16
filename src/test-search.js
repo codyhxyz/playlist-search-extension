@@ -412,5 +412,41 @@ function buildIndex(domRows, apiPlaylists) {
   assert(marksInTitle.length >= 1, "synth row for 'My Favorites' should contain at least one <mark>");
 }
 
+// ---------------------------------------------------------------------------
+// Suite 4: diagnostic ring buffer (self-only regression reporter)
+// The ring is the load-bearing part of the "captured-on-failure" telemetry —
+// if it grows unbounded, chrome.storage.local fills up; if it mutates its
+// input, concurrent reads of prior state blow up. Keep it pure and bounded.
+// ---------------------------------------------------------------------------
+{
+  const cap = ytpf.DIAG_RING_SIZE;
+  assert(typeof cap === "number" && cap >= 5, "DIAG_RING_SIZE should be a sensible positive integer");
+
+  // empty start: appends cleanly, doesn't mutate undefined
+  const r1 = ytpf.appendToRing(undefined, { invariant: "a", ts: 1 }, cap);
+  assert(Array.isArray(r1) && r1.length === 1, "append to empty yields [entry]");
+  assert(r1[0].invariant === "a", "entry preserved");
+
+  // doesn't mutate the input array
+  const prior = [{ invariant: "x", ts: 0 }];
+  const r2 = ytpf.appendToRing(prior, { invariant: "y", ts: 1 }, cap);
+  assert(prior.length === 1 && prior[0].invariant === "x", "input array not mutated");
+  assert(r2.length === 2 && r2[1].invariant === "y", "new array has appended entry");
+
+  // caps at DIAG_RING_SIZE, oldest dropped first
+  let ring = [];
+  for (let i = 0; i < cap + 5; i += 1) {
+    ring = ytpf.appendToRing(ring, { invariant: "e", ts: i }, cap);
+  }
+  assert(ring.length === cap, `ring caps at ${cap}, got ${ring.length}`);
+  assert(ring[0].ts === 5, "oldest entries dropped (FIFO)");
+  assert(ring[ring.length - 1].ts === cap + 4, "newest entry at tail");
+
+  // non-array ring defends against corrupt storage values
+  const r3 = ytpf.appendToRing("garbage", { invariant: "z", ts: 9 }, cap);
+  assert(Array.isArray(r3) && r3.length === 1 && r3[0].invariant === "z",
+    "non-array prior value is treated as empty");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
