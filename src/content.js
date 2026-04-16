@@ -632,13 +632,6 @@
     return null;
   }
 
-  function escapeHtml(input) {
-    return input
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;");
-  }
-
   function getRowPlaylistId(row) {
     const data = row.data || row.__data;
     if (data?.playlistId) return data.playlistId;
@@ -648,16 +641,28 @@
     return null;
   }
 
-  function buildHighlightHtml(text, ranges) {
-    let html = "";
+  // Single source of truth for "text + ranges -> highlighted output".
+  // Returns a DocumentFragment of text nodes and <mark class="ytpf-mark"> elements.
+  // Using text nodes (not innerHTML) means no HTML escaping is needed, and
+  // there's only one implementation for both DOM-row highlighting and synth-row
+  // highlighting to drift out of sync.
+  function buildHighlightFragment(text, ranges) {
+    const frag = document.createDocumentFragment();
     let cursor = 0;
     for (const { from, to } of ranges) {
-      if (from > cursor) html += escapeHtml(text.slice(cursor, from));
-      html += `<mark class="ytpf-mark">${escapeHtml(text.slice(from, to))}</mark>`;
+      if (from > cursor) {
+        frag.appendChild(document.createTextNode(text.slice(cursor, from)));
+      }
+      const mark = document.createElement("mark");
+      mark.className = "ytpf-mark";
+      mark.textContent = text.slice(from, to);
+      frag.appendChild(mark);
       cursor = to;
     }
-    if (cursor < text.length) html += escapeHtml(text.slice(cursor));
-    return html;
+    if (cursor < text.length) {
+      frag.appendChild(document.createTextNode(text.slice(cursor)));
+    }
+    return frag;
   }
 
   function ensureOriginalLabelHtml(label) {
@@ -744,22 +749,10 @@
       if (!ranges.length) return;
 
       didHighlight = true;
-      const frag = document.createDocumentFragment();
-      let cursor = 0;
-      ranges.forEach((range) => {
-        if (range.from > cursor) {
-          frag.appendChild(document.createTextNode(rawText.slice(cursor, range.from)));
-        }
-        const mark = document.createElement("mark");
-        mark.className = "ytpf-mark";
-        mark.textContent = rawText.slice(range.from, range.to);
-        frag.appendChild(mark);
-        cursor = range.to;
-      });
-      if (cursor < rawText.length) {
-        frag.appendChild(document.createTextNode(rawText.slice(cursor)));
-      }
-      textNode.parentNode.replaceChild(frag, textNode);
+      textNode.parentNode.replaceChild(
+        buildHighlightFragment(rawText, ranges),
+        textNode,
+      );
     });
 
     if (!didHighlight) {
@@ -1271,6 +1264,9 @@
     const synthTerms = parseQueryTerms(query);
 
     limited.forEach((match) => {
+      // Defense-in-depth: one bad synth row must not break the user's keystroke.
+      // If anything throws (bad match data, missing helper, etc), log and skip.
+      try {
       const playlist = match.playlist;
       const label = playlist.title || "Untitled";
 
@@ -1288,7 +1284,7 @@
 
       const ranges = getHighlightRanges(label, synthTerms);
       if (ranges.length) {
-        title.innerHTML = buildHighlightHtml(label, ranges);
+        title.replaceChildren(buildHighlightFragment(label, ranges));
       } else {
         title.textContent = label;
       }
@@ -1302,9 +1298,12 @@
           title.textContent = "Could not find video ID";
           setTimeout(() => {
             title.style.color = "";
-            const ranges = getHighlightRanges(label, synthTerms);
-            if (ranges.length) { title.innerHTML = buildHighlightHtml(label, ranges); }
-            else { title.textContent = label; }
+            const revertRanges = getHighlightRanges(label, synthTerms);
+            if (revertRanges.length) {
+              title.replaceChildren(buildHighlightFragment(label, revertRanges));
+            } else {
+              title.textContent = label;
+            }
           }, 2000);
           return;
         }
@@ -1346,6 +1345,13 @@
       if (!ctrl.parent?.isConnected) return;
       ctrl.parent.appendChild(row);
       ctrl.synthRows.push(row);
+      } catch (err) {
+        console.warn(
+          "[ytpf] synth row failed",
+          match?.playlist?.id,
+          err,
+        );
+      }
     });
   }
 
@@ -1524,9 +1530,14 @@
 
     ctrl.clear.classList.toggle("ytpf-clear-visible", Boolean(query));
 
-    if (query && scrollContainer) {
+    // Only snap to top on the empty -> non-empty transition (the user just
+    // started searching). Snapping on every keystroke masks the visible
+    // reranking of matches — they move to the top, but the scroll reset
+    // makes it look like nothing is changing.
+    if (query && scrollContainer && !ctrl.lastQuery) {
       scrollContainer.scrollTop = 0;
     }
+    ctrl.lastQuery = query;
 
     if (ctrl.surface === "page") {
       const safeTotal = Math.max(0, ctrl.rows.length);
@@ -1573,6 +1584,7 @@
       synthRows: [],
       apiToken: 0,
       scrollContainer: undefined,
+      lastQuery: "",
     };
 
     if (surface === "modal") {
@@ -1666,32 +1678,31 @@
   }
 
   function refresh() {
-    const activeHosts = new Set();
-
     queryAllDeep(MODAL_HOST_SELECTOR)
       .filter(isVisible)
       .forEach((host) => {
         const rows = collectRows(host);
         if (!rows.length) return;
-
-        activeHosts.add(host);
         upsertHost(host, rows, "modal");
       });
 
     const pageSurface = collectFeedPageSurface();
     if (pageSurface) {
-      activeHosts.add(pageSurface.host);
       upsertHost(pageSurface.host, pageSurface.rows, "page");
     }
 
+    // Only tear down controllers whose host element is actually gone.
+    // YouTube frequently re-renders the modal's inner list, making collectRows
+    // momentarily return empty; if we tore down on that, the filter bar would
+    // disappear mid-use with no error (exactly the bug we kept shipping). If
+    // the host is still attached, rows will come back on the next refresh —
+    // we don't need to rebuild the UI in the meantime. If ui.root itself gets
+    // detached, upsertHost's !existing.root.isConnected branch re-attaches it.
     for (const host of [...controllerHosts]) {
-      if (!activeHosts.has(host) || !host.isConnected) {
-        const ctrl = controllers.get(host);
-        if (ctrl && ctrl.root.contains(document.activeElement)) {
-          continue;
-        }
-        teardownHost(host);
-      }
+      if (host.isConnected) continue;
+      const ctrl = controllers.get(host);
+      if (ctrl && ctrl.root.contains(document.activeElement)) continue;
+      teardownHost(host);
     }
   }
 
@@ -1730,4 +1741,22 @@
   }
 
   start();
+
+  // Test hook: inert in the browser. When src/test-search.js evaluates this
+  // file in a node:vm sandbox, it sets __YTPF_TEST__ on the sandbox's
+  // globalThis and we hand the test suite the internal helpers it needs to
+  // cover. This keeps production code in a single IIFE (no exports) while
+  // giving tests a way to exercise "the call resolves at runtime" — the
+  // check that would have caught the buildHighlightHtml bug before it shipped.
+  if (typeof globalThis !== "undefined" && typeof globalThis.__YTPF_TEST__ === "function") {
+    globalThis.__YTPF_TEST__({
+      buildHighlightFragment,
+      getHighlightRanges,
+      createUnifiedIndex,
+      renderSynthRows,
+      applyHighlight,
+      normalizeText,
+      parseQueryTerms,
+    });
+  }
 })();
