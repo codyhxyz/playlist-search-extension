@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.6.1 - 2026-04-17
+- Fixed duplicate-script-ID race in the service worker by coalescing concurrent registration calls into a single in-flight promise.
+
 ## 1.6.0 - 2026-04-16
 - Added welcome onboarding page with one-click permission grant and animated demo loop.
 - Rewrote privacy policy for the InnerTube architecture; removed all OAuth artifacts.
