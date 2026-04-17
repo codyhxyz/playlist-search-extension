@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Syntax check (content script)
+        run: node --check src/content.js
+
+      - name: Syntax check (background + onboarding + welcome)
+        run: |
+          node --check src/background.js
+          node --check src/onboarding-state.js
+          node --check src/welcome.js
+
+      - name: Regression tests
+        run: node src/test-search.js
+
+      - name: CWS structural validator
+        run: node scripts/validate-cws.mjs

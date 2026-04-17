@@ -1,0 +1,107 @@
+# Keepalive Publish
+#
+# Every 4 months: patch-bump src/manifest.json, build the store zip, upload
+# and auto-publish to the Chrome Web Store. Prevents the CWS listing from
+# getting flagged with a "hasn't been updated in a long time" warning.
+#
+# This is a workaround for staleness signals, not a substitute for real
+# maintenance. If the extension is actually broken, ship a real fix.
+#
+# Activate by setting these 4 secrets in the repo
+# (Settings → Secrets and variables → Actions):
+#   - CWS_EXTENSION_ID
+#   - CWS_CLIENT_ID
+#   - CWS_CLIENT_SECRET
+#   - CWS_REFRESH_TOKEN
+#
+# Without them the workflow exits cleanly so the repo doesn't get red-X'd
+# failure emails.
+
+name: Keepalive Publish
+
+on:
+  schedule:
+    # 1st day of every 4th month (Jan, May, Sep) at 12:00 UTC.
+    - cron: "0 12 1 */4 *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate on secrets
+        id: gate
+        env:
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+        run: |
+          if [ -z "$CWS_EXTENSION_ID" ]; then
+            echo "CWS_EXTENSION_ID not set — skipping."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.gate.outputs.enabled == 'true'
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        if: steps.gate.outputs.enabled == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Bump manifest patch version
+        if: steps.gate.outputs.enabled == 'true'
+        id: bump
+        run: |
+          NEW=$(node -e '
+            const fs = require("fs");
+            const path = "src/manifest.json";
+            const m = JSON.parse(fs.readFileSync(path, "utf8"));
+            const parts = m.version.split(".").map((n) => parseInt(n, 10));
+            parts[parts.length - 1] += 1;
+            m.version = parts.join(".");
+            fs.writeFileSync(path, JSON.stringify(m, null, 2) + "\n");
+            process.stdout.write(m.version);
+          ')
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+          echo "Bumped manifest to $NEW"
+
+      - name: Build zip
+        if: steps.gate.outputs.enabled == 'true'
+        run: bash scripts/build-store-zip.sh
+
+      - name: Version sync check
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: node scripts/version-sync.mjs
+
+      - name: Upload + publish
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: node scripts/publish-cws.mjs
+
+      - name: Commit version bump
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/manifest.json
+          git commit -m "chore: keepalive version bump to ${NEW_VERSION} [skip ci]"
+          git push
