@@ -74,7 +74,10 @@ async function cwsFetch(secrets, method, path, { body, contentType } = {}) {
   return respBody;
 }
 
-export async function getItem(secrets, projection = "PUBLISHED") {
+// CWS API v1.1 only accepts projection=DRAFT now; PUBLISHED returns HTTP 400.
+// The DRAFT projection's crxVersion reflects whatever version CWS currently
+// has on file, which is what version-sync needs to compare against.
+export async function getItem(secrets, projection = "DRAFT") {
   return cwsFetch(
     secrets,
     "GET",
@@ -83,7 +86,7 @@ export async function getItem(secrets, projection = "PUBLISHED") {
 }
 
 export async function getPublishedVersion(secrets) {
-  const item = await getItem(secrets, "PUBLISHED");
+  const item = await getItem(secrets, "DRAFT");
   return typeof item?.crxVersion === "string" && item.crxVersion.length > 0
     ? item.crxVersion
     : null;
@@ -93,7 +96,7 @@ export async function getListing(secrets, language = "default") {
   return cwsFetch(
     secrets,
     "GET",
-    `chromewebstore/v1.1/items/${encodeURIComponent(secrets.extensionId)}/listings/${encodeURIComponent(language)}?projection=PUBLISHED`,
+    `chromewebstore/v1.1/items/${encodeURIComponent(secrets.extensionId)}/listings/${encodeURIComponent(language)}?projection=DRAFT`,
   );
 }
 
@@ -128,7 +131,7 @@ export async function pollStatus(secrets, initialPublish, { pollIntervalMs = 30_
   }
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const item = await getItem(secrets, "PUBLISHED");
+    const item = await getItem(secrets, "DRAFT");
     if (item?.uploadState === "SUCCESS") return { state: "live", lastStatus: statusList };
     if (item?.uploadState === "FAILURE") {
       return {
