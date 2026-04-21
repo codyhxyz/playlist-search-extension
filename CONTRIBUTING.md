@@ -6,7 +6,7 @@ Thanks for your interest in YouTube Playlist Search! Here's how to get started.
 
 1. Clone the repo:
    ```bash
-   git clone https://github.com/ydoc5212/playlist-search-extension.git
+   git clone https://github.com/codyhxyz/playlist-search-extension.git
    cd playlist-search-extension
    ```
 
