@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f0d0c">
+<title>Mixtape — Save to YouTube playlists from your phone</title>
+<meta name="description" content="Paste a YouTube link, jump straight to the Save sheet. No extension, no install.">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="manifest" href="m-manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,700;0,9..144,900;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --ink: #f4ede2;
+    --ink-dim: rgba(244, 237, 226, 0.56);
+    --ink-faint: rgba(244, 237, 226, 0.14);
+    --paper: #100d0a;
+    --paper-2: #17130e;
+    --paper-3: #1f1a14;
+    --rec: #ff2a1f;
+    --rec-dim: #bf1a12;
+    --led: #ffaa2e;
+    --led-glow: #ffcc66;
+    --tape: #3a2f24;
+    --tape-dark: #241c14;
+    --serif: 'Fraunces', 'Times New Roman', serif;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --sans: 'Inter', system-ui, sans-serif;
+  }
+
+  html, body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    min-height: 100%;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: contain;
+  }
+
+  body {
+    background:
+      radial-gradient(ellipse at 80% -10%, rgba(255, 170, 46, 0.08) 0%, transparent 55%),
+      radial-gradient(ellipse at 15% 110%, rgba(255, 42, 31, 0.10) 0%, transparent 55%),
+      linear-gradient(180deg, #0d0b09 0%, #100d0a 40%, #0a0806 100%);
+    background-attachment: fixed;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    position: relative;
+  }
+
+  /* Paper grain overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.35;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.9  0 0 0 0 0.85  0 0 0 0 0.75  0 0 0 0.5 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    z-index: 1;
+  }
+
+  .wrap {
+    position: relative;
+    z-index: 2;
+    max-width: 540px;
+    margin: 0 auto;
+    padding: 22px 20px 64px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Masthead ── */
+  .masthead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--ink-faint);
+    margin-bottom: 22px;
+  }
+  .brand {
+    font-family: var(--serif);
+    font-weight: 900;
+    font-style: italic;
+    font-size: 22px;
+    letter-spacing: -0.5px;
+    line-height: 1;
+  }
+  .brand .amp { color: var(--rec); font-style: normal; }
+  .issue {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+  }
+
+  /* ── Hero ── */
+  header.hero {
+    margin-bottom: 22px;
+  }
+  .kicker {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--led);
+    margin-bottom: 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .kicker::before {
+    content: '';
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--led);
+    box-shadow: 0 0 10px var(--led-glow), 0 0 2px var(--led);
+    animation: blink 1.6s ease-in-out infinite;
+  }
+  @keyframes blink {
+    0%, 45%, 100% { opacity: 1; }
+    50%, 70% { opacity: 0.25; }
+  }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 40px;
+    line-height: 0.98;
+    letter-spacing: -1.5px;
+    margin-bottom: 14px;
+  }
+  h1 em {
+    font-style: italic;
+    font-weight: 900;
+    color: var(--rec);
+  }
+  .lede {
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--ink-dim);
+    max-width: 42ch;
+  }
+
+  /* ── Stage ticker (PASTE → PREVIEW → EJECT) ── */
+  .ticker {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0;
+    margin: 24px 0 14px;
+    padding: 10px 14px;
+    background: var(--paper-2);
+    border: 1px solid var(--ink-faint);
+    border-radius: 10px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+  .ticker .stage {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: rgba(244, 237, 226, 0.28);
+    transition: color 0.3s;
+  }
+  .ticker .stage + .stage { justify-content: center; }
+  .ticker .stage:last-child { justify-content: flex-end; }
+  .ticker .led {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: rgba(244, 237, 226, 0.15);
+    box-shadow: inset 0 0 3px rgba(0,0,0,0.6);
+  }
+  .ticker .stage.active { color: var(--led); }
+  .ticker .stage.active .led {
+    background: var(--led);
+    box-shadow: 0 0 8px var(--led-glow), 0 0 2px var(--led);
+  }
+  .ticker .stage.done { color: rgba(255, 170, 46, 0.55); }
+  .ticker .stage.done .led { background: rgba(255, 170, 46, 0.55); }
+
+  /* ── Deck (main card) ── */
+  .deck {
+    background: linear-gradient(180deg, var(--paper-3) 0%, var(--paper-2) 100%);
+    border: 1px solid var(--ink-faint);
+    border-radius: 18px;
+    padding: 18px 16px 22px;
+    position: relative;
+    box-shadow: 0 18px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04);
+  }
+  .deck::before {
+    /* screw-head corners */
+    content: '';
+    position: absolute;
+    top: 10px; left: 10px;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, #4a3d2e, #1a1410);
+  }
+  .deck::after {
+    content: '';
+    position: absolute;
+    top: 10px; right: 10px;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, #4a3d2e, #1a1410);
+  }
+
+  /* Cassette label */
+  .label-strip {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    text-align: center;
+    padding-bottom: 12px;
+    border-bottom: 1px dashed var(--ink-faint);
+    margin-bottom: 16px;
+  }
+  .label-strip .dot { color: var(--rec); }
+
+  .url-row {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+  }
+  input[type="url"] {
+    flex: 1;
+    min-width: 0;
+    height: 50px;
+    border: 1px solid var(--ink-faint);
+    border-radius: 12px;
+    padding: 0 14px;
+    background: #0a0805;
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 500;
+    outline: none;
+    transition: border-color 0.18s, box-shadow 0.18s;
+  }
+  input[type="url"]::placeholder {
+    color: rgba(244, 237, 226, 0.3);
+  }
+  input[type="url"]:focus {
+    border-color: var(--led);
+    box-shadow: 0 0 0 3px rgba(255, 170, 46, 0.15);
+  }
+
+  button {
+    appearance: none;
+    border: none;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.08s, background 0.18s, box-shadow 0.18s;
+  }
+  button:active { transform: scale(0.97); }
+
+  .paste {
+    height: 50px;
+    padding: 0 16px;
+    background: rgba(244, 237, 226, 0.06);
+    border: 1px solid var(--ink-faint);
+    border-radius: 12px;
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .paste:hover { background: rgba(244, 237, 226, 0.10); }
+  .paste svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+  .toast {
+    margin-top: 10px;
+    padding: 8px 12px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.3px;
+    color: var(--ink-dim);
+    border-left: 2px solid var(--ink-faint);
+    background: rgba(244, 237, 226, 0.02);
+    border-radius: 0 6px 6px 0;
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+  }
+  .toast.ok { color: var(--led); border-left-color: var(--led); }
+  .toast.err { color: #ff8a70; border-left-color: #ff8a70; }
+
+  /* ── Cassette / preview ── */
+  .cassette {
+    margin-top: 18px;
+    padding: 14px;
+    background: linear-gradient(180deg, #15110c 0%, #0d0a07 100%);
+    border: 1px solid var(--ink-faint);
+    border-radius: 12px;
+    display: none;
+    position: relative;
+    overflow: hidden;
+  }
+  .cassette.show { display: block; animation: dropIn 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+  @keyframes dropIn {
+    0% { opacity: 0; transform: translateY(-8px) scale(0.98); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .reels {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 6px 12px;
+    border-bottom: 1px dashed var(--ink-faint);
+    margin-bottom: 12px;
+  }
+  .reel {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 50%, var(--tape-dark) 0%, var(--tape-dark) 22%, var(--tape) 23%, var(--tape) 46%, var(--tape-dark) 47%, var(--tape-dark) 58%, var(--tape) 59%);
+    border: 2px solid #0a0805;
+    position: relative;
+    box-shadow: inset 0 0 8px rgba(0,0,0,0.8);
+  }
+  .reel::before, .reel::after {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 12px; height: 2px;
+    background: var(--tape);
+    transform: translate(-50%, -50%);
+  }
+  .reel::after { transform: translate(-50%, -50%) rotate(90deg); }
+  .cassette.loading .reel {
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  .tape-span {
+    flex: 1;
+    height: 3px;
+    margin: 0 10px;
+    background: linear-gradient(90deg, var(--tape-dark), var(--tape), var(--tape-dark));
+    border-radius: 2px;
+    box-shadow: 0 0 4px rgba(0,0,0,0.6);
+  }
+
+  .meta {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .meta img {
+    width: 108px;
+    height: 61px;
+    object-fit: cover;
+    border-radius: 6px;
+    background: #000;
+    flex-shrink: 0;
+    border: 1px solid var(--ink-faint);
+  }
+  .meta-text { min-width: 0; padding-top: 2px; }
+  .meta .t {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 16px;
+    line-height: 1.2;
+    letter-spacing: -0.2px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .meta .a {
+    margin-top: 4px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-dim);
+    letter-spacing: 0.2px;
+  }
+
+  /* ── Record button ── */
+  .record-block {
+    margin-top: 18px;
+    display: none;
+  }
+  .record-block.show {
+    display: block;
+    animation: dropIn 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  }
+  .record {
+    width: 100%;
+    height: 64px;
+    background: linear-gradient(180deg, var(--rec) 0%, var(--rec-dim) 100%);
+    color: #fff;
+    border-radius: 14px;
+    font-family: var(--serif);
+    font-weight: 900;
+    font-size: 19px;
+    letter-spacing: -0.3px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    box-shadow:
+      0 10px 24px rgba(255, 42, 31, 0.32),
+      0 2px 6px rgba(0,0,0,0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.25),
+      inset 0 -2px 0 rgba(0, 0, 0, 0.25);
+    position: relative;
+    overflow: hidden;
+  }
+  .record::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.22), transparent 55%);
+    pointer-events: none;
+  }
+  .record .dot {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.55), 0 0 24px rgba(255, 200, 200, 0.35);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(0.72); opacity: 0.75; }
+  }
+  .record:active {
+    box-shadow:
+      0 4px 10px rgba(255, 42, 31, 0.25),
+      inset 0 2px 6px rgba(0, 0, 0, 0.3);
+  }
+  .record-note {
+    margin-top: 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-dim);
+    line-height: 1.5;
+    text-align: center;
+  }
+  .record-note b { color: var(--ink); font-weight: 600; }
+
+  /* ── Section headers ── */
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin: 32px 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--ink-faint);
+  }
+  .section-head h2 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-style: italic;
+    font-size: 20px;
+    letter-spacing: -0.5px;
+  }
+  .section-head .tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+  }
+
+  /* ── Recents ── */
+  .recents {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .recents .empty {
+    padding: 14px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--ink-dim);
+    text-align: center;
+    border: 1px dashed var(--ink-faint);
+    border-radius: 10px;
+    line-height: 1.5;
+  }
+  .recent-item {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 8px;
+    background: rgba(244, 237, 226, 0.025);
+    border: 1px solid var(--ink-faint);
+    border-radius: 10px;
+    cursor: pointer;
+    text-decoration: none;
+    color: inherit;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .recent-item:hover { background: rgba(244, 237, 226, 0.05); border-color: rgba(244, 237, 226, 0.24); }
+  .recent-item img {
+    width: 72px; height: 40px;
+    object-fit: cover;
+    border-radius: 4px;
+    flex-shrink: 0;
+    background: #000;
+  }
+  .recent-item .ri-text { min-width: 0; flex: 1; }
+  .recent-item .ri-t {
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .recent-item .ri-a {
+    margin-top: 2px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-dim);
+  }
+  .recent-item .ri-go {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--rec);
+    flex-shrink: 0;
+    padding: 0 4px;
+  }
+
+  /* ── Install / share target card ── */
+  .install-card {
+    margin-top: 12px;
+    padding: 16px;
+    background:
+      linear-gradient(135deg, rgba(255, 170, 46, 0.08) 0%, rgba(255, 42, 31, 0.05) 100%),
+      var(--paper-2);
+    border: 1px solid rgba(255, 170, 46, 0.22);
+    border-radius: 14px;
+  }
+  .install-card .it {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 17px;
+    letter-spacing: -0.3px;
+    margin-bottom: 6px;
+  }
+  .install-card .id {
+    font-size: 13px;
+    color: var(--ink-dim);
+    line-height: 1.5;
+    margin-bottom: 12px;
+  }
+  .install-steps {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--ink);
+    line-height: 1.7;
+  }
+  .install-steps .k {
+    display: inline-block;
+    min-width: 18px;
+    padding: 1px 6px;
+    margin-right: 6px;
+    background: rgba(255, 170, 46, 0.14);
+    border: 1px solid rgba(255, 170, 46, 0.32);
+    border-radius: 4px;
+    color: var(--led);
+    font-size: 10px;
+    text-align: center;
+  }
+
+  /* ── Details / how it works ── */
+  details.how {
+    margin-top: 12px;
+    border: 1px solid var(--ink-faint);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  details.how summary {
+    padding: 14px 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    list-style: none;
+  }
+  details.how summary::-webkit-details-marker { display: none; }
+  details.how summary::after {
+    content: '+';
+    font-size: 18px;
+    font-family: var(--serif);
+    color: var(--ink);
+    transition: transform 0.2s;
+  }
+  details.how[open] summary::after { content: '–'; }
+  details.how .body {
+    padding: 0 16px 16px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--ink-dim);
+  }
+  details.how .body ol {
+    padding-left: 18px;
+    margin-top: 6px;
+  }
+  details.how .body ol li { margin-bottom: 4px; }
+
+  /* ── Footer ── */
+  footer {
+    margin-top: auto;
+    padding-top: 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+  }
+  footer a { color: var(--ink-dim); text-decoration: none; border-bottom: 1px dashed var(--ink-faint); padding-bottom: 1px; }
+  footer a:hover { color: var(--ink); }
+
+  /* Small phones */
+  @media (max-width: 360px) {
+    h1 { font-size: 34px; }
+    .paste { padding: 0 12px; font-size: 12px; }
+    .paste .lbl { display: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="masthead">
+      <div class="brand">mixtape<span class="amp">·</span></div>
+      <div class="issue">SIDE B / MOBILE</div>
+    </div>
+
+    <header class="hero">
+      <div class="kicker">Recording Ready</div>
+      <h1>Save to <em>YouTube</em> playlists from your phone.</h1>
+      <p class="lede">The extension is desktop-only. Paste a link here and we'll drop you straight into YouTube's Save sheet — one tap, no install.</p>
+    </header>
+
+    <div class="ticker" id="ticker">
+      <div class="stage active" data-stage="paste"><span class="led"></span>1 · Paste</div>
+      <div class="stage" data-stage="preview"><span class="led"></span>2 · Preview</div>
+      <div class="stage" data-stage="eject"><span class="led"></span>3 · Save</div>
+    </div>
+
+    <div class="deck">
+      <div class="label-strip">— <span class="dot">●</span> YT-01 · SAVE TO PLAYLIST · 90 MIN <span class="dot">●</span> —</div>
+
+      <div class="url-row">
+        <input id="url" type="url" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="youtu.be/…">
+        <button id="paste" class="paste" type="button" aria-label="Paste from clipboard">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+          <span class="lbl">Paste</span>
+        </button>
+      </div>
+
+      <div id="toast" class="toast">Copy a YouTube link — we'll auto-grab it.</div>
+
+      <div id="cassette" class="cassette">
+        <div class="reels">
+          <div class="reel"></div>
+          <div class="tape-span"></div>
+          <div class="reel"></div>
+        </div>
+        <div class="meta">
+          <img id="thumb" alt="">
+          <div class="meta-text">
+            <div id="title" class="t">Loading…</div>
+            <div id="author" class="a"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="record" class="record-block">
+        <button id="open" class="record" type="button">
+          <span class="dot"></span>
+          <span>Open in YouTube &amp; Save</span>
+        </button>
+        <div class="record-note">Opens the video in YouTube. Tap <b>Save</b>, then pick a playlist.</div>
+      </div>
+    </div>
+
+    <div class="section-head">
+      <h2>Recent side</h2>
+      <span class="tag">Last 5</span>
+    </div>
+    <div id="recents" class="recents">
+      <div class="empty">No tracks saved yet. Paste a link to start your mixtape.</div>
+    </div>
+
+    <div class="section-head">
+      <h2>Skip the paste</h2>
+      <span class="tag">Share target</span>
+    </div>
+    <div class="install-card">
+      <div class="it">Add Mixtape to your Home Screen</div>
+      <div class="id">Installs like an app. Then you can share any YouTube link straight to Mixtape from the system share sheet.</div>
+      <div id="install-steps" class="install-steps">
+        <div><span class="k">1</span>Tap the browser share icon.</div>
+        <div><span class="k">2</span>Pick <b>Add to Home Screen</b>.</div>
+        <div><span class="k">3</span>Share any YouTube link → Mixtape.</div>
+      </div>
+    </div>
+
+    <details class="how">
+      <summary>How this actually works</summary>
+      <div class="body">
+        This page extracts the video ID from your link and opens <code>youtube.com/watch?v=ID</code>. YouTube's mobile app intercepts the URL and shows the video with a <b>Save</b> button. Two taps instead of zero — until YouTube exposes a direct "save to playlist" deep-link or we ship OAuth for it.
+        <ol>
+          <li>Paste or share a YouTube URL.</li>
+          <li>We fetch the video's title &amp; thumbnail (oEmbed, no API key).</li>
+          <li>Tap the red button → YouTube opens → tap Save.</li>
+        </ol>
+      </div>
+    </details>
+
+    <footer>
+      <a href="/">← Homepage</a>
+      <span>Side B</span>
+    </footer>
+  </div>
+
+<script>
+(function () {
+  const urlInput = document.getElementById('url');
+  const pasteBtn = document.getElementById('paste');
+  const toastEl  = document.getElementById('toast');
+  const cassette = document.getElementById('cassette');
+  const thumbEl  = document.getElementById('thumb');
+  const titleEl  = document.getElementById('title');
+  const authorEl = document.getElementById('author');
+  const recordEl = document.getElementById('record');
+  const openBtn  = document.getElementById('open');
+  const ticker   = document.getElementById('ticker');
+  const recentsEl= document.getElementById('recents');
+  const stepsEl  = document.getElementById('install-steps');
+
+  const RECENTS_KEY = 'mixtape.recents.v1';
+  let currentVideoId = null;
+  let currentMeta = null;
+
+  // ── Platform-aware install copy ──
+  const ua = navigator.userAgent;
+  const isIOS = /iPad|iPhone|iPod/.test(ua);
+  const isAndroid = /Android/.test(ua);
+  if (isIOS) {
+    stepsEl.innerHTML = `
+      <div><span class="k">1</span>Tap the <b>Share</b> icon in Safari.</div>
+      <div><span class="k">2</span>Choose <b>Add to Home Screen</b>.</div>
+      <div><span class="k">3</span>Open Mixtape from your home screen — share YouTube links to it.</div>`;
+  } else if (isAndroid) {
+    stepsEl.innerHTML = `
+      <div><span class="k">1</span>Open the browser menu (⋮).</div>
+      <div><span class="k">2</span>Tap <b>Install app</b> or <b>Add to Home screen</b>.</div>
+      <div><span class="k">3</span>Share any YouTube link → pick Mixtape.</div>`;
+  }
+
+  // ── Video ID parse ──
+  function parseVideoId(raw) {
+    if (!raw) return null;
+    const s = raw.trim();
+    if (/^[a-zA-Z0-9_-]{11}$/.test(s)) return s;
+    let u;
+    try { u = new URL(s); } catch { return null; }
+    const host = u.hostname.replace(/^www\./, '').replace(/^m\./, '');
+    if (host === 'youtu.be') {
+      const id = u.pathname.slice(1).split('/')[0];
+      return /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : null;
+    }
+    if (host === 'youtube.com' || host === 'music.youtube.com') {
+      const v = u.searchParams.get('v');
+      if (v && /^[a-zA-Z0-9_-]{11}$/.test(v)) return v;
+      const m = u.pathname.match(/^\/(shorts|embed|live)\/([a-zA-Z0-9_-]{11})/);
+      if (m) return m[2];
+    }
+    return null;
+  }
+
+  function setToast(text, kind) {
+    toastEl.innerHTML = text;
+    toastEl.classList.remove('ok', 'err');
+    if (kind) toastEl.classList.add(kind);
+  }
+
+  function setStage(name) {
+    const order = ['paste', 'preview', 'eject'];
+    const idx = order.indexOf(name);
+    ticker.querySelectorAll('.stage').forEach((el, i) => {
+      el.classList.remove('active', 'done');
+      if (i < idx) el.classList.add('done');
+      else if (i === idx) el.classList.add('active');
+    });
+  }
+
+  async function fetchPreview(id) {
+    try {
+      const r = await fetch(`https://www.youtube.com/oembed?format=json&url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D${id}`);
+      if (!r.ok) return null;
+      return await r.json();
+    } catch { return null; }
+  }
+
+  async function handleUrl(raw) {
+    const id = parseVideoId(raw);
+    if (!id) {
+      currentVideoId = null;
+      cassette.classList.remove('show');
+      recordEl.classList.remove('show');
+      setStage('paste');
+      if (raw && raw.trim()) setToast("That doesn't look like a YouTube link.", 'err');
+      else setToast("Tap <b>Paste</b> — we'll read your clipboard.");
+      return;
+    }
+    currentVideoId = id;
+    setStage('preview');
+    setToast('Link detected — cueing the tape.', 'ok');
+
+    thumbEl.src = `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
+    titleEl.textContent = 'Loading…';
+    authorEl.textContent = '';
+    cassette.classList.add('show', 'loading');
+    recordEl.classList.add('show');
+
+    const meta = await fetchPreview(id);
+    if (currentVideoId !== id) return;
+    cassette.classList.remove('loading');
+
+    if (meta) {
+      titleEl.textContent = meta.title || `Video ${id}`;
+      authorEl.textContent = meta.author_name || '';
+      currentMeta = { id, title: meta.title || `Video ${id}`, author: meta.author_name || '', ts: Date.now() };
+    } else {
+      titleEl.textContent = `Video ${id}`;
+      authorEl.textContent = '';
+      currentMeta = { id, title: `Video ${id}`, author: '', ts: Date.now() };
+    }
+    setStage('eject');
+    setToast('Ready. Tap the red button when you are.', 'ok');
+  }
+
+  // ── Recents ──
+  function loadRecents() {
+    try { return JSON.parse(localStorage.getItem(RECENTS_KEY) || '[]'); }
+    catch { return []; }
+  }
+  function saveRecent(meta) {
+    if (!meta) return;
+    let list = loadRecents().filter(r => r.id !== meta.id);
+    list.unshift(meta);
+    list = list.slice(0, 5);
+    try { localStorage.setItem(RECENTS_KEY, JSON.stringify(list)); } catch {}
+    renderRecents();
+  }
+  function renderRecents() {
+    const list = loadRecents();
+    if (!list.length) {
+      recentsEl.innerHTML = '<div class="empty">No tracks saved yet. Paste a link to start your mixtape.</div>';
+      return;
+    }
+    recentsEl.innerHTML = list.map(r => `
+      <a class="recent-item" href="https://www.youtube.com/watch?v=${r.id}" data-id="${r.id}">
+        <img src="https://i.ytimg.com/vi/${r.id}/mqdefault.jpg" alt="">
+        <div class="ri-text">
+          <div class="ri-t">${escapeHtml(r.title)}</div>
+          <div class="ri-a">${escapeHtml(r.author || 'YouTube')}</div>
+        </div>
+        <div class="ri-go">↗</div>
+      </a>
+    `).join('');
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  renderRecents();
+
+  // ── Events ──
+  pasteBtn.addEventListener('click', async () => {
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+      setToast('Clipboard blocked. Long-press the field to paste.', 'err');
+      urlInput.focus();
+      return;
+    }
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) { setToast('Clipboard empty.', 'err'); return; }
+      urlInput.value = text;
+      handleUrl(text);
+    } catch {
+      setToast('Clipboard access denied. Long-press the field to paste.', 'err');
+      urlInput.focus();
+    }
+  });
+
+  urlInput.addEventListener('input', (e) => handleUrl(e.target.value));
+  urlInput.addEventListener('paste', () => {
+    setTimeout(() => handleUrl(urlInput.value), 0);
+  });
+
+  // Auto-grab clipboard helper — populates + handles if clipboard has a YT link.
+  // Fails silently (no gesture, denied permission, empty clipboard, non-YT text).
+  async function tryClipboardAutoFill() {
+    if (urlInput.value) return false;
+    if (!navigator.clipboard || !navigator.clipboard.readText) return false;
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text || !parseVideoId(text)) return false;
+      urlInput.value = text;
+      handleUrl(text);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  urlInput.addEventListener('focus', () => tryClipboardAutoFill());
+
+  openBtn.addEventListener('click', () => {
+    if (!currentVideoId) return;
+    if (navigator.vibrate) navigator.vibrate(8);
+    saveRecent(currentMeta);
+    window.location.href = `https://www.youtube.com/watch?v=${currentVideoId}`;
+  });
+
+  // ── Deep-link / share target seed ──
+  const params = new URLSearchParams(location.search);
+  const seed = params.get('url') || params.get('v') || params.get('text') || params.get('title');
+  if (seed) {
+    // The Web Share Target API sends title/text/url — scan all of them for a URL.
+    const candidate = [params.get('url'), params.get('text'), params.get('title')]
+      .find(v => v && parseVideoId(v)) || seed;
+    urlInput.value = candidate;
+    handleUrl(candidate);
+  }
+
+  // ── Auto-clipboard sniff ──
+  // 1. Silent attempt on load if clipboard-read permission already granted.
+  (async () => {
+    if (urlInput.value || !navigator.permissions || !navigator.permissions.query) return;
+    try {
+      const p = await navigator.permissions.query({ name: 'clipboard-read' });
+      if (p.state === 'granted') tryClipboardAutoFill();
+    } catch {}
+  })();
+
+  // 2. First user gesture anywhere (non-link) unlocks clipboard on iOS/Chrome Android.
+  const onFirstGesture = (e) => {
+    document.removeEventListener('pointerdown', onFirstGesture, true);
+    if (e.target.closest('a, button')) return;
+    tryClipboardAutoFill();
+  };
+  document.addEventListener('pointerdown', onFirstGesture, true);
+
+  // 3. Returning from YouTube app → re-check (no-op if field already populated).
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') tryClipboardAutoFill();
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mobile entry — UX mockups</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --yt-red: #FF0000;
+    --yt-dark-red: #CC0000;
+    --yt-bg: #0a0a0a;
+    --yt-surface: #181818;
+    --yt-text: #f1f1f1;
+    --yt-muted: rgba(255,255,255,0.55);
+    --yt-faint: rgba(255,255,255,0.08);
+  }
+  body {
+    background: #050505;
+    color: var(--yt-text);
+    font-family: 'Inter', system-ui, sans-serif;
+    padding: 32px 20px 80px;
+  }
+  .page-head {
+    max-width: 1100px;
+    margin: 0 auto 32px;
+  }
+  .page-head h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; }
+  .page-head p { color: var(--yt-muted); margin-top: 6px; font-size: 14px; }
+
+  .grid {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 28px;
+  }
+
+  .card {
+    background: #0d0d0d;
+    border: 1px solid var(--yt-faint);
+    border-radius: 18px;
+    padding: 18px;
+  }
+  .card h2 { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .card .why { font-size: 12px; color: var(--yt-muted); margin-bottom: 14px; line-height: 1.5; }
+
+  /* ── Phone frame ── */
+  .phone {
+    width: 320px;
+    height: 600px;
+    margin: 0 auto;
+    background: var(--yt-bg);
+    border: 8px solid #1a1a1a;
+    border-radius: 36px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,255,255,0.04);
+  }
+  .phone::before {
+    content: '';
+    position: absolute;
+    top: 8px; left: 50%;
+    transform: translateX(-50%);
+    width: 80px; height: 18px;
+    background: #000;
+    border-radius: 12px;
+    z-index: 9999;
+  }
+  .stage {
+    width: 100%; height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background:
+      radial-gradient(ellipse at 15% 5%, rgba(255,0,0,0.18) 0%, transparent 55%),
+      radial-gradient(ellipse at 85% 95%, rgba(204,0,0,0.10) 0%, transparent 50%),
+      var(--yt-bg);
+    position: relative;
+  }
+
+  /* Mock hero (used by all variants as background reality) */
+  .mock-hero {
+    padding: 50px 18px 30px;
+  }
+  .mock-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--yt-red);
+    margin-bottom: 8px;
+  }
+  .mock-h1 {
+    font-size: 22px;
+    font-weight: 900;
+    line-height: 1.1;
+    letter-spacing: -0.8px;
+    margin-bottom: 10px;
+  }
+  .mock-sub {
+    font-size: 12px;
+    color: var(--yt-muted);
+    line-height: 1.5;
+    margin-bottom: 16px;
+  }
+  .mock-cta {
+    display: inline-block;
+    padding: 10px 20px;
+    background: var(--yt-red);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 8px;
+    text-decoration: none;
+  }
+  .mock-dialog {
+    margin: 24px 14px 30px;
+    background: rgba(24,24,24,0.92);
+    border: 1px solid var(--yt-faint);
+    border-radius: 12px;
+    padding: 12px;
+  }
+  .mock-dialog .dh { font-size: 11px; font-weight: 600; margin-bottom: 8px; }
+  .mock-dialog .di {
+    height: 26px;
+    border: 1px solid rgba(255,0,0,0.4);
+    border-radius: 13px;
+    padding: 0 10px;
+    font-size: 10px;
+    color: var(--yt-muted);
+    display: flex;
+    align-items: center;
+  }
+  .mock-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 4px;
+    font-size: 11px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .mock-row .ck {
+    width: 12px; height: 12px;
+    border: 1px solid var(--yt-muted);
+    border-radius: 2px;
+  }
+
+  /* ── Variant A: Sticky top banner ── */
+  .v-a-banner {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: linear-gradient(90deg, var(--yt-red), var(--yt-dark-red));
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+  }
+  .v-a-banner .txt {
+    flex: 1;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .v-a-banner .go {
+    font-size: 10px;
+    font-weight: 700;
+    background: rgba(0,0,0,0.4);
+    color: #fff;
+    padding: 5px 10px;
+    border-radius: 6px;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .v-a-banner .x {
+    font-size: 14px;
+    color: rgba(255,255,255,0.8);
+    padding: 0 4px;
+  }
+
+  /* ── Variant B: Hero takeover ── */
+  .v-b-takeover {
+    padding: 50px 18px 24px;
+    min-height: 100%;
+  }
+  .v-b-takeover .lbl {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--yt-red);
+    margin-bottom: 8px;
+  }
+  .v-b-takeover h1 {
+    font-size: 22px;
+    font-weight: 800;
+    line-height: 1.15;
+    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+  }
+  .v-b-takeover .sub {
+    font-size: 12px;
+    color: var(--yt-muted);
+    margin-bottom: 18px;
+    line-height: 1.5;
+  }
+  .v-b-panel {
+    background: rgba(24,24,24,0.78);
+    border: 1px solid var(--yt-faint);
+    border-radius: 14px;
+    padding: 14px;
+    backdrop-filter: blur(18px);
+  }
+  .v-b-panel .row { display: flex; gap: 6px; }
+  .v-b-panel .inp {
+    flex: 1;
+    height: 36px;
+    border: 1px solid rgba(255,0,0,0.35);
+    border-radius: 10px;
+    padding: 0 10px;
+    background: rgba(255,255,255,0.04);
+    font-size: 11px;
+    color: var(--yt-muted);
+    display: flex; align-items: center;
+  }
+  .v-b-panel .pst {
+    height: 36px;
+    padding: 0 12px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--yt-faint);
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex; align-items: center;
+  }
+  .v-b-panel .hint {
+    margin-top: 8px;
+    font-size: 10px;
+    color: var(--yt-muted);
+  }
+  .v-b-foot {
+    margin-top: 24px;
+    text-align: center;
+    font-size: 10px;
+    color: var(--yt-muted);
+  }
+  .v-b-foot a { color: var(--yt-muted); text-decoration: underline; }
+
+  /* ── Variant C: Floating action button ── */
+  .v-c-fab {
+    position: absolute;
+    bottom: 18px; right: 18px;
+    z-index: 60;
+    background: var(--yt-red);
+    color: #fff;
+    padding: 12px 18px 12px 14px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 8px 24px rgba(255,0,0,0.4), 0 4px 12px rgba(0,0,0,0.5);
+    text-decoration: none;
+  }
+  .v-c-fab .dot {
+    width: 18px; height: 18px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px;
+  }
+
+  /* ── Variant D: Auto sheet ── */
+  .v-d-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 70;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(2px);
+  }
+  .v-d-sheet {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    z-index: 80;
+    background: #141414;
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
+    padding: 10px 18px 22px;
+    border-top: 1px solid var(--yt-faint);
+    box-shadow: 0 -10px 40px rgba(0,0,0,0.6);
+  }
+  .v-d-sheet .grab {
+    width: 36px; height: 4px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 2px;
+    margin: 0 auto 14px;
+  }
+  .v-d-sheet h3 {
+    font-size: 16px;
+    font-weight: 800;
+    margin-bottom: 6px;
+    letter-spacing: -0.3px;
+  }
+  .v-d-sheet p {
+    font-size: 12px;
+    color: var(--yt-muted);
+    line-height: 1.45;
+    margin-bottom: 14px;
+  }
+  .v-d-sheet .actions { display: flex; gap: 8px; }
+  .v-d-sheet .primary {
+    flex: 1;
+    height: 40px;
+    background: var(--yt-red);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    text-decoration: none;
+  }
+  .v-d-sheet .ghost {
+    height: 40px;
+    padding: 0 14px;
+    background: transparent;
+    color: var(--yt-muted);
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 10px;
+    display: flex; align-items: center;
+  }
+
+  /* ── Variant E: Inline card after hero ── */
+  .v-e-card {
+    margin: 8px 14px 24px;
+    background: linear-gradient(135deg, rgba(255,0,0,0.18), rgba(204,0,0,0.08));
+    border: 1px solid rgba(255,0,0,0.3);
+    border-radius: 14px;
+    padding: 14px;
+  }
+  .v-e-card .tag {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: #ffb3b3;
+    background: rgba(255,0,0,0.18);
+    padding: 3px 8px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+  }
+  .v-e-card .ttl {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .v-e-card .desc {
+    font-size: 11px;
+    color: var(--yt-muted);
+    line-height: 1.45;
+    margin-bottom: 10px;
+  }
+  .v-e-card .btn {
+    display: inline-block;
+    padding: 8px 14px;
+    background: #fff;
+    color: #000;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 8px;
+    text-decoration: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>Mobile entry — UX mockups</h1>
+  <p>5 ways to surface the mobile companion (<code>/m.html</code>) on the marketing site for mobile visitors.</p>
+</div>
+
+<div class="grid">
+
+  <!-- A: Sticky top banner -->
+  <div class="card">
+    <h2>A. Sticky top banner</h2>
+    <p class="why">Slim red bar above the hero, dismissible. Always visible while scrolling. Low-commitment, easy to ignore but always one tap away.</p>
+    <div class="phone"><div class="stage">
+      <div class="v-a-banner">
+        <div class="txt">On mobile? Use the lite version →</div>
+        <a class="go" href="#">Open</a>
+        <span class="x">×</span>
+      </div>
+      <div class="mock-hero">
+        <div class="mock-label">Chrome Extension</div>
+        <div class="mock-h1">Search any playlist instantly.</div>
+        <div class="mock-sub">Find playlists fast in YouTube's save dialog. Break the 200 limit.</div>
+        <a class="mock-cta" href="#">Add to Chrome</a>
+      </div>
+      <div class="mock-dialog">
+        <div class="dh">Save video to…</div>
+        <div class="di">Search playlists</div>
+        <div class="mock-row" style="margin-top:8px;"><div class="ck"></div>Watch later</div>
+        <div class="mock-row"><div class="ck"></div>Lofi mixes</div>
+        <div class="mock-row"><div class="ck"></div>Cooking</div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- B: Hero takeover -->
+  <div class="card">
+    <h2>B. Hero takeover</h2>
+    <p class="why">On mobile, the hero IS the companion tool. No friction, no banner, no second tap. The desktop pitch moves below the fold or to a smaller link.</p>
+    <div class="phone"><div class="stage">
+      <div class="v-b-takeover">
+        <div class="lbl">Mobile · Add to Playlist</div>
+        <h1>Paste a link, save it.</h1>
+        <div class="sub">The extension is desktop-only. This page gets you to YouTube's Save sheet in one tap.</div>
+        <div class="v-b-panel">
+          <div class="row">
+            <div class="inp">https://youtu.be/...</div>
+            <div class="pst">Paste</div>
+          </div>
+          <div class="hint">Tap Paste to grab the link from your clipboard.</div>
+        </div>
+        <div class="v-b-foot"><a href="#">See the desktop extension →</a></div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- C: Floating action button -->
+  <div class="card">
+    <h2>C. Floating action button</h2>
+    <p class="why">Persistent pill in the bottom-right. Hero stays untouched. Familiar mobile-app pattern. Always reachable with the thumb.</p>
+    <div class="phone"><div class="stage">
+      <div class="mock-hero">
+        <div class="mock-label">Chrome Extension</div>
+        <div class="mock-h1">Search any playlist instantly.</div>
+        <div class="mock-sub">Find playlists fast in YouTube's save dialog. Break the 200 limit.</div>
+        <a class="mock-cta" href="#">Add to Chrome</a>
+      </div>
+      <div class="mock-dialog">
+        <div class="dh">Save video to…</div>
+        <div class="di">Search playlists</div>
+        <div class="mock-row" style="margin-top:8px;"><div class="ck"></div>Watch later</div>
+        <div class="mock-row"><div class="ck"></div>Lofi mixes</div>
+        <div class="mock-row"><div class="ck"></div>Cooking</div>
+      </div>
+      <a class="v-c-fab" href="#"><span class="dot">+</span> Add on mobile</a>
+    </div></div>
+  </div>
+
+  <!-- D: Auto sheet -->
+  <div class="card">
+    <h2>D. Auto bottom sheet (first visit)</h2>
+    <p class="why">Slides up once on first mobile visit. Two CTAs: try it now, or just dismiss. High-attention but interrupts. Good for conversion, can annoy.</p>
+    <div class="phone"><div class="stage">
+      <div class="mock-hero">
+        <div class="mock-label">Chrome Extension</div>
+        <div class="mock-h1">Search any playlist instantly.</div>
+        <div class="mock-sub">Find playlists fast in YouTube's save dialog.</div>
+        <a class="mock-cta" href="#">Add to Chrome</a>
+      </div>
+      <div class="v-d-backdrop"></div>
+      <div class="v-d-sheet">
+        <div class="grab"></div>
+        <h3>You're on mobile.</h3>
+        <p>The extension is desktop only — but here's a one-tap way to add a video to a playlist from your phone.</p>
+        <div class="actions">
+          <a class="primary" href="#">Try it</a>
+          <span class="ghost">Not now</span>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- E: Inline card after hero -->
+  <div class="card">
+    <h2>E. Inline card under hero</h2>
+    <p class="why">Sits right under the install CTA on mobile only. Reads as a thoughtful "here's an alternative" rather than a popup. Quietest option.</p>
+    <div class="phone"><div class="stage">
+      <div class="mock-hero">
+        <div class="mock-label">Chrome Extension</div>
+        <div class="mock-h1">Search any playlist instantly.</div>
+        <div class="mock-sub">Find playlists fast in YouTube's save dialog. Break the 200 limit.</div>
+        <a class="mock-cta" href="#">Add to Chrome</a>
+      </div>
+      <div class="v-e-card">
+        <span class="tag">On mobile?</span>
+        <div class="ttl">Skip the install — use the lite version.</div>
+        <div class="desc">Paste a YouTube link, jump straight to the Save sheet. No download.</div>
+        <a class="btn" href="#">Open lite version →</a>
+      </div>
+      <div class="mock-dialog">
+        <div class="dh">Save video to…</div>
+        <div class="di">Search playlists</div>
+        <div class="mock-row" style="margin-top:8px;"><div class="ck"></div>Watch later</div>
+        <div class="mock-row"><div class="ck"></div>Lofi mixes</div>
+      </div>
+    </div></div>
+  </div>
+
+</div>
+
+</body>
+</html>
