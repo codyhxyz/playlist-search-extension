@@ -16,6 +16,26 @@
   const INNERTUBE_CLIENT_VERSION_FALLBACK = "2.20260206.01.00";
   const PLAYLIST_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
+  // ── User settings ────────────────────────────────────────────────────────
+  // keepDialogOpen: restore the pre-Oct-2025 multi-playlist save behaviour.
+  // YouTube's new UI closes the "Save video to…" sheet after every selection;
+  // this intercepts the click at the host level so users can check multiple
+  // playlists without reopening the dialog each time.
+  let ytpfSettings = { keepDialogOpen: true };
+  (async () => {
+    try {
+      const stored = await chrome.storage.sync.get("ytpfSettings");
+      if (stored?.ytpfSettings) ytpfSettings = { ...ytpfSettings, ...stored.ytpfSettings };
+    } catch { /* storage unavailable — keep defaults */ }
+  })();
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === "sync" && changes.ytpfSettings?.newValue) {
+        ytpfSettings = { ...ytpfSettings, ...changes.ytpfSettings.newValue };
+      }
+    });
+  } catch { /* extension context unavailable */ }
+
   // Self-only diagnostics: when an in-product invariant fails we console.warn
   // it live and append a short entry to a bounded ring buffer in
   // chrome.storage.local for later inspection. Nothing leaves the machine.
@@ -99,22 +119,35 @@
   // Generic dialog containers (tp-yt-paper-dialog, yt-contextual-sheet-layout)
   // are reused across the site for non-playlist surfaces. The :has(...) guard
   // ensures we only attach when the dialog actually contains playlist rows.
+  //
+  // yt-collection-thumbnail-view-model is required inside the toggleable rows
+  // because the "Save video to…" sheet's rows always carry playlist thumbnails,
+  // while bulk-action sheets (e.g. "Add all to…" from the playlist ⋮ menu) and
+  // unrelated contextual menus (Shuffle / Download / etc.) do not.
+  // Belt-and-suspenders: isSaveVideoModal() in refresh() adds a JS-level check
+  // on the old-style Polymer renderer that guards against the "Add all to…"
+  // sub-dialog when data.videoId is absent.
   const MODAL_HOST_SELECTOR =
     "ytd-add-to-playlist-renderer, " +
     "yt-add-to-playlist-renderer, " +
-    "yt-contextual-sheet-layout:has(toggleable-list-item-view-model), " +
-    "tp-yt-paper-dialog:has(toggleable-list-item-view-model)";
+    "yt-contextual-sheet-layout:has(toggleable-list-item-view-model yt-collection-thumbnail-view-model), " +
+    "tp-yt-paper-dialog:has(toggleable-list-item-view-model yt-collection-thumbnail-view-model)";
 
   const MODAL_ROW_SELECTOR =
     "toggleable-list-item-view-model, ytd-playlist-add-to-option-renderer, yt-playlist-add-to-option-renderer, yt-checkbox-list-entry-renderer, yt-list-item-view-model, yt-collection-item-view-model";
-  const PLAYLISTS_GRID_SELECTOR = "ytd-rich-grid-renderer";
-  const PLAYLISTS_CONTENTS_SELECTOR = ":scope > #contents";
-  const PLAYLISTS_OUTER_ROW_SELECTOR = "ytd-rich-item-renderer, ytd-rich-grid-media";
+  const PLAYLISTS_GRID_SELECTOR =
+    "ytd-rich-grid-renderer, ytd-grid-renderer, ytd-item-section-renderer";
+  const PLAYLISTS_CONTENTS_SELECTOR = ":scope > #contents, :scope > #items";
+  const PLAYLISTS_OUTER_ROW_SELECTOR =
+    "ytd-rich-item-renderer, ytd-rich-grid-media, yt-lockup-view-model";
   const PLAYLIST_RENDERER_SELECTOR =
     "ytd-grid-playlist-renderer, ytd-playlist-renderer, ytd-compact-playlist-renderer, yt-lockup-view-model, yt-collection-item-view-model";
   const PLAYLISTS_FEED_PATH_RE = /^\/feed\/(playlists|library)\/?(\?.*)?$/;
+  // YouTube migrated playlist URLs in 2026 from /playlist?list=PL... to
+  // /show/VL{PL...}?sbp=...; keep both for back-compat. Also accept watch
+  // URLs that carry &list= (e.g., the lockup's primary "play next" link).
   const PLAYLIST_LINK_SELECTOR =
-    "a[href*='/playlist?list='], a[href*='youtube.com/playlist?list=']";
+    "a[href*='/playlist?list='], a[href*='youtube.com/playlist?list='], a[href*='/show/VL'], a[href*='youtube.com/show/VL'], a[href*='/watch?'][href*='list=']";
 
   const CHECKBOX_SELECTOR =
     "tp-yt-paper-checkbox, [role='checkbox'], input[type='checkbox']";
@@ -122,7 +155,7 @@
   const PAGE_RELEVANT_SELECTOR = `${PLAYLISTS_GRID_SELECTOR}, ${PLAYLISTS_OUTER_ROW_SELECTOR}, ${PLAYLIST_RENDERER_SELECTOR}`;
 
   const ITEM_TEXT_SELECTOR =
-    "#label, #video-title, .playlist-title, yt-formatted-string[id='label'], yt-formatted-string, span#label, a#video-title, .ytListItemViewModelTitle";
+    "#label, #video-title, .playlist-title, yt-formatted-string[id='label'], yt-formatted-string, span#label, a#video-title, .ytListItemViewModelTitle, .yt-lockup-metadata-view-model-wiz__title, [class*='LockupMetadataViewModelTitle']";
   const FILTER_BASE_STYLES = `
     .ytpf-inline {
       position: sticky;
@@ -279,6 +312,33 @@
       margin: 0 12px;
       font-size: 11px;
     }
+    /*
+     * Class-only hide. Was inline display:none — switched to a class so a)
+     * a single CSS sweep can restore orphaned rows if the controller gets
+     * lost mid-filter, and b) we can scope the rule with !important to win
+     * against YouTube's own inline styles on lockups.
+     */
+    .ytpf-hidden {
+      display: none !important;
+    }
+    /*
+     * Reflow fix for /feed/playlists during an active filter. YouTube wraps
+     * lockups inside ytd-rich-grid-row slots; hiding individual lockups
+     * leaves those slots half-empty, producing the "floating cards with
+     * giant gaps" layout. While filtering, collapse the row wrappers with
+     * display: contents and re-grid #contents directly so visible lockups
+     * pack tight. Scoped to the filtering state, so the native layout is
+     * untouched when no query is active.
+     */
+    .ytpf-page-filtering {
+      display: grid !important;
+      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)) !important;
+      gap: 16px !important;
+    }
+    .ytpf-page-filtering > ytd-rich-grid-row,
+    .ytpf-page-filtering > ytd-rich-grid-row > #contents {
+      display: contents !important;
+    }
   `;
 
   const SYNTH_STYLES = `
@@ -373,23 +433,19 @@
 
   function hideRow(row) {
     if (!row || !row.isConnected) return;
-    if (!hiddenRows.has(row)) {
-      hiddenRows.set(row, row.style.display);
-    }
-    row.style.display = "none";
+    hiddenRows.set(row, true);
     row.classList.add(HIDDEN_CLASS);
   }
 
   function showRow(row) {
     if (!row) return;
-    const prev = hiddenRows.get(row);
-    if (prev) {
-      row.style.display = prev;
-    } else {
-      row.style.removeProperty("display");
-    }
     hiddenRows.delete(row);
     row.classList.remove(HIDDEN_CLASS);
+    // Defensive: prior versions of the extension set inline display:none.
+    // Strip it if it's still hanging around from a cached DOM. Cheap, idempotent.
+    if (row.style && row.style.display === "none") {
+      row.style.removeProperty("display");
+    }
   }
 
   function queryAllDeep(selector, root = document) {
@@ -901,6 +957,9 @@
 
   function hasDeepMatch(node, selector) {
     if (!node) return false;
+    // Self-match: when the outer row IS the renderer (e.g., yt-lockup-view-model
+    // on the post-2026 /feed/playlists layout), descendant-only checks miss it.
+    if (node.matches?.(selector)) return true;
     if (node.querySelector?.(selector)) return true;
     return Boolean(queryAllDeep(selector, node).length);
   }
@@ -983,18 +1042,33 @@
     });
 
     if (!best) return null;
+    // Prefer the grid `#contents` as host so the search bar mounts at the top
+    // of the grid (grid-column: 1 / -1 spans it across all columns). When the
+    // outer row is nested inside an inner wrapper (post-2026 layout where
+    // `yt-lockup-view-model` lives under `ytd-rich-grid-row`), using rows[0]'s
+    // parentElement would drop the bar into a single grid cell next to the
+    // first card — visually broken.
     return {
-      host: best.rows[0]?.parentElement || best.contents,
+      host: best.contents || best.rows[0]?.parentElement,
       rows: best.rows,
     };
   }
 
   function findMountPoint(rows, host, surface) {
     if (surface === "page") {
-      if (rows[0]?.parentElement === host) {
+      // Climb from rows[0] up to host, pinning the bar at the top-level
+      // grid-child ancestor. With grid-column: 1 / -1 this spans the bar
+      // across the full grid width regardless of how deeply nested the row is
+      // (handles both the old ytd-rich-item-renderer layout and the post-2026
+      // ytd-rich-grid-row > yt-lockup-view-model layout).
+      let topLevel = rows[0];
+      while (topLevel && topLevel.parentElement && topLevel.parentElement !== host) {
+        topLevel = topLevel.parentElement;
+      }
+      if (topLevel && topLevel.parentElement === host) {
         return {
           parent: host,
-          before: rows[0],
+          before: topLevel,
         };
       }
     }
@@ -1208,6 +1282,31 @@
             title: rendererTitle(pr),
             itemCount: parseInt(pr.videoCount || "0", 10) || 0,
           });
+          continue;
+        }
+
+        // YouTube migrated /feed/playlists rows to lockupViewModel in 2026.
+        // Without this branch the parser silently dropped every lockup-shaped
+        // playlist, capping results at whatever the API still happened to
+        // return as legacy renderers (~200 latest).
+        const lvm = item.lockupViewModel;
+        if (lvm?.contentId && /PLAYLIST/.test(lvm.contentType || "")) {
+          const title =
+            lvm.metadata?.lockupMetadataViewModel?.title?.content || "Untitled";
+          let itemCount = 0;
+          const rows =
+            lvm.metadata?.lockupMetadataViewModel?.metadata
+              ?.contentMetadataViewModel?.metadataRows || [];
+          outer: for (const row of rows) {
+            for (const part of row?.metadataParts || []) {
+              const m = /(\d[\d,]*)/.exec(part?.text?.content || "");
+              if (m) {
+                itemCount = parseInt(m[1].replace(/,/g, ""), 10) || 0;
+                if (itemCount) break outer;
+              }
+            }
+          }
+          playlists.push({ id: lvm.contentId, title, itemCount });
           continue;
         }
 
@@ -1615,6 +1714,13 @@
 
     ctrl.clear.classList.toggle("ytpf-clear-visible", Boolean(query));
 
+    // Page surface: while filtering, collapse YouTube's ytd-rich-grid-row
+    // wrappers via CSS so the remaining lockups reflow into a tight grid
+    // instead of floating inside their original row slots.
+    if (ctrl.surface === "page" && ctrl.host?.classList) {
+      ctrl.host.classList.toggle("ytpf-page-filtering", Boolean(query));
+    }
+
     // Only snap to top on the empty -> non-empty transition (the user just
     // started searching). Snapping on every keystroke masks the visible
     // reranking of matches — they move to the top, but the scroll reset
@@ -1646,6 +1752,21 @@
     guardModalUiInteractions(ui, surface);
     if (surface === "modal") {
       host.classList.add(MODAL_EXPANDED_CLASS);
+
+      // Keep-dialog-open: intercept clicks that bubble up from native playlist
+      // rows so they don't reach YouTube's sheet-close handler above the host.
+      // YouTube's Oct-2025 UI closes the "Save video to…" sheet after each
+      // selection; stopping propagation here restores the old checkbox-style
+      // multi-select flow.  Synth rows (our own API results) are excluded
+      // because they already handle saving without triggering a close.
+      host.addEventListener("click", (e) => {
+        if (!ytpfSettings.keepDialogOpen) return;
+        const row = e.target.closest(
+          "toggleable-list-item-view-model, ytd-playlist-add-to-option-renderer, yt-playlist-add-to-option-renderer"
+        );
+        if (!row || isOurUiNode(row) || row.classList.contains("ytpf-synth-row")) return;
+        e.stopPropagation();
+      });
     }
 
     if (mount.after) {
@@ -1763,9 +1884,49 @@
     }
   }
 
+  // Safety net for the "filter bar gone, cards still hidden" lock-in.
+  // If a controller ever gets dropped without its teardown showing all rows
+  // (cached SPA navigation, racing re-renders), .ytpf-hidden nodes can
+  // outlive their controller. Each refresh tick, unhide any tagged row that
+  // no active controller still claims, and clear stale page-filtering
+  // classes on any element that isn't a live page-surface host.
+  function sweepOrphanedHidden() {
+    const tracked = new WeakSet();
+    const liveHosts = new WeakSet();
+    for (const ctrl of controllers.values()) {
+      if (ctrl.host) liveHosts.add(ctrl.host);
+      for (const row of ctrl.rows) tracked.add(row);
+    }
+    document.querySelectorAll(`.${HIDDEN_CLASS}`).forEach((el) => {
+      if (!tracked.has(el)) showRow(el);
+    });
+    document.querySelectorAll(".ytpf-page-filtering").forEach((el) => {
+      if (!liveHosts.has(el)) el.classList.remove("ytpf-page-filtering");
+    });
+  }
+
+  // Returns false for old-style Polymer renderers that are serving a bulk
+  // playlist operation ("Add all to…") rather than a single-video save.
+  // Those renderers have no data.videoId; legitimate video-save invocations
+  // always carry one.  Defaults to true for new-style view-model sheets
+  // (guarded structurally by the yt-collection-thumbnail-view-model selector).
+  function isSaveVideoModal(host) {
+    if (!host.matches("ytd-add-to-playlist-renderer, yt-add-to-playlist-renderer")) {
+      return true;
+    }
+    const d = host.data || host.__data;
+    // Only reject when data is loaded AND explicitly shows no videoId.
+    // If data hasn't hydrated yet (d === undefined) we allow through.
+    if (d !== undefined && "videoId" in d && !d.videoId) return false;
+    return true;
+  }
+
   function refresh() {
+    sweepOrphanedHidden();
+
     queryAllDeep(MODAL_HOST_SELECTOR)
       .filter(isVisible)
+      .filter(isSaveVideoModal)
       .forEach((host) => {
         const rows = collectRows(host);
         if (!rows.length) return;
