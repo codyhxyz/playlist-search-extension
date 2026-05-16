@@ -9,8 +9,31 @@ declare const chrome: any;
 /** Service-worker classic-script loader (background.js does this for onboarding-state.js). */
 declare function importScripts(...urls: string[]): void;
 
-/** MiniSearch — vendored at src/vendor/minisearch.js, loaded into the page as a classic script. */
-declare const MiniSearch: any;
+/**
+ * MiniSearch — vendored at src/vendor/minisearch.js, loaded into the page as
+ * a classic script. We only use a tiny slice of its API; declaring it as a
+ * class (not `any`) so Ctrl.bm25 can be typed `MiniSearch | null` and tsc
+ * catches "ctrl.bm25 = wrong-type" drift.
+ */
+declare class MiniSearch {
+  constructor(opts: {
+    fields: string[];
+    storeFields?: string[];
+    searchOptions?: Record<string, unknown>;
+  });
+  addAll(docs: Array<Record<string, unknown>>): void;
+  search(
+    query: string,
+    opts?: Record<string, unknown>,
+  ): Array<{
+    id: string;
+    source: string;
+    ref: string;
+    score?: number;
+    terms?: string[];
+    [k: string]: unknown;
+  }>;
+}
 
 /** Cross-context globalThis singletons — onboarding helpers wire themselves onto globalThis. */
 interface globalThis {

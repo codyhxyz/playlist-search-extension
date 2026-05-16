@@ -13,7 +13,7 @@
    * @property {Element} host                Outer host element (modal sheet / page grid contents).
    * @property {"modal" | "page"} surface    Where this controller lives.
    * @property {Element[]} rows              Current DOM rows being filtered.
-   * @property {any} bm25                    MiniSearch index over rows + API playlists.
+   * @property {MiniSearch | null} bm25      MiniSearch index over rows + API playlists.
    * @property {Element} root                Our injected filter-bar UI root.
    * @property {HTMLInputElement} input      The search input.
    * @property {HTMLButtonElement} clear     The clear (×) button.
@@ -566,11 +566,17 @@
     if (reason === "mutation" && nowMs() < reconciler.pauseUntil) return;
 
     const fireAt = nowMs() + debounceMs;
-    if (reconciler.flushTimer && reconciler.scheduledAt <= fireAt) {
-      // Already scheduled to fire sooner-or-equal — coalesce.
+    if (reconciler.flushTimer && reconciler.scheduledAt >= fireAt) {
+      // A longer-or-equal-wait flush is already pending — let it ride.
+      // Critical for the navigate signal: yt-navigate-finish enqueues a
+      // 250ms wait specifically to let YouTube's SPA settle. A mutation
+      // arriving 50ms in must NOT cancel the navigate flush and fire
+      // 80ms early — that was the 1.6.4 regression. "Never shorten."
       reconciler.pendingReason = reason;
       return;
     }
+    // Either no flush pending, or fireAt is strictly later (new mutation
+    // burst extends the debounce window — standard debounce behavior).
     if (reconciler.flushTimer) clearTimeout(reconciler.flushTimer);
     reconciler.scheduledAt = fireAt;
     reconciler.pendingReason = reason;
