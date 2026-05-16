@@ -1893,7 +1893,13 @@
   function sweepOrphanedHidden() {
     const tracked = new WeakSet();
     const liveHosts = new WeakSet();
-    for (const ctrl of controllers.values()) {
+    // controllers is a WeakMap (no .values()); iterate via the parallel
+    // controllerHosts Set instead. Calling controllers.values() here was
+    // the 1.6.11 regression that swallowed every refresh() tick, which is
+    // what made the /feed/playlists search bar vanish entirely.
+    for (const host of controllerHosts) {
+      const ctrl = controllers.get(host);
+      if (!ctrl) continue;
       if (ctrl.host) liveHosts.add(ctrl.host);
       for (const row of ctrl.rows) tracked.add(row);
     }
@@ -1937,6 +1943,14 @@
     const pageSurface = collectFeedPageSurface();
     if (pageSurface) {
       upsertHost(pageSurface.host, pageSurface.rows, "page");
+    } else if (isPlaylistsFeedPage()) {
+      // Page surface failed to assemble on a path that should host it. Log a
+      // self-diagnostic so the next selector drift doesn't ship silently.
+      // Modal had scheduleFilterBarMountCheck for years; the page surface
+      // never did, which is exactly how we kept shipping invisible-bar bugs
+      // on /feed/playlists. See tests/test-feed-page-mount.js for the
+      // jsdom regression coverage that backs this up.
+      schedulePageSurfaceProbe();
     }
 
     // Only tear down controllers whose host element is actually gone.
@@ -2016,6 +2030,79 @@
       });
     }, 2500);
   }
+
+  // Page-surface mirror of scheduleFilterBarMountCheck. Triggered from
+  // refresh() when isPlaylistsFeedPage() is true but collectFeedPageSurface()
+  // returned null — meaning some gate (grid selector, contents selector,
+  // renderer selector, link selector) didn't match the current DOM.
+  // Captures one structured probe per path-load and surfaces it both to the
+  // console and the diagnostics ring. Keyed by pathname + a 4s cooldown so
+  // SPA navigations re-arm but mutation-driven refreshes don't spam.
+  const _pageSurfaceProbedAt = new Map();
+  function schedulePageSurfaceProbe() {
+    const path = window.location.pathname;
+    const last = _pageSurfaceProbedAt.get(path) || 0;
+    const now = Date.now();
+    if (now - last < 4000) return;
+    _pageSurfaceProbedAt.set(path, now);
+    setTimeout(() => {
+      if (!isPlaylistsFeedPage()) return;
+      // Re-check: if a surface materialized in the interim (slow render), bail.
+      if (collectFeedPageSurface()) return;
+      const probe = probePageSurface();
+      recordDiagnostic("page_surface_missing", probe);
+      try { console.warn("[ytpf] page surface failed to mount", probe); } catch {}
+    }, 2500);
+  }
+
+  // Pure inspection of the current DOM through every selector that
+  // collectFeedPageSurface relies on. Returns a structured object — never
+  // throws, never mutates. Exposed on window.__ytpfDiag for ad-hoc probing.
+  function probePageSurface() {
+    const grids = unique(queryAllDeep(PLAYLISTS_GRID_SELECTOR)).filter(
+      (g) => g && g.isConnected,
+    );
+    const candidates = grids.map((grid) => {
+      const contents = getGridContents(grid);
+      const rawRows = contents ? collectGridRows(contents) : [];
+      const filtered = rawRows.filter(
+        (row) =>
+          !row.classList.contains(FILTER_CLASS) &&
+          hasPlaylistRenderer(row) &&
+          (hasPlaylistLink(row) || hiddenRows.has(row)),
+      );
+      const sampleHrefs = filtered
+        .slice(0, 3)
+        .flatMap((r) => Array.from(r.querySelectorAll?.("a[href]") || []))
+        .map((a) => a.getAttribute("href"))
+        .slice(0, 6);
+      return {
+        gridTag: grid.tagName?.toLowerCase(),
+        contentsId: contents?.id || null,
+        contentsExists: !!contents,
+        rawRowCount: rawRows.length,
+        filteredRowCount: filtered.length,
+        firstFilteredRowTag: filtered[0]?.tagName?.toLowerCase() || null,
+        sampleHrefs,
+      };
+    });
+    return {
+      path: window.location.pathname,
+      isFeedPath: isPlaylistsFeedPage(),
+      gridCount: grids.length,
+      candidates,
+    };
+  }
+
+  // Console-accessible debug surface. Lets users (or this assistant in a
+  // future session) get an immediate read on why the bar isn't mounting,
+  // without paste-the-snippet ceremony.  Idempotent — safe to call any time.
+  try {
+    Object.defineProperty(window, "__ytpfDiag", {
+      configurable: true,
+      value: () => probePageSurface(),
+    });
+  } catch { /* CSP or already defined — non-fatal */ }
 
   function checkForVisibleDuplicates(ctrl) {
     if (ctrl.surface !== "modal") return;
@@ -2103,6 +2190,14 @@
       MODAL_HOST_SELECTOR,
       appendToRing,
       DIAG_RING_SIZE,
+      // Page-surface probes — exposed so tests/test-feed-page-mount.js can
+      // assert that collectFeedPageSurface returns a non-empty surface on a
+      // captured /feed/playlists DOM. This is the regression coverage that
+      // would have caught the post-2026 lockup-view-model selector drift.
+      collectFeedPageSurface,
+      findMountPoint,
+      probePageSurface,
+      isPlaylistsFeedPage,
     });
   }
 })();
