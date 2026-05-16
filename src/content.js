@@ -433,6 +433,7 @@
   const apiSessionCache = {
     playlists: null,
     fetchedAt: 0,
+    inFlight: null, // Promise<Playlist[]> | null — set while a fetch is mid-air
   };
   let suppressMutationsUntil = 0;
 
@@ -1561,10 +1562,24 @@
     ) {
       return apiSessionCache.playlists;
     }
-    const playlists = await innertubeLoadPlaylists();
-    apiSessionCache.playlists = playlists;
-    apiSessionCache.fetchedAt = Date.now();
-    return playlists;
+    // Promise-singleton: if a fetch is already mid-air, join it instead of
+    // kicking off a duplicate 50-page InnerTube walk. Two simultaneous modal
+    // hosts (or a modal-open during page-load) used to double-fetch.
+    if (apiSessionCache.inFlight) {
+      return apiSessionCache.inFlight;
+    }
+    const promise = (async () => {
+      try {
+        const playlists = await innertubeLoadPlaylists();
+        apiSessionCache.playlists = playlists;
+        apiSessionCache.fetchedAt = Date.now();
+        return playlists;
+      } finally {
+        apiSessionCache.inFlight = null;
+      }
+    })();
+    apiSessionCache.inFlight = promise;
+    return promise;
   }
 
   async function bootstrapModalApi(ctrl) {
