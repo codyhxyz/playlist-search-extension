@@ -25,6 +25,10 @@ Available on the [Chrome Web Store](https://chromewebstore.google.com/) (search 
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
 
+## Behavior
+
+- **The Save dialog stays open after you click a playlist row.** YouTube's Oct-2025 redesign closes the "Save video to…" sheet after every selection, which breaks multi-select. This extension stops that — the dialog stays open so you can add a video to several playlists in one session. Click outside the dialog (anywhere on the page backdrop) to close it. This is a deliberate power-user choice and is not configurable.
+
 ## How it works
 
 A content script detects YouTube's Save dialog, injects a search bar, and filters playlist rows as you type. In the background, it uses YouTube's own internal API (the same one youtube.com uses) to fetch your full playlist library — authenticated with your existing YouTube session, no OAuth required. Results from both the modal's visible rows and your full library are ranked together with BM25 scoring.

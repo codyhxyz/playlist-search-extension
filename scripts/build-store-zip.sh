@@ -22,14 +22,21 @@ DIST_DIR="$ROOT_DIR/dist"
 VERSION="$(node -e "const m=require('$SRC_DIR/manifest.json'); process.stdout.write(m.version)")"
 OUT="$DIST_DIR/youtube-playlist-filter-$VERSION.zip"
 
-echo "[build] Gate 1/3: node --check src/content.js"
+echo "[build] Gate 1/4: node --check src/content.js"
 node --check "$SRC_DIR/content.js"
 
-echo "[build] Gate 2/3: regression tests"
+echo "[build] Gate 2/4: regression tests"
 node "$SRC_DIR/test-search.js"
 
-echo "[build] Gate 3/3: CWS structural validator"
+echo "[build] Gate 3/4: CWS structural validator"
 node "$ROOT_DIR/scripts/validate-cws.mjs"
+
+echo "[build] Gate 4/4: fixture mount harness (no auth, fast)"
+node "$ROOT_DIR/tests/test-feed-page-mount.mjs"
+
+# NOTE: the full e2e suite (signed-in YouTube via agent-browser) runs as the
+# pre-upload gate inside scripts/publish-cws.mjs, NOT here. Build = fast gates;
+# publish = full gate. This avoids running the slow e2e twice on a fresh release.
 
 mkdir -p "$DIST_DIR"
 rm -f "$OUT"
