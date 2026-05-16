@@ -404,9 +404,22 @@
 
   const ALL_STYLES = [FILTER_BASE_STYLES, MODAL_STYLES, MODAL_EXPANDED_STYLES, PAGE_STYLES, SYNTH_STYLES].join("\n");
 
-  const textCache = new WeakMap();
-  const hiddenRows = new WeakMap();
+  // Per-row state, keyed on the row element. Held weakly so GC reclaims when
+  // YouTube tears down its DOM. Previously these were two separate WeakMaps
+  // (textCache, hiddenRows); collapsed to reduce top-level surface.
+  // labelHtmlCache stays separate because it keys on LABEL elements, which
+  // have a different lifetime from rows (a row can swap its label).
+  const rowState = new WeakMap(); // row → { text?: string, hidden?: boolean }
   const labelHtmlCache = new WeakMap();
+
+  function rowStateFor(row) {
+    let s = rowState.get(row);
+    if (!s) { s = {}; rowState.set(row, s); }
+    return s;
+  }
+  function isRowHidden(row) {
+    return rowState.get(row)?.hidden === true;
+  }
   // controllers: plain Map so it's iterable. Disposal is explicit via
   // teardownHost(), so we don't need WeakMap GC behavior. Pre-1.6.13 this
   // was `controllers: WeakMap + controllerHosts: Set` — the Set existed
@@ -443,13 +456,14 @@
 
   function hideRow(row) {
     if (!row || !row.isConnected) return;
-    hiddenRows.set(row, true);
+    rowStateFor(row).hidden = true;
     row.classList.add(HIDDEN_CLASS);
   }
 
   function showRow(row) {
     if (!row) return;
-    hiddenRows.delete(row);
+    const s = rowState.get(row);
+    if (s) s.hidden = false;
     row.classList.remove(HIDDEN_CLASS);
     // Defensive: prior versions of the extension set inline display:none.
     // Strip it if it's still hanging around from a cached DOM. Cheap, idempotent.
@@ -697,7 +711,8 @@
   }
 
   function getItemText(row) {
-    if (textCache.has(row)) return textCache.get(row);
+    const s = rowStateFor(row);
+    if (typeof s.text === "string") return s.text;
 
     const data = row.data || row.__data;
     if (data) {
@@ -711,7 +726,7 @@
         null;
       if (dataTitle) {
         const text = normalizeText(dataTitle);
-        textCache.set(row, text);
+        s.text = text;
         return text;
       }
     }
@@ -725,7 +740,7 @@
     );
     const text = normalizeText(rawText);
 
-    textCache.set(row, text);
+    s.text = text;
     return text;
   }
 
@@ -926,7 +941,7 @@
 
     const directRows = dropNested(unique(queryAllDeep(MODAL_ROW_SELECTOR, host))).filter(
       (row) =>
-        (isVisible(row) || hiddenRows.has(row)) && getItemText(row).length > 0,
+        (isVisible(row) || isRowHidden(row)) && getItemText(row).length > 0,
     );
 
     if (directRows.length) return directRows;
@@ -937,7 +952,7 @@
     const genericRows = unique(
       checkboxes
         .map((checkbox) => findLikelyRow(checkbox, host))
-        .filter((row) => row && (isVisible(row) || hiddenRows.has(row))),
+        .filter((row) => row && (isVisible(row) || isRowHidden(row))),
     ).filter((row) => {
       const text = getItemText(row);
       return text.length >= 1 && text.length <= 300;
@@ -1011,7 +1026,7 @@
   }
 
   function scoreCandidate(contents, rows) {
-    const visibleRows = rows.filter((row) => isVisible(row) || hiddenRows.has(row));
+    const visibleRows = rows.filter((row) => isVisible(row) || isRowHidden(row));
     return [isVisible(contents) ? 1 : 0, visibleRows.length, rows.length];
   }
 
@@ -1040,7 +1055,7 @@
         (row) =>
           !row.classList.contains(FILTER_CLASS) &&
           hasPlaylistRenderer(row) &&
-          (hasPlaylistLink(row) || hiddenRows.has(row)),
+          (hasPlaylistLink(row) || isRowHidden(row)),
       );
 
       if (!rows.length) return;
@@ -2070,7 +2085,7 @@
         (row) =>
           !row.classList.contains(FILTER_CLASS) &&
           hasPlaylistRenderer(row) &&
-          (hasPlaylistLink(row) || hiddenRows.has(row)),
+          (hasPlaylistLink(row) || isRowHidden(row)),
       );
       const sampleHrefs = filtered
         .slice(0, 3)
