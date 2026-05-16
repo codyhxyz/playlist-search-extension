@@ -36,7 +36,28 @@ async function ensureContentScriptRegistered() {
         ids: [CONTENT_SCRIPT_ID],
       });
       if (existing.length === 0) {
-        await chrome.scripting.registerContentScripts([CONTENT_SCRIPT_REGISTRATION]);
+        try {
+          await chrome.scripting.registerContentScripts([CONTENT_SCRIPT_REGISTRATION]);
+        } catch (err) {
+          // Most common failure mode for contributors: cloned the repo, ran
+          // Load unpacked, but forgot `npm install && npm run build`. Chrome
+          // throws because `content.bundle.js` doesn't exist on disk. We
+          // can't fix that from here, but we CAN make it loud — both in
+          // the service-worker console and in chrome.storage.local for any
+          // diagnostics tooling that's looking.
+          const message =
+            "[ytpf] Failed to register content script. If this is a dev " +
+            "install from `Load unpacked`, run `npm install && npm run build` " +
+            "in the repo root and click the reload icon. Underlying error: " +
+            (err && err.message ? err.message : String(err));
+          try {
+            console.error(message);
+            await chrome.storage.local.set({
+              ytpf_registration_error: { message, ts: Date.now() },
+            });
+          } catch { /* nothing useful left to do */ }
+          throw err;
+        }
       }
       await markSeen(KEYS.permissionGranted);
     } finally {

@@ -18,12 +18,25 @@ This extension adds a search bar directly inside YouTube's Save modal. Type to f
 
 Available on the [Chrome Web Store](https://chromewebstore.google.com/) (search "YouTube Playlist Search"), or load it locally:
 
-1. Clone this repo
-2. Open `chrome://extensions`
-3. Enable **Developer mode** (top right)
-4. Click **Load unpacked** and select the `src/` folder
+```bash
+git clone https://github.com/codyhxyz/playlist-search-extension.git
+cd playlist-search-extension
+npm install
+npm run build                       # produces src/content.bundle.js
+```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
+Then in Chrome:
+
+1. Open `chrome://extensions`
+2. Enable **Developer mode** (top right)
+3. Click **Load unpacked** and select the `src/` folder
+
+The build step is what Chrome actually injects — skip it and the extension
+silently fails to register its content script. `src/content.bundle.js` is
+gitignored, so every clone builds its own.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup including
+`npm run build:watch` and the test suite.
 
 ## Behavior
 
