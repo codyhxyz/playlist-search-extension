@@ -435,7 +435,19 @@
     fetchedAt: 0,
     inFlight: null, // Promise<Playlist[]> | null — set while a fetch is mid-air
   };
-  let suppressMutationsUntil = 0;
+
+  // Reconciler: one debounced channel for "re-evaluate hosts" intents.
+  // All signal sources (MutationObserver, yt-navigate-finish,
+  // yt-page-data-updated) feed enqueueReconcile(); pre-mutation gating sets
+  // pauseUntil so observer-driven enqueues don't re-enter from our own DOM
+  // writes (synth row insert, filter pass, input focus). Pre-1.6.13 this was
+  // three call paths + a free-floating suppressMutationsUntil timestamp.
+  const reconciler = {
+    flushTimer: null,
+    scheduledAt: 0,   // performance.now() value at which flush will fire
+    pauseUntil: 0,    // suppress mutation-driven enqueues until this time
+    pendingReason: null, // newest "reason" string — diagnostics only
+  };
 
   function ensureScopedStyles(rootNode) {
     if (!rootNode) return;
@@ -512,8 +524,34 @@
     return performance.now();
   }
 
+  // Pause the reconciler from acting on mutation-driven enqueues for `ms`.
+  // Used at five sites where we're about to cause our own DOM changes that
+  // would otherwise re-enter refresh(): synth row insert, save success/fail,
+  // filter pass, input focus. Navigate/page-data signals bypass this pause.
   function suppressMutations(ms = 120) {
-    suppressMutationsUntil = Math.max(suppressMutationsUntil, nowMs() + ms);
+    reconciler.pauseUntil = Math.max(reconciler.pauseUntil, nowMs() + ms);
+  }
+
+  function enqueueReconcile(reason, debounceMs = 120) {
+    // Mutation-driven enqueues respect the suppression window. Other reasons
+    // (navigate, page-data) are user-intent signals — bypass.
+    if (reason === "mutation" && nowMs() < reconciler.pauseUntil) return;
+
+    const fireAt = nowMs() + debounceMs;
+    if (reconciler.flushTimer && reconciler.scheduledAt <= fireAt) {
+      // Already scheduled to fire sooner-or-equal — coalesce.
+      reconciler.pendingReason = reason;
+      return;
+    }
+    if (reconciler.flushTimer) clearTimeout(reconciler.flushTimer);
+    reconciler.scheduledAt = fireAt;
+    reconciler.pendingReason = reason;
+    reconciler.flushTimer = setTimeout(() => {
+      reconciler.flushTimer = null;
+      reconciler.scheduledAt = 0;
+      reconciler.pendingReason = null;
+      refresh();
+    }, debounceMs);
   }
 
   function normalizeText(value) {
@@ -681,7 +719,8 @@
   }
 
   function shouldRefreshFromMutations(mutations) {
-    if (nowMs() < suppressMutationsUntil) return false;
+    // Suppression is now checked inside enqueueReconcile(reason="mutation"),
+    // not here — this filter is purely "is the mutation relevant?".
     for (const mutation of mutations) {
       if (nodeTouchesRelevantSurface(mutation.target)) return true;
       for (const node of mutation.addedNodes) {
@@ -2192,16 +2231,6 @@
     }
   }
 
-  function debounce(fn, waitMs) {
-    let timerId;
-    return () => {
-      clearTimeout(timerId);
-      timerId = setTimeout(fn, waitMs);
-    };
-  }
-
-  const scheduleRefresh = debounce(refresh, 120);
-
   function start() {
     if (!document.body) {
       requestAnimationFrame(start);
@@ -2210,17 +2239,15 @@
 
     _bodyObserver = new MutationObserver((mutations) => {
       if (shouldRefreshFromMutations(mutations)) {
-        scheduleRefresh();
+        enqueueReconcile("mutation", 120);
       }
     });
     _bodyObserver.observe(document.body, { childList: true, subtree: true });
 
     refresh();
 
-    _onNavigateFinish = () => {
-      setTimeout(refresh, 250);
-    };
-    _onPageDataUpdated = scheduleRefresh;
+    _onNavigateFinish = () => enqueueReconcile("navigate", 250);
+    _onPageDataUpdated = () => enqueueReconcile("page-data", 120);
 
     window.addEventListener("yt-navigate-finish", _onNavigateFinish);
     window.addEventListener("yt-page-data-updated", _onPageDataUpdated);
