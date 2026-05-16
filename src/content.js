@@ -1,6 +1,33 @@
 (() => {
   "use strict";
 
+  /**
+   * Per-host controller. One per active modal/page surface. Lives in the
+   * `controllers` Map, keyed by host element. Disposed by teardownHost().
+   *
+   * Adding a field? Initialize it in attachHost(). Reading a field? Trust
+   * that attachHost set it — if tsc says otherwise, attachHost missed an
+   * init path.
+   *
+   * @typedef {object} Ctrl
+   * @property {Element} host                Outer host element (modal sheet / page grid contents).
+   * @property {"modal" | "page"} surface    Where this controller lives.
+   * @property {Element[]} rows              Current DOM rows being filtered.
+   * @property {MiniSearch | null} bm25      MiniSearch index over rows + API playlists.
+   * @property {Element} root                Our injected filter-bar UI root.
+   * @property {HTMLInputElement} input      The search input.
+   * @property {HTMLButtonElement} clear     The clear (×) button.
+   * @property {HTMLElement} meta            The "N of M" meta element (page surface only).
+   * @property {Element | null} parent       Row container — where synth rows get appended.
+   * @property {boolean} sortResults         Whether matched rows reorder to the top.
+   * @property {Element[]} synthRows         API-only synthetic rows we injected.
+   * @property {number} apiToken             Counter that invalidates late API responses on teardown.
+   * @property {Element | null | undefined} scrollContainer  Cached scroll target (modal only).
+   * @property {string} lastQuery            Previous query string (for empty→non-empty transitions).
+   */
+
+  /** @typedef {{ id: string, title: string, itemCount: number }} Playlist */
+
   const HIDDEN_CLASS = "ytpf-hidden";
   const FILTER_CLASS = "ytpf-inline";
   const STYLE_ID = "ytpf-inline-style";
@@ -404,19 +431,51 @@
 
   const ALL_STYLES = [FILTER_BASE_STYLES, MODAL_STYLES, MODAL_EXPANDED_STYLES, PAGE_STYLES, SYNTH_STYLES].join("\n");
 
-  const textCache = new WeakMap();
-  const hiddenRows = new WeakMap();
+  // Per-row state, keyed on the row element. Held weakly so GC reclaims when
+  // YouTube tears down its DOM. Previously these were two separate WeakMaps
+  // (textCache, hiddenRows); collapsed to reduce top-level surface.
+  // labelHtmlCache stays separate because it keys on LABEL elements, which
+  // have a different lifetime from rows (a row can swap its label).
+  const rowState = new WeakMap(); // row → { text?: string, hidden?: boolean }
   const labelHtmlCache = new WeakMap();
-  const controllerHosts = new Set();
-  const controllers = new WeakMap();
+
+  function rowStateFor(row) {
+    let s = rowState.get(row);
+    if (!s) { s = {}; rowState.set(row, s); }
+    return s;
+  }
+  function isRowHidden(row) {
+    return rowState.get(row)?.hidden === true;
+  }
+  // controllers: plain Map so it's iterable. Disposal is explicit via
+  // teardownHost(), so we don't need WeakMap GC behavior. Pre-1.6.13 this
+  // was `controllers: WeakMap + controllerHosts: Set` — the Set existed
+  // only because WeakMap isn't iterable, and forgetting to keep the two
+  // in sync was the 1.6.11 bug that swallowed every refresh tick on
+  // /feed/playlists. Collapsed to remove the foot-gun.
+  /** @type {Map<Element, Ctrl>} */
+  const controllers = new Map();
   let _bodyObserver = null;
   let _onNavigateFinish = null;
   let _onPageDataUpdated = null;
   const apiSessionCache = {
     playlists: null,
     fetchedAt: 0,
+    inFlight: null, // Promise<Playlist[]> | null — set while a fetch is mid-air
   };
-  let suppressMutationsUntil = 0;
+
+  // Reconciler: one debounced channel for "re-evaluate hosts" intents.
+  // All signal sources (MutationObserver, yt-navigate-finish,
+  // yt-page-data-updated) feed enqueueReconcile(); pre-mutation gating sets
+  // pauseUntil so observer-driven enqueues don't re-enter from our own DOM
+  // writes (synth row insert, filter pass, input focus). Pre-1.6.13 this was
+  // three call paths + a free-floating suppressMutationsUntil timestamp.
+  const reconciler = {
+    flushTimer: null,
+    scheduledAt: 0,   // performance.now() value at which flush will fire
+    pauseUntil: 0,    // suppress mutation-driven enqueues until this time
+    pendingReason: null, // newest "reason" string — diagnostics only
+  };
 
   function ensureScopedStyles(rootNode) {
     if (!rootNode) return;
@@ -438,13 +497,14 @@
 
   function hideRow(row) {
     if (!row || !row.isConnected) return;
-    hiddenRows.set(row, true);
+    rowStateFor(row).hidden = true;
     row.classList.add(HIDDEN_CLASS);
   }
 
   function showRow(row) {
     if (!row) return;
-    hiddenRows.delete(row);
+    const s = rowState.get(row);
+    if (s) s.hidden = false;
     row.classList.remove(HIDDEN_CLASS);
     // Defensive: prior versions of the extension set inline display:none.
     // Strip it if it's still hanging around from a cached DOM. Cheap, idempotent.
@@ -470,13 +530,13 @@
       nodeRoot.querySelectorAll(selector).forEach(addResult);
 
       const walker = document.createTreeWalker(nodeRoot, NodeFilter.SHOW_ELEMENT);
-      let node = walker.currentNode;
+      let node = /** @type {Element | null} */ (walker.currentNode);
 
       while (node) {
         if (node.shadowRoot) {
           walk(node.shadowRoot);
         }
-        node = walker.nextNode();
+        node = /** @type {Element | null} */ (walker.nextNode());
       }
     }
 
@@ -492,8 +552,40 @@
     return performance.now();
   }
 
+  // Pause the reconciler from acting on mutation-driven enqueues for `ms`.
+  // Used at five sites where we're about to cause our own DOM changes that
+  // would otherwise re-enter refresh(): synth row insert, save success/fail,
+  // filter pass, input focus. Navigate/page-data signals bypass this pause.
   function suppressMutations(ms = 120) {
-    suppressMutationsUntil = Math.max(suppressMutationsUntil, nowMs() + ms);
+    reconciler.pauseUntil = Math.max(reconciler.pauseUntil, nowMs() + ms);
+  }
+
+  function enqueueReconcile(reason, debounceMs = 120) {
+    // Mutation-driven enqueues respect the suppression window. Other reasons
+    // (navigate, page-data) are user-intent signals — bypass.
+    if (reason === "mutation" && nowMs() < reconciler.pauseUntil) return;
+
+    const fireAt = nowMs() + debounceMs;
+    if (reconciler.flushTimer && reconciler.scheduledAt >= fireAt) {
+      // A longer-or-equal-wait flush is already pending — let it ride.
+      // Critical for the navigate signal: yt-navigate-finish enqueues a
+      // 250ms wait specifically to let YouTube's SPA settle. A mutation
+      // arriving 50ms in must NOT cancel the navigate flush and fire
+      // 80ms early — that was the 1.6.4 regression. "Never shorten."
+      reconciler.pendingReason = reason;
+      return;
+    }
+    // Either no flush pending, or fireAt is strictly later (new mutation
+    // burst extends the debounce window — standard debounce behavior).
+    if (reconciler.flushTimer) clearTimeout(reconciler.flushTimer);
+    reconciler.scheduledAt = fireAt;
+    reconciler.pendingReason = reason;
+    reconciler.flushTimer = setTimeout(() => {
+      reconciler.flushTimer = null;
+      reconciler.scheduledAt = 0;
+      reconciler.pendingReason = null;
+      refresh();
+    }, debounceMs);
   }
 
   function normalizeText(value) {
@@ -661,7 +753,8 @@
   }
 
   function shouldRefreshFromMutations(mutations) {
-    if (nowMs() < suppressMutationsUntil) return false;
+    // Suppression is now checked inside enqueueReconcile(reason="mutation"),
+    // not here — this filter is purely "is the mutation relevant?".
     for (const mutation of mutations) {
       if (nodeTouchesRelevantSurface(mutation.target)) return true;
       for (const node of mutation.addedNodes) {
@@ -692,7 +785,8 @@
   }
 
   function getItemText(row) {
-    if (textCache.has(row)) return textCache.get(row);
+    const s = rowStateFor(row);
+    if (typeof s.text === "string") return s.text;
 
     const data = row.data || row.__data;
     if (data) {
@@ -706,7 +800,7 @@
         null;
       if (dataTitle) {
         const text = normalizeText(dataTitle);
-        textCache.set(row, text);
+        s.text = text;
         return text;
       }
     }
@@ -720,7 +814,7 @@
     );
     const text = normalizeText(rawText);
 
-    textCache.set(row, text);
+    s.text = text;
     return text;
   }
 
@@ -921,7 +1015,7 @@
 
     const directRows = dropNested(unique(queryAllDeep(MODAL_ROW_SELECTOR, host))).filter(
       (row) =>
-        (isVisible(row) || hiddenRows.has(row)) && getItemText(row).length > 0,
+        (isVisible(row) || isRowHidden(row)) && getItemText(row).length > 0,
     );
 
     if (directRows.length) return directRows;
@@ -932,7 +1026,7 @@
     const genericRows = unique(
       checkboxes
         .map((checkbox) => findLikelyRow(checkbox, host))
-        .filter((row) => row && (isVisible(row) || hiddenRows.has(row))),
+        .filter((row) => row && (isVisible(row) || isRowHidden(row))),
     ).filter((row) => {
       const text = getItemText(row);
       return text.length >= 1 && text.length <= 300;
@@ -1006,7 +1100,7 @@
   }
 
   function scoreCandidate(contents, rows) {
-    const visibleRows = rows.filter((row) => isVisible(row) || hiddenRows.has(row));
+    const visibleRows = rows.filter((row) => isVisible(row) || isRowHidden(row));
     return [isVisible(contents) ? 1 : 0, visibleRows.length, rows.length];
   }
 
@@ -1025,6 +1119,7 @@
     );
     if (!grids.length) return null;
 
+    /** @type {{ contents: Element, rows: Element[], score: number[] } | null} */
     let best = null;
 
     grids.forEach((grid) => {
@@ -1035,7 +1130,7 @@
         (row) =>
           !row.classList.contains(FILTER_CLASS) &&
           hasPlaylistRenderer(row) &&
-          (hasPlaylistLink(row) || hiddenRows.has(row)),
+          (hasPlaylistLink(row) || isRowHidden(row)),
       );
 
       if (!rows.length) return;
@@ -1219,34 +1314,55 @@
 
   async function innertubeRequest(endpoint, body) {
     const auth = await getSapisidHash();
-    if (!auth) throw new Error("Not signed in to YouTube");
+    if (!auth) {
+      recordDiagnostic("innertube_no_sapisid", { endpoint });
+      throw new Error("Not signed in to YouTube");
+    }
 
     const { apiKey, clientVersion } = getInnertubeConfig();
 
-    const response = await fetch(
-      `https://www.youtube.com/youtubei/v1/${endpoint}?key=${apiKey}&prettyPrint=false`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: auth,
-          "X-Goog-AuthUser": "0",
-          "X-Origin": "https://www.youtube.com",
-        },
-        body: JSON.stringify({
-          context: {
-            client: {
-              clientName: "WEB",
-              clientVersion,
-              hl: document.documentElement.lang || "en",
-            },
+    let response;
+    try {
+      response = await fetch(
+        `https://www.youtube.com/youtubei/v1/${endpoint}?key=${apiKey}&prettyPrint=false`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: auth,
+            "X-Goog-AuthUser": "0",
+            "X-Origin": "https://www.youtube.com",
           },
-          ...body,
-        }),
-      },
-    );
+          body: JSON.stringify({
+            context: {
+              client: {
+                clientName: "WEB",
+                clientVersion,
+                hl: document.documentElement.lang || "en",
+              },
+            },
+            ...body,
+          }),
+        },
+      );
+    } catch (err) {
+      // Network-level failure (offline, DNS, CORS shim, etc.). Distinct from
+      // HTTP-level failure handled below.
+      recordDiagnostic("innertube_network_error", {
+        endpoint,
+        message: String(err?.message || err).slice(0, 200),
+      });
+      throw err;
+    }
 
     if (!response.ok) {
+      // 401/403 typically mean SAPISID rotated or the cookie expired; 429 is
+      // rate-limit; 5xx is YouTube-side. All three are silent UX failures the
+      // user has no way to debug without a paper trail.
+      recordDiagnostic("innertube_http_error", {
+        endpoint,
+        status: response.status,
+      });
       throw new Error(`YouTube request failed (HTTP ${response.status})`);
     }
 
@@ -1541,10 +1657,24 @@
     ) {
       return apiSessionCache.playlists;
     }
-    const playlists = await innertubeLoadPlaylists();
-    apiSessionCache.playlists = playlists;
-    apiSessionCache.fetchedAt = Date.now();
-    return playlists;
+    // Promise-singleton: if a fetch is already mid-air, join it instead of
+    // kicking off a duplicate 50-page InnerTube walk. Two simultaneous modal
+    // hosts (or a modal-open during page-load) used to double-fetch.
+    if (apiSessionCache.inFlight) {
+      return apiSessionCache.inFlight;
+    }
+    const promise = (async () => {
+      try {
+        const playlists = await innertubeLoadPlaylists();
+        apiSessionCache.playlists = playlists;
+        apiSessionCache.fetchedAt = Date.now();
+        return playlists;
+      } finally {
+        apiSessionCache.inFlight = null;
+      }
+    })();
+    apiSessionCache.inFlight = promise;
+    return promise;
   }
 
   async function bootstrapModalApi(ctrl) {
@@ -1627,9 +1757,8 @@
     ctrl.root.remove();
 
     controllers.delete(host);
-    controllerHosts.delete(host);
 
-    if (controllerHosts.size === 0) {
+    if (controllers.size === 0) {
       if (_bodyObserver) {
         _bodyObserver.disconnect();
         _bodyObserver = null;
@@ -1748,6 +1877,11 @@
     }
   }
 
+  /**
+   * @param {Element} host
+   * @param {Element[]} rows
+   * @param {"modal" | "page"} [surface]
+   */
   function attachHost(host, rows, surface = "modal") {
     const mount = findMountPoint(rows, host, surface);
     if (!mount) return;
@@ -1766,7 +1900,8 @@
       // because they already handle saving without triggering a close.
       host.addEventListener("click", (e) => {
         if (!ytpfSettings.keepDialogOpen) return;
-        const row = e.target.closest(
+        const target = /** @type {Element | null} */ (e.target);
+        const row = target?.closest?.(
           "toggleable-list-item-view-model, ytd-playlist-add-to-option-renderer, yt-playlist-add-to-option-renderer"
         );
         if (!row || isOurUiNode(row) || row.classList.contains("ytpf-synth-row")) return;
@@ -1782,6 +1917,7 @@
       mount.parent.appendChild(ui.root);
     }
 
+    /** @type {Ctrl} */
     const ctrl = {
       host,
       surface,
@@ -1823,7 +1959,6 @@
     });
 
     controllers.set(host, ctrl);
-    controllerHosts.add(host);
 
     applyFilter(ctrl);
     requestAnimationFrame(() => {
@@ -1845,6 +1980,11 @@
     }
   }
 
+  /**
+   * @param {Element} host
+   * @param {Element[]} rows
+   * @param {"modal" | "page"} [surface]
+   */
   function upsertHost(host, rows, surface = "modal") {
     if (!rows.length) return;
     const existing = controllers.get(host);
@@ -1898,13 +2038,7 @@
   function sweepOrphanedHidden() {
     const tracked = new WeakSet();
     const liveHosts = new WeakSet();
-    // controllers is a WeakMap (no .values()); iterate via the parallel
-    // controllerHosts Set instead. Calling controllers.values() here was
-    // the 1.6.11 regression that swallowed every refresh() tick, which is
-    // what made the /feed/playlists search bar vanish entirely.
-    for (const host of controllerHosts) {
-      const ctrl = controllers.get(host);
-      if (!ctrl) continue;
+    for (const ctrl of controllers.values()) {
       if (ctrl.host) liveHosts.add(ctrl.host);
       for (const row of ctrl.rows) tracked.add(row);
     }
@@ -1965,9 +2099,8 @@
     // the host is still attached, rows will come back on the next refresh —
     // we don't need to rebuild the UI in the meantime. If ui.root itself gets
     // detached, upsertHost's !existing.root.isConnected branch re-attaches it.
-    for (const host of [...controllerHosts]) {
+    for (const [host, ctrl] of [...controllers]) {
       if (host.isConnected) continue;
-      const ctrl = controllers.get(host);
       if (ctrl && ctrl.root.contains(document.activeElement)) continue;
       teardownHost(host);
     }
@@ -2074,7 +2207,7 @@
         (row) =>
           !row.classList.contains(FILTER_CLASS) &&
           hasPlaylistRenderer(row) &&
-          (hasPlaylistLink(row) || hiddenRows.has(row)),
+          (hasPlaylistLink(row) || isRowHidden(row)),
       );
       const sampleHrefs = filtered
         .slice(0, 3)
@@ -2145,16 +2278,6 @@
     }
   }
 
-  function debounce(fn, waitMs) {
-    let timerId;
-    return () => {
-      clearTimeout(timerId);
-      timerId = setTimeout(fn, waitMs);
-    };
-  }
-
-  const scheduleRefresh = debounce(refresh, 120);
-
   function start() {
     if (!document.body) {
       requestAnimationFrame(start);
@@ -2163,17 +2286,15 @@
 
     _bodyObserver = new MutationObserver((mutations) => {
       if (shouldRefreshFromMutations(mutations)) {
-        scheduleRefresh();
+        enqueueReconcile("mutation", 120);
       }
     });
     _bodyObserver.observe(document.body, { childList: true, subtree: true });
 
     refresh();
 
-    _onNavigateFinish = () => {
-      setTimeout(refresh, 250);
-    };
-    _onPageDataUpdated = scheduleRefresh;
+    _onNavigateFinish = () => enqueueReconcile("navigate", 250);
+    _onPageDataUpdated = () => enqueueReconcile("page-data", 120);
 
     window.addEventListener("yt-navigate-finish", _onNavigateFinish);
     window.addEventListener("yt-page-data-updated", _onPageDataUpdated);

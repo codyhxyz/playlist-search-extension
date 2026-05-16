@@ -1,0 +1,12 @@
+{
+  "name": "playlist-search-extension",
+  "private": true,
+  "description": "TypeScript-as-linter only. The extension itself ships as plain JS; this package.json exists solely so tsc --noEmit --checkJs can gate ctrl-shape drift in CI.",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node src/test-search.js && node tests/test-feed-page-mount.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

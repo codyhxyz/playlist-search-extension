@@ -6,8 +6,8 @@
   const stepGrant = document.getElementById("step-grant");
   const stepOpen = document.getElementById("step-open");
   const grantDesc = document.getElementById("grant-desc");
-  const grantBtn = document.getElementById("grant");
-  const openBtn = document.getElementById("open");
+  const grantBtn = /** @type {HTMLButtonElement} */ (document.getElementById("grant"));
+  const openBtn = /** @type {HTMLButtonElement} */ (document.getElementById("open"));
   const status = document.getElementById("status");
   const version = document.getElementById("version");
 
