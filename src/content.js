@@ -16,26 +16,6 @@
   const INNERTUBE_CLIENT_VERSION_FALLBACK = "2.20260206.01.00";
   const PLAYLIST_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
-  // ── User settings ────────────────────────────────────────────────────────
-  // keepDialogOpen: restore the pre-Oct-2025 multi-playlist save behaviour.
-  // YouTube's new UI closes the "Save video to…" sheet after every selection;
-  // this intercepts the click at the host level so users can check multiple
-  // playlists without reopening the dialog each time.
-  let ytpfSettings = { keepDialogOpen: true };
-  (async () => {
-    try {
-      const stored = await chrome.storage.sync.get("ytpfSettings");
-      if (stored?.ytpfSettings) ytpfSettings = { ...ytpfSettings, ...stored.ytpfSettings };
-    } catch { /* storage unavailable — keep defaults */ }
-  })();
-  try {
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === "sync" && changes.ytpfSettings?.newValue) {
-        ytpfSettings = { ...ytpfSettings, ...changes.ytpfSettings.newValue };
-      }
-    });
-  } catch { /* extension context unavailable */ }
-
   // Self-only diagnostics: when an in-product invariant fails we console.warn
   // it live and append a short entry to a bounded ring buffer in
   // chrome.storage.local for later inspection. Nothing leaves the machine.
@@ -1753,14 +1733,14 @@
     if (surface === "modal") {
       host.classList.add(MODAL_EXPANDED_CLASS);
 
-      // Keep-dialog-open: intercept clicks that bubble up from native playlist
-      // rows so they don't reach YouTube's sheet-close handler above the host.
-      // YouTube's Oct-2025 UI closes the "Save video to…" sheet after each
-      // selection; stopping propagation here restores the old checkbox-style
-      // multi-select flow.  Synth rows (our own API results) are excluded
-      // because they already handle saving without triggering a close.
+      // Keep-dialog-open is unconditional: this is a power-user extension and
+      // YouTube's Oct-2025 auto-close-on-select breaks multi-select, which is
+      // the entire point of having a search bar over the playlist list. The
+      // dialog closes only when the user clicks outside it (YouTube's normal
+      // backdrop dismissal). Do NOT add a setting for this — it's a taste call,
+      // documented in README.md "Behavior" and CHANGELOG. Synth rows (our own
+      // API results) are excluded because they handle saving without closing.
       host.addEventListener("click", (e) => {
-        if (!ytpfSettings.keepDialogOpen) return;
         const row = e.target.closest(
           "toggleable-list-item-view-model, ytd-playlist-add-to-option-renderer, yt-playlist-add-to-option-renderer"
         );
@@ -2006,6 +1986,13 @@
       const stored = await chrome.storage.local.get(DIAG_STORAGE_KEY);
       const nextRing = appendToRing(stored[DIAG_STORAGE_KEY], entry, DIAG_RING_SIZE);
       await chrome.storage.local.set({ [DIAG_STORAGE_KEY]: nextRing });
+      // Also mirror the latest ring to a DOM dataset attribute so the e2e
+      // harness can read it from page-world eval (chrome.storage.local lives
+      // in the isolated world, invisible to scripts running in the page).
+      // Bounded by DIAG_RING_SIZE * entry-size so dataset stays small.
+      try {
+        document.documentElement.dataset.ytpfDiag = JSON.stringify(nextRing);
+      } catch { /* dataset write must not break recording */ }
     } catch {
       // Recording must never break the extension.
     }

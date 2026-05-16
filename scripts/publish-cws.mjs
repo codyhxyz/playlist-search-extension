@@ -12,6 +12,7 @@
 // where <version> matches src/manifest.json.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadSecrets, uploadZip, publish, pollStatus, SECRET_ENV_NAMES } from "./cws-api.mjs";
@@ -49,7 +50,28 @@ function log(state, detail) {
   if (!JSON_MODE) console.log(`[${t.at}] ${state}${detail ? ` \u2014 ${detail}` : ""}`);
 }
 
+function runPrePublishE2EGate() {
+  // The e2e suite must pass before any zip can reach the Chrome Web Store.
+  // This is the ULTIMATE gate \u2014 build-store-zip.sh runs the same suite as a
+  // fast-fail during dev, but the publish path must verify independently so
+  // a stale or hand-built zip can't bypass the test wall. There is no
+  // skip flag, by design (see CHANGELOG / tests/e2e/README.md).
+  log("testing", "running tests/run-all.sh (fixture + e2e)");
+  const result = spawnSync("bash", [join(ROOT, "tests", "run-all.sh")], {
+    stdio: "inherit",
+  });
+  if (result.status !== 0) {
+    log("tests-failed", `tests/run-all.sh exited ${result.status}`);
+    return false;
+  }
+  log("tests-passed");
+  return true;
+}
+
 async function run() {
+  if (!runPrePublishE2EGate()) {
+    return { kind: "tests-failed", reason: "tests/run-all.sh did not exit 0 \u2014 see test output above" };
+  }
   const secrets = loadSecrets();
   if (!secrets) {
     const reason = `no CWS secrets configured \u2014 set ${SECRET_ENV_NAMES.join(", ")} to enable automated publish.`;
@@ -58,7 +80,7 @@ async function run() {
   }
   const zipPath = ZIP_PATH_ARG ?? findDefaultZip();
   if (!zipPath || !existsSync(zipPath)) {
-    console.error(`publish-cws: no zip found${ZIP_PATH_ARG ? ` at ${ZIP_PATH_ARG}` : " in dist/"}. Run bash private/scripts/build-store-zip.sh first.`);
+    console.error(`publish-cws: no zip found${ZIP_PATH_ARG ? ` at ${ZIP_PATH_ARG}` : " in dist/"}. Run bash scripts/build-store-zip.sh first.`);
     process.exit(2);
   }
   log("uploading", `path=${zipPath}`);
@@ -82,6 +104,7 @@ async function run() {
 
 function exitCodeFor(outcome) {
   if (outcome.kind === "skipped") return 0;
+  if (outcome.kind === "tests-failed") return 1;
   if (outcome.kind === "upload-failed") return 1;
   const s = outcome.poll.state;
   return (s === "live" || s === "in-review") ? 0 : 1;
@@ -99,9 +122,11 @@ run()
         state: outcome.kind === "terminal" ? outcome.poll.state : outcome.kind,
         detail: outcome.kind === "skipped"
           ? outcome.reason
-          : outcome.kind === "upload-failed"
-            ? (outcome.upload.itemError ?? []).map((e) => `${e.error_code}: ${e.error_detail}`).join("; ")
-            : outcome.poll.detail,
+          : outcome.kind === "tests-failed"
+            ? outcome.reason
+            : outcome.kind === "upload-failed"
+              ? (outcome.upload.itemError ?? []).map((e) => `${e.error_code}: ${e.error_detail}`).join("; ")
+              : outcome.poll.detail,
         transitions,
       }, null, 2) + "\n");
     } else if (outcome.kind === "terminal") {
