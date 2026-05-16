@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "YouTube Playlist Search",
-  "version": "1.6.12",
+  "version": "1.6.13",
   "description": "Ctrl+F for your playlist collection. Built right into YouTube.",
   "minimum_chrome_version": "114",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvShG+UTL4aONwkM/IafWHEFLtUgkDS3sEl3BDA9kHYfUBuCqHp5HkJ5Kw9F5Y6s0dgsl2BDxrily0eBuL3tB1DPvSAcamaDdcdxGJIoAj/+ufUYwEVPF83fTR464AWtJPJeUPETN9HhR67mF3CEqriXWWxKQN8XXSe1uLuGGr4JPc19Lijk2U/1qRzVpb/L0H9oiux+jZ13+rjR6eje3dY/jZi08oOlA23IAU8T9+T0U6lfrh49OM7c7FxTmINWHSxjgnUvM4e00cn8VDOCoXxnXNo/icRj766yUjRkJO1h47oqeN11qHg/ufkTfzUs21OZv1jwntL6+m+kKnCWZEwIDAQAB",
