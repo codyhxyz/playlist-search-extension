@@ -15,26 +15,32 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "npm"
 
-      - name: Syntax check (content script)
-        run: node --check src/content.js
+      - name: Install dev dependencies (esbuild + typescript)
+        run: npm ci
 
-      - name: Syntax check (background + onboarding + welcome)
+      - name: Build bundle (esbuild src/content.js → src/content.bundle.js)
+        run: npm run build
+
+      - name: Syntax check (source + bundle + workers)
         run: |
+          node --check src/content.js
+          node --check src/content.bundle.js
           node --check src/background.js
           node --check src/onboarding-state.js
           node --check src/welcome.js
 
-      - name: Install typecheck deps
-        run: npm install --no-package-lock --no-audit --no-fund
-
       - name: Typecheck (JSDoc + tsc --checkJs)
         run: npm run typecheck
 
-      - name: Regression tests
-        run: node src/test-search.js
+      - name: Unit tests (fixture-driven parsers, fast)
+        run: node --test tests/innertube-parse.test.mjs tests/dom-parse.test.mjs
 
-      - name: Feed-page mount regression
+      - name: Integration test (bundled content.js in vm sandbox)
+        run: node src/test-search.cjs
+
+      - name: Feed-page mount regression (skips cleanly if agent-browser absent)
         run: node tests/test-feed-page-mount.mjs
 
       - name: CWS structural validator

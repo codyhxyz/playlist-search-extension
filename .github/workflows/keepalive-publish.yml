@@ -55,6 +55,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "npm"
+
+      - name: Install dev dependencies (esbuild + typescript)
+        if: steps.gate.outputs.enabled == 'true'
+        # build-store-zip.sh runs `npm run build` as gate 1/6 and
+        # `npm run typecheck` as gate 3/6. Both need their tools on disk.
+        run: npm ci
 
       - name: Bump manifest patch version
         if: steps.gate.outputs.enabled == 'true'
