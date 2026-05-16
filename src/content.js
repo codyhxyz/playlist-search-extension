@@ -407,8 +407,13 @@
   const textCache = new WeakMap();
   const hiddenRows = new WeakMap();
   const labelHtmlCache = new WeakMap();
-  const controllerHosts = new Set();
-  const controllers = new WeakMap();
+  // controllers: plain Map so it's iterable. Disposal is explicit via
+  // teardownHost(), so we don't need WeakMap GC behavior. Pre-1.6.13 this
+  // was `controllers: WeakMap + controllerHosts: Set` — the Set existed
+  // only because WeakMap isn't iterable, and forgetting to keep the two
+  // in sync was the 1.6.11 bug that swallowed every refresh tick on
+  // /feed/playlists. Collapsed to remove the foot-gun.
+  const controllers = new Map();
   let _bodyObserver = null;
   let _onNavigateFinish = null;
   let _onPageDataUpdated = null;
@@ -1627,9 +1632,8 @@
     ctrl.root.remove();
 
     controllers.delete(host);
-    controllerHosts.delete(host);
 
-    if (controllerHosts.size === 0) {
+    if (controllers.size === 0) {
       if (_bodyObserver) {
         _bodyObserver.disconnect();
         _bodyObserver = null;
@@ -1823,7 +1827,6 @@
     });
 
     controllers.set(host, ctrl);
-    controllerHosts.add(host);
 
     applyFilter(ctrl);
     requestAnimationFrame(() => {
@@ -1898,13 +1901,7 @@
   function sweepOrphanedHidden() {
     const tracked = new WeakSet();
     const liveHosts = new WeakSet();
-    // controllers is a WeakMap (no .values()); iterate via the parallel
-    // controllerHosts Set instead. Calling controllers.values() here was
-    // the 1.6.11 regression that swallowed every refresh() tick, which is
-    // what made the /feed/playlists search bar vanish entirely.
-    for (const host of controllerHosts) {
-      const ctrl = controllers.get(host);
-      if (!ctrl) continue;
+    for (const ctrl of controllers.values()) {
       if (ctrl.host) liveHosts.add(ctrl.host);
       for (const row of ctrl.rows) tracked.add(row);
     }
@@ -1965,9 +1962,8 @@
     // the host is still attached, rows will come back on the next refresh —
     // we don't need to rebuild the UI in the meantime. If ui.root itself gets
     // detached, upsertHost's !existing.root.isConnected branch re-attaches it.
-    for (const host of [...controllerHosts]) {
+    for (const [host, ctrl] of [...controllers]) {
       if (host.isConnected) continue;
-      const ctrl = controllers.get(host);
       if (ctrl && ctrl.root.contains(document.activeElement)) continue;
       teardownHost(host);
     }
