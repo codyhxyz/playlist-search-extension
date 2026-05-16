@@ -4,7 +4,7 @@ How the extension starts up, stays in sync with YouTube's constantly-mutating DO
 
 ## Startup
 
-`manifest.json` sets `"run_at": "document_start"`, so the content script is injected before YouTube's own scripts run. `content.js` is an IIFE that ends with a `start()` call.
+The content script is registered dynamically by the service worker (`background.js`) with `runAt: "document_start"`, so it's injected before YouTube's own scripts run on any youtube.com page where the user has granted the optional host permission. `content.js` is an IIFE that ends with a `start()` call.
 
 ```js
 function start() {

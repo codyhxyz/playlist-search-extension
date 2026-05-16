@@ -10,8 +10,6 @@
   const ONBOARDING_KEYS = Object.freeze({
     installWelcomeShown: "onboarding.installWelcomeShown",
     permissionGranted: "onboarding.permissionGranted",
-    firstSaveTipShown: "onboarding.firstSaveTipShown",
-    firstPlaylistsPageTipShown: "onboarding.firstPlaylistsPageTipShown",
   });
 
   async function hasSeenOnboarding(key) {

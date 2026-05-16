@@ -1,5 +1,7 @@
 # Architecture Overview
 
+> **Doc status (as of v1.6.12):** Partially outdated. The "single content script, no service worker, no permissions" framing predates v1.6.0, which added a service worker (`src/background.js`), an onboarding welcome page (`src/welcome.html` + `src/welcome.js`), and the `scripting` + `storage` Chrome API permissions. The host permission for `youtube.com` is now an *optional* permission granted via the welcome page, not a declared one. Inline corrections have been applied below; the ASCII diagram still depicts only the content-script subsystem and should be read as one of three execution contexts (SW, welcome page, content script), not the whole extension.
+
 This folder documents how the extension is built and why it's built that way. If you're trying to understand the code, start here.
 
 ## What the extension does
@@ -13,7 +15,7 @@ YouTube's "Save to playlist" dialog has no search and caps at ~200 playlists. Th
 
 ## High-level shape
 
-The entire extension is a **single content script** injected at `document_start` on any YouTube page. There is no background service worker, no popup, no OAuth flow, and no external server. MiniSearch is vendored in for BM25 ranking.
+The interesting work happens in a **content script** injected at `document_start` on youtube.com pages where the user has granted the optional host permission. There is no popup, no OAuth flow, and no external server. A small service worker (`background.js`, ~115 LOC) exists only to dynamically register/unregister that content script when the user grants/revokes host permission, and to open the welcome page on first install — it does not handle, transmit, or persist user data. MiniSearch is vendored in for BM25 ranking.
 
 ```
 ┌────────────────────────── youtube.com ──────────────────────────┐
@@ -40,7 +42,7 @@ The entire extension is a **single content script** injected at `document_start`
 
 | Decision | Rationale |
 |---|---|
-| **Content script only, no background worker** | Nothing requires a persistent process. Cookies give us same-origin auth to YouTube, so no OAuth token management is needed. |
+| **All real work in the content script** | The service worker exists only to flip dynamic content-script registration when host permission changes and to open the welcome tab on install — nothing user-data-handling runs in it. Cookies give us same-origin auth to YouTube from the content script, so no OAuth token management is needed in either context. |
 | **InnerTube API, not YouTube Data API v3** | InnerTube has no quota limits and returns the full playlist library in one paginated call. Data API v3 required OAuth + a Google Cloud project and capped at partial results. |
 | **SAPISID cookie auth** | If the user is logged into YouTube in this tab, we already have everything we need to call InnerTube. No sign-in flow, no token refresh, no `chrome.identity`. |
 | **Single unified BM25 index** | DOM rows (visible in the modal) and API-fetched playlists (beyond the 200 cap) share one ranking so the top result is always the best match, regardless of source. |
@@ -51,8 +53,13 @@ The entire extension is a **single content script** injected at `document_start`
 
 ```
 src/
-├── manifest.json          Manifest v3, no permissions, content script only
-├── content.js             All extension logic (~1700 lines, single IIFE)
+├── manifest.json          Manifest v3. Permissions: scripting + storage. Optional host: youtube.com.
+├── background.js          Service worker. Dynamic content-script registration; opens welcome page on install.
+├── content.js             All feature logic (~1700 lines, single IIFE)
+├── onboarding-state.js    Globals shared by SW + welcome page + content script (chrome.storage helpers)
+├── welcome.html           First-run onboarding page (chrome.permissions.request flow)
+├── welcome.js             Welcome page controller
+├── welcome-assets/        Demo video shown on the welcome page
 ├── styles.css             CSS vars for theming (dark/light). Most styles live inline in content.js.
 ├── vendor/
 │   ├── minisearch.js      BM25 ranking library (UMD build)

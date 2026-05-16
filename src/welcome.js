@@ -31,7 +31,7 @@
       stepGrant.dataset.state = "complete";
       stepOpen.dataset.state = "active";
       grantDesc.textContent =
-        "You're all set — the extension is active on youtube.com. Nothing leaves your device.";
+        "You're all set — the extension is active on youtube.com. It only talks to YouTube on your behalf — never to the developer or any third party.";
       grantBtn.textContent = "Access granted";
       grantBtn.disabled = true;
       openBtn.disabled = false;

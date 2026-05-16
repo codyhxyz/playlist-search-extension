@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Last updated:** April 15, 2026
+**Last updated:** May 15, 2026
 
 ## Overview
 
@@ -34,11 +34,33 @@ All search, ranking, and filtering is performed locally in your browser.
 
 ## Permissions
 
-The extension requests **no** Chrome API permissions (the `permissions` array in `manifest.json` is empty). Its only site access is a content script injected into `https://www.youtube.com/*` — the single host it needs in order to place a search bar inside YouTube's save-to-playlist dialog and playlist feed. It does not run on any other site, subdomain, or scheme. There is no background service worker and no popup.
+The extension declares two Chrome API permissions in `manifest.json`:
+
+- `scripting` — to dynamically register the content script once you grant the YouTube host permission.
+- `storage` — used in three narrow ways, none of which write personal data:
+  - **Onboarding flags** (`chrome.storage.local`): whether you've seen the welcome page; whether host permission is currently granted.
+  - **User settings** (`chrome.storage.sync`): a small `ytpfSettings` object — currently a single boolean (`keepDialogOpen`) controlling whether the Save dialog stays open after you tick a playlist. Synced across your Chrome profile by Chrome itself; the extension never reads or transmits sync contents elsewhere.
+  - **In-browser diagnostic ring** (`chrome.storage.local`): a short capped buffer of structured events (selector counts, mount-point probes, parser sample shapes) the extension records when it detects a layout it doesn't recognize, so issue reports can include concrete data. The ring is read-only from the extension's side once written, lives only on your machine, and is never transmitted anywhere.
+
+Site access is `https://www.youtube.com/*` only, and is requested as an **optional host permission** that you grant explicitly via the welcome page's "Grant access" button. The extension does not run on any other site, subdomain, or scheme.
+
+A small service worker (`background.js`) exists for two purposes only: (1) registering and unregistering the content script when you grant or revoke the YouTube host permission, and (2) opening the welcome page on first install. It does not handle, transmit, or persist any user data. There is no popup.
 
 ## Third-Party Code
 
 The extension bundles a local copy of MiniSearch for BM25-based ranking. MiniSearch runs entirely in your browser; no remote executable code is loaded at runtime, and no third-party SDKs are used.
+
+## On YouTube's Internal "InnerTube" API
+
+The extension calls YouTube's internal InnerTube API (`https://www.youtube.com/youtubei/v1/*`) — the same API YouTube's own web UI uses. This is not a public, documented API, and Google may change or restrict it without notice.
+
+Three honest implications of that choice:
+
+1. **Reliability.** If YouTube changes the InnerTube surface or its authentication scheme, parts of the extension may stop working until an update ships. The extension degrades gracefully — the in-modal search continues to work over whatever playlists YouTube has already rendered — but the "fetch all playlists beyond the 200-item modal cap" feature depends on InnerTube remaining accessible.
+2. **Scope of access.** Every InnerTube call uses your existing logged-in YouTube session, same-origin, with the same authentication scheme YouTube's own web client uses. The extension does not gain any access you don't already have when you're logged into YouTube in your browser.
+3. **No data goes to the developer.** Whatever the extension reads via InnerTube stays in your browser tab. The extension developer does not operate any server and does not receive any of your data.
+
+We chose this design over the public YouTube Data API v3 because v3 requires OAuth, a Google Cloud project, and is subject to daily quotas — adding friction for users without changing what data is accessible.
 
 ## Changes
 

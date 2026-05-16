@@ -9,7 +9,12 @@
   const MODAL_API_RESULTS_LIMIT = 24;
   const ROW_MATCH_CLASS = "ytpf-row-match";
   const SYNTH_DONE_CLASS = "ytpf-synth-done";
-  const ICON_PLUS = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>';
+  // Material "playlist_add" — the same glyph YouTube uses for its own
+  // Save-to-playlist affordance across the watch page action bar. Keeps the
+  // synth-row action button visually consistent with native YouTube UI without
+  // mimicking the row's checkbox metaphor (which would lie about behavior:
+  // synth rows can't reflect membership state without an extra API roundtrip).
+  const ICON_PLUS = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M14 10H2v2h12v-2zm0-4H2v2h12V6zm4 8v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zM2 16h8v-2H2v2z"/></svg>';
   const ICON_CHECK = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
 
   const INNERTUBE_API_KEY_FALLBACK = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
