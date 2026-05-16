@@ -1,0 +1,5 @@
+{
+  "type": "commonjs",
+  "private": true,
+  "_note": "Pins this directory to CommonJS so node's loader can require() the UMD vendor bundle (minisearch.js) from src/test-search.cjs. The root package.json sets type:module for everything else; this single-file override keeps the test harness working without touching the file name or the Chrome content-script registration that references vendor/minisearch.js."
+}

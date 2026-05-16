@@ -3,6 +3,10 @@ dist/
 .DS_Store
 *.zip
 
+# esbuild output — every contributor builds locally via `npm run build`.
+# Committing the build artifact would be diff noise; CI builds via npm ci.
+src/content.bundle.js
+
 # Maintainer-only (store assets, build scripts, launch docs, QA)
 private/
 

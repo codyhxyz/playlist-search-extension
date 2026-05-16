@@ -1,12 +1,18 @@
 {
   "name": "playlist-search-extension",
   "private": true,
-  "description": "TypeScript-as-linter only. The extension itself ships as plain JS; this package.json exists solely so tsc --noEmit --checkJs can gate ctrl-shape drift in CI.",
+  "type": "module",
+  "description": "Build + typecheck + test tooling for the YouTube Playlist Search Chrome extension. Esbuild bundles src/content.js + src/lib/*.js into src/content.bundle.js (the file Chrome injects); tsc --checkJs gates ctrl-shape drift; node:test runs the fixture-driven parser suite. The extension itself still ships as plain JS via the bundle.",
   "scripts": {
+    "build": "node esbuild.config.mjs",
+    "build:watch": "node esbuild.config.mjs --watch",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node src/test-search.js && node tests/test-feed-page-mount.mjs"
+    "pretest": "npm run build",
+    "test": "node --test tests/innertube-parse.test.mjs tests/dom-parse.test.mjs && node src/test-search.cjs && node tests/test-feed-page-mount.mjs",
+    "test:fast": "node --test tests/innertube-parse.test.mjs tests/dom-parse.test.mjs"
   },
   "devDependencies": {
+    "esbuild": "^0.24.0",
     "typescript": "^5.7.3"
   }
 }

@@ -46,7 +46,7 @@ const DECLARATIVE_PERMS = new Set(["sidePanel"]);
 // test-search.js and any future test-*.js files stay out; vendor/ is 3rd
 // party and shouldn't be scanned for style/pattern violations.
 const SKIP_ENTRIES = new Set(["vendor", "welcome-assets", "icons"]);
-const TEST_FILE_RE = /^test-.*\.(m?js)$/;
+const TEST_FILE_RE = /^test-.*\.(m?js|cjs)$/;
 const SCAN_EXT_RE = /\.(js|mjs|html)$/;
 
 function loadManifest() {
@@ -183,6 +183,66 @@ function cspExtensionPages({ manifest }) {
   return out;
 }
 
+/**
+ * Replace JS comments (// to EOL, plus block comments) with spaces, preserving
+ * line breaks so line numbers in error messages still point at the right
+ * source line. Used by remoteCodePatterns so the word "eval" in an
+ * explanatory comment doesn't trip the eval() detector.
+ */
+function stripJsComments(src) {
+  let out = "";
+  let i = 0;
+  const n = src.length;
+  // Track whether we're inside a string literal so '// or eval(' inside a
+  // string isn't stripped. Templates intentionally not handled — none of our
+  // regexes' false-positive cases live in templates today; revisit if that
+  // changes.
+  let inStr = null;
+  while (i < n) {
+    const c = src[i];
+    const next = src[i + 1];
+    if (inStr) {
+      out += c;
+      if (c === "\\" && i + 1 < n) {
+        out += src[i + 1];
+        i += 2;
+        continue;
+      }
+      if (c === inStr) inStr = null;
+      i++;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      inStr = c;
+      out += c;
+      i++;
+      continue;
+    }
+    if (c === "/" && next === "/") {
+      // Line comment — consume to EOL, emit spaces to preserve column.
+      while (i < n && src[i] !== "\n") {
+        out += " ";
+        i++;
+      }
+      continue;
+    }
+    if (c === "/" && next === "*") {
+      // Block comment — consume to */, emit spaces and newlines to preserve
+      // line numbers / columns.
+      const start = i;
+      i += 2;
+      while (i < n && !(src[i] === "*" && src[i + 1] === "/")) i++;
+      const end = Math.min(i + 2, n);
+      for (let j = start; j < end; j++) out += src[j] === "\n" ? "\n" : " ";
+      i = end;
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
 function remoteCodePatterns({ sources }) {
   const patterns = [
     [/\beval\s*\(/g, "eval() call"],
@@ -192,8 +252,16 @@ function remoteCodePatterns({ sources }) {
   ];
   const out = [];
   for (const src of sources) {
+    // Strip JS comments before scanning so a word like "eval" appearing
+    // in an explanatory comment doesn't get flagged. Offsets are preserved
+    // (comments replaced with spaces) so line numbers in the error point
+    // at the right source line. HTML files don't get stripped — the
+    // <script src="http"> pattern is HTML-only and needs the raw content.
+    const scanContent = src.relPath.endsWith(".html")
+      ? src.content
+      : stripJsComments(src.content);
     for (const [re, label] of patterns) {
-      for (const match of src.content.matchAll(re)) {
+      for (const match of scanContent.matchAll(re)) {
         out.push({
           rule: "remote-code-patterns",
           severity: "error",

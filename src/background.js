@@ -10,7 +10,10 @@ const CONTENT_SCRIPT_ID = "ytpf-youtube";
 const CONTENT_SCRIPT_REGISTRATION = {
   id: CONTENT_SCRIPT_ID,
   matches: [YOUTUBE_ORIGIN],
-  js: ["onboarding-state.js", "vendor/minisearch.js", "content.js"],
+  // content.bundle.js is the esbuild output of src/content.js + src/lib/*.js.
+  // Don't reference src/content.js here directly — it uses ES module imports
+  // which MV3 content scripts cannot resolve at load time.
+  js: ["onboarding-state.js", "vendor/minisearch.js", "content.bundle.js"],
   css: ["styles.css"],
   runAt: "document_start",
   persistAcrossSessions: true,

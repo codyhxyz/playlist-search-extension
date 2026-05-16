@@ -189,10 +189,25 @@ const fakeWindow = {
 };
 
 // ---------------------------------------------------------------------------
-// Load content.js once, capture internal helpers via __YTPF_TEST__
+// Load content.bundle.js once, capture internal helpers via __YTPF_TEST__
 // ---------------------------------------------------------------------------
+//
+// We exercise the *built* bundle, not the source. src/content.js now uses ES
+// module imports that vm.runInContext can't evaluate (it runs Scripts, not
+// Modules). The bundle is what Chrome injects, so testing it is what catches
+// real-world regressions — the 1.5.4 ReferenceError that motivated this test
+// shipped from a bundle, not from raw source.
+//
+// Build prerequisite: `npm run build`. The CWS zip script runs that as gate
+// 1/N; locally, run it after editing src/content.js or src/lib/*.js.
 
-const SRC_PATH = path.join(__dirname, "content.js");
+const SRC_PATH = path.join(__dirname, "content.bundle.js");
+if (!fs.existsSync(SRC_PATH)) {
+  console.error(
+    "FATAL: src/content.bundle.js not found. Run `npm run build` first."
+  );
+  process.exit(2);
+}
 const contentSrc = fs.readFileSync(SRC_PATH, "utf8");
 let ytpf = null;
 
