@@ -62,7 +62,7 @@
   }
 
   function onOpenClick() {
-    chrome.tabs.create({ url: "https://www.youtube.com/feed/playlists" });
+    chrome.tabs.create({ url: "https://www.youtube.com/" });
   }
 
   grantBtn.addEventListener("click", onGrantClick);
