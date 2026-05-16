@@ -1,0 +1,31 @@
+{
+  "_provenance": "Synthetic — simulates a future YouTube migration that introduces a new renderer shape we don't yet handle. Items exist, no known renderer key matches, parser should yield zero playlists AND fire the shape canary. This is the regression we want to catch *the same day* it ships rather than three weeks later via support email.",
+  "contents": {
+    "twoColumnBrowseResultsRenderer": {
+      "tabs": [
+        {
+          "tabRenderer": {
+            "content": {
+              "richGridRenderer": {
+                "contents": [
+                  {
+                    "futurePlaylistRenderer": {
+                      "id": "PLEE5555555555555555555555555555",
+                      "name": "This shape doesn't exist yet"
+                    }
+                  },
+                  {
+                    "futurePlaylistRenderer": {
+                      "id": "PLFF6666666666666666666666666666",
+                      "name": "Another fictional renderer"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

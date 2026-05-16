@@ -1,0 +1,49 @@
+{
+  "_provenance": "Synthetic — shape-faithful — covers the continuation-page response shape. Subsequent pages come back via onResponseReceivedActions[].appendContinuationItemsAction, not the initial tabs/sections structure. Exercising this path matters because pagination is where 1.6.9 silently truncated the library (parser advanced continuation but yielded zero playlists when the items were lockup-shaped). NOT a real capture; replace with one per tests/fixtures/innertube/CAPTURE.md when you can.",
+  "responseContext": {
+    "visitorData": "PLACEHOLDER_VISITOR_DATA"
+  },
+  "trackingParams": "PLACEHOLDER_TRACKING_TOP",
+  "onResponseReceivedActions": [
+    {
+      "clickTrackingParams": "PLACEHOLDER_CLICK_TRACKING",
+      "appendContinuationItemsAction": {
+        "targetId": "browse-feed-FEplaylist_aggregation-grid",
+        "continuationItems": [
+          {
+            "gridPlaylistRenderer": {
+              "playlistId": "PLGG7777777777777777777777777777",
+              "title": { "runs": [{ "text": "Continuation page playlist" }] },
+              "thumbnail": {
+                "thumbnails": [
+                  { "url": "https://i.ytimg.com/vi/PLACEHOLDER3/hqdefault.jpg", "width": 480, "height": 360 }
+                ]
+              },
+              "videoCountShortText": { "simpleText": "5" },
+              "navigationEndpoint": {
+                "clickTrackingParams": "PLACEHOLDER_CLICK_PG3",
+                "browseEndpoint": { "browseId": "VLPLGG7777777777777777777777777777" }
+              },
+              "trackingParams": "PLACEHOLDER_TRACKING_PL_PG3"
+            }
+          },
+          {
+            "continuationItemRenderer": {
+              "trigger": "CONTINUATION_TRIGGER_ON_ITEM_SHOWN",
+              "continuationEndpoint": {
+                "clickTrackingParams": "PLACEHOLDER_CLICK_TRACKING_PG3",
+                "commandMetadata": {
+                  "webCommandMetadata": { "sendPost": true, "apiUrl": "/youtubei/v1/browse" }
+                },
+                "continuationCommand": {
+                  "token": "TOKEN_PAGE_3",
+                  "request": "CONTINUATION_REQUEST_TYPE_BROWSE"
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

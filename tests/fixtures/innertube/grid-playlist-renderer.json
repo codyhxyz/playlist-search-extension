@@ -1,0 +1,92 @@
+{
+  "_provenance": "Synthetic — shape-faithful — covers gridPlaylistRenderer (pre-2026 legacy renderer). Captured-shape from production responses for /youtubei/v1/browse?browseId=FEplaylist_aggregation before the lockupViewModel migration. Padded with thumbnail/tracking/accessibility blobs that real responses carry. NOT a real capture; replace with one per tests/fixtures/innertube/CAPTURE.md when you can.",
+  "responseContext": {
+    "visitorData": "PLACEHOLDER_VISITOR_DATA",
+    "maxAgeSeconds": 0
+  },
+  "trackingParams": "PLACEHOLDER_TRACKING_TOP",
+  "contents": {
+    "twoColumnBrowseResultsRenderer": {
+      "tabs": [
+        {
+          "tabRenderer": {
+            "selected": true,
+            "title": "Playlists",
+            "trackingParams": "PLACEHOLDER_TRACKING_TAB",
+            "content": {
+              "sectionListRenderer": {
+                "trackingParams": "PLACEHOLDER_TRACKING_SECTION_LIST",
+                "contents": [
+                  {
+                    "itemSectionRenderer": {
+                      "trackingParams": "PLACEHOLDER_TRACKING_ITEM_SECTION",
+                      "contents": [
+                        {
+                          "gridRenderer": {
+                            "trackingParams": "PLACEHOLDER_TRACKING_GRID",
+                            "items": [
+                              {
+                                "gridPlaylistRenderer": {
+                                  "playlistId": "PLAA1111111111111111111111111111",
+                                  "title": { "runs": [{ "text": "Workout — Heavy Lifts" }] },
+                                  "thumbnail": {
+                                    "thumbnails": [
+                                      { "url": "https://i.ytimg.com/vi/PLACEHOLDER1/hqdefault.jpg", "width": 480, "height": 360 }
+                                    ]
+                                  },
+                                  "videoCountText": { "runs": [{ "text": "42" }, { "text": " videos" }] },
+                                  "videoCountShortText": { "simpleText": "42" },
+                                  "navigationEndpoint": {
+                                    "clickTrackingParams": "PLACEHOLDER_CLICK_1",
+                                    "browseEndpoint": { "browseId": "VLPLAA1111111111111111111111111111" }
+                                  },
+                                  "shareUrl": "https://www.youtube.com/playlist?list=PLAA1111111111111111111111111111",
+                                  "trackingParams": "PLACEHOLDER_TRACKING_PL_1"
+                                }
+                              },
+                              {
+                                "gridPlaylistRenderer": {
+                                  "playlistId": "PLBB2222222222222222222222222222",
+                                  "title": { "simpleText": "Lo-fi Study" },
+                                  "thumbnail": {
+                                    "thumbnails": [
+                                      { "url": "https://i.ytimg.com/vi/PLACEHOLDER2/hqdefault.jpg", "width": 480, "height": 360 }
+                                    ]
+                                  },
+                                  "thumbnailText": { "runs": [{ "text": "12" }] },
+                                  "navigationEndpoint": {
+                                    "clickTrackingParams": "PLACEHOLDER_CLICK_2",
+                                    "browseEndpoint": { "browseId": "VLPLBB2222222222222222222222222222" }
+                                  }
+                                }
+                              },
+                              {
+                                "continuationItemRenderer": {
+                                  "trigger": "CONTINUATION_TRIGGER_ON_ITEM_SHOWN",
+                                  "continuationEndpoint": {
+                                    "clickTrackingParams": "PLACEHOLDER_CLICK_TRACKING",
+                                    "commandMetadata": {
+                                      "webCommandMetadata": { "sendPost": true, "apiUrl": "/youtubei/v1/browse" }
+                                    },
+                                    "continuationCommand": {
+                                      "token": "TOKEN_PAGE_2_AAA",
+                                      "request": "CONTINUATION_REQUEST_TYPE_BROWSE"
+                                    }
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

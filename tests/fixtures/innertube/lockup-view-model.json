@@ -1,0 +1,131 @@
+{
+  "_provenance": "Synthetic — shape-faithful — covers lockupViewModel (post-2026 migration that motivated 1.6.9). YouTube migrated /feed/playlists rows from gridPlaylistRenderer to lockupViewModel; the old parser walked past these and silently dropped every lockup-shaped playlist, capping results at whatever still came back as legacy renderers. Padded with the structural noise real responses carry (accessibility, tracking, thumbnails, metadata-row attribution links, navigation endpoints) so the parser is exercised against payloads close to what YouTube actually ships — NOT a real capture; replace with one per tests/fixtures/innertube/CAPTURE.md when you can.",
+  "responseContext": {
+    "visitorData": "PLACEHOLDER_VISITOR_DATA",
+    "serviceTrackingParams": [
+      { "service": "GFEEDBACK", "params": [{ "key": "is_viewed_live", "value": "False" }] }
+    ]
+  },
+  "trackingParams": "PLACEHOLDER_TRACKING_TOP",
+  "contents": {
+    "twoColumnBrowseResultsRenderer": {
+      "tabs": [
+        {
+          "tabRenderer": {
+            "selected": true,
+            "title": "Playlists",
+            "trackingParams": "PLACEHOLDER_TRACKING_TAB",
+            "content": {
+              "richGridRenderer": {
+                "trackingParams": "PLACEHOLDER_TRACKING_GRID",
+                "contents": [
+                  {
+                    "richItemRenderer": {
+                      "trackingParams": "PLACEHOLDER_TRACKING_ITEM_1",
+                      "content": {
+                        "lockupViewModel": {
+                          "contentId": "PLCC3333333333333333333333333333",
+                          "contentType": "LOCKUP_CONTENT_TYPE_PLAYLIST",
+                          "contentImage": {
+                            "collectionThumbnailViewModel": {
+                              "primaryThumbnail": {
+                                "thumbnailViewModel": {
+                                  "image": {
+                                    "sources": [
+                                      { "url": "https://i.ytimg.com/vi/PLACEHOLDER/hqdefault.jpg", "width": 480, "height": 360 }
+                                    ]
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "metadata": {
+                            "lockupMetadataViewModel": {
+                              "title": { "content": "Saved for later" },
+                              "metadata": {
+                                "contentMetadataViewModel": {
+                                  "metadataRows": [
+                                    {
+                                      "metadataParts": [
+                                        {
+                                          "text": {
+                                            "content": "Playlist • 1,234 videos",
+                                            "commandRuns": [{ "startIndex": 0, "length": 8 }]
+                                          }
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "metadataParts": [
+                                        { "text": { "content": "Updated yesterday" } }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              },
+                              "menuButton": {
+                                "buttonViewModel": {
+                                  "iconName": "MORE_VERT",
+                                  "accessibilityText": "Action menu"
+                                }
+                              }
+                            }
+                          },
+                          "rendererContext": {
+                            "commandContext": {
+                              "onTap": {
+                                "innertubeCommand": {
+                                  "browseEndpoint": {
+                                    "browseId": "VLPLCC3333333333333333333333333333"
+                                  }
+                                }
+                              }
+                            },
+                            "accessibilityContext": {
+                              "label": "Saved for later. 1,234 videos. Updated yesterday."
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "richItemRenderer": {
+                      "trackingParams": "PLACEHOLDER_TRACKING_ITEM_2",
+                      "content": {
+                        "lockupViewModel": {
+                          "contentId": "PLDD4444444444444444444444444444",
+                          "contentType": "LOCKUP_CONTENT_TYPE_PLAYLIST",
+                          "metadata": {
+                            "lockupMetadataViewModel": {
+                              "title": { "content": "Album Listen-throughs" }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "continuationItemRenderer": {
+                      "trigger": "CONTINUATION_TRIGGER_ON_ITEM_SHOWN",
+                      "continuationEndpoint": {
+                        "clickTrackingParams": "PLACEHOLDER_CLICK_TRACKING",
+                        "commandMetadata": {
+                          "webCommandMetadata": { "sendPost": true, "apiUrl": "/youtubei/v1/browse" }
+                        },
+                        "continuationCommand": {
+                          "token": "TOKEN_PAGE_2_BBB",
+                          "request": "CONTINUATION_REQUEST_TYPE_BROWSE"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
