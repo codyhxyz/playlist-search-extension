@@ -3,10 +3,12 @@
  * Live-DOM regression test for /feed/playlists mounting.
  *
  * Loads a captured YouTube playlists DOM fixture into a real Chromium tab
- * via vercel-labs/agent-browser, runs our actual src/content.js against it
- * (with chrome.* stubs), and asserts that the page-surface mount path finds
- * playlist rows. No mocks of selectors, querySelectorAll, :scope, :has, or
- * shadow DOM — the same engine that ships on real YouTube evaluates them.
+ * via vercel-labs/agent-browser, runs our actual src/content.bundle.js
+ * against it (with chrome.* stubs), and asserts that the page-surface mount
+ * path finds playlist rows. No mocks of selectors, querySelectorAll, :scope,
+ * :has, or shadow DOM — the same engine that ships on real YouTube evaluates
+ * them. We exercise the *bundle* not the source so the test hits the same
+ * IIFE that Chrome injects in production.
  *
  * Why a Chromium harness instead of jsdom: our selectors use :scope and
  * :has(), our row collection uses queryAllDeep that pierces shadow roots,
@@ -59,7 +61,19 @@ const fixtureHtml = readFileSync(
   // Keep relative hrefs intact (PLAYLIST_LINK_SELECTOR needs them) — only
   // strip src/srcset on <img>/<source> which point to YouTube CDN.
   .replace(/\s(src|srcset)=("[^"]*"|'[^']*')/gi, " data-orig-$1=$2");
-const contentJs = readFileSync(path.join(REPO, "src/content.js"), "utf8");
+// Load the BUILT bundle, not the source. src/content.js uses ES module
+// imports that the page can't resolve; the bundle is a single IIFE.
+const BUNDLE_PATH = path.join(REPO, "src/content.bundle.js");
+const contentJs = (() => {
+  try {
+    return readFileSync(BUNDLE_PATH, "utf8");
+  } catch {
+    console.error(
+      "FATAL: src/content.bundle.js not found. Run `npm run build` first.",
+    );
+    process.exit(2);
+  }
+})();
 const minisearchJs = readFileSync(
   path.join(REPO, "src/vendor/minisearch.js"),
   "utf8",

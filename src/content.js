@@ -1,3 +1,30 @@
+// Modules imported here are bundled into src/content.bundle.js via esbuild
+// (see esbuild.config.mjs). Chrome's MV3 content-script loader cannot resolve
+// ES module imports at runtime, so the bundle is what actually gets injected
+// — this file is the source entry point, not the loaded artifact.
+import {
+  MODAL_HOST_SELECTOR,
+  MODAL_ROW_SELECTOR,
+  PLAYLISTS_GRID_SELECTOR,
+  PLAYLISTS_CONTENTS_SELECTOR,
+  PLAYLISTS_OUTER_ROW_SELECTOR,
+  PLAYLIST_RENDERER_SELECTOR,
+  PLAYLISTS_FEED_PATH_RE,
+  PLAYLIST_LINK_SELECTOR,
+  CHECKBOX_SELECTOR,
+  MODAL_RELEVANT_SELECTOR,
+  PAGE_RELEVANT_SELECTOR,
+  ITEM_TEXT_SELECTOR,
+} from "./lib/selectors.js";
+import {
+  parsePlaylistRenderers as parsePlaylistRenderersPure,
+} from "./lib/innertube-parse.js";
+import {
+  getRowPlaylistId,
+  isSaveVideoModal,
+  extractTitleFromPolymerData,
+} from "./lib/dom-parse.js";
+
 (() => {
   "use strict";
 
@@ -48,6 +75,39 @@
   const INNERTUBE_CLIENT_VERSION_FALLBACK = "2.20260206.01.00";
   const PLAYLIST_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
+  // ── Tunable timings ──────────────────────────────────────────────────────
+  // Every magic millisecond value in this file lives here. Each entry is an
+  // unwritten assumption about YouTube's animation, debounce, or render
+  // budget — naming them makes the tuning surface grep-able when YouTube
+  // changes their own timings (and they do; see the 1.6.0–1.6.12 churn in
+  // CHANGELOG).
+  const TIMINGS = {
+    // Default mutation-driven reconcile debounce; below ~80ms YouTube's own
+    // re-renders still generate churn, above ~200ms the search bar visibly
+    // lags the modal open. Same value used by yt-page-data-updated path.
+    RECONCILE_DEBOUNCE_MS: 120,
+    // Default ignore-window for our own DOM writes so the observer doesn't
+    // bounce-back on insertions we made ourselves (suppressMutations default).
+    SUPPRESS_MUTATIONS_DEFAULT_MS: 120,
+    // Used after every applyFilter / save / state-flip in the modal: long
+    // enough to cover YouTube's reactive paint of the row we just touched.
+    SUPPRESS_MUTATIONS_AFTER_UI_OP_MS: 160,
+    // On input focus we suppress for a longer window: the user is about to
+    // type, mutations from our own re-renders shouldn't steal focus back.
+    SUPPRESS_MUTATIONS_ON_FOCUS_MS: 300,
+    // After yt-navigate-finish, wait for YouTube to settle its SPA render
+    // before re-running refresh(). Empirically 250ms covers /feed/* mounts.
+    NAVIGATE_SETTLE_MS: 250,
+    // Synth-row error message visibility before reverting to the +/check icon.
+    SYNTH_ERROR_FADEOUT_MS: 2000,
+    // How long to wait after attach before we conclude the filter bar / page
+    // surface failed to mount and we should record a diagnostic.
+    MOUNT_CHECK_DELAY_MS: 2500,
+    // Cooldown between page-surface probes per pathname, so SPA navigations
+    // re-arm but mutation-driven refresh churn doesn't spam the ring.
+    PAGE_SURFACE_PROBE_COOLDOWN_MS: 4000,
+  };
+
   // Self-only diagnostics: when an in-product invariant fails we console.warn
   // it live and append a short entry to a bounded ring buffer in
   // chrome.storage.local for later inspection. Nothing leaves the machine.
@@ -84,90 +144,9 @@
     weights: { fuzzy: 0.1, prefix: 0.75 },
   };
 
-  // ── Save-modal DOM reference (captured 2026-04-16) ─────────────────────────
-  // YouTube ships two coexisting variants of the "Save to playlist" modal.
-  // Selectors below must keep matching BOTH; the new view-model variant has
-  // been rolling out and is what most users see now.
-  //
-  // OLD (Polymer renderer, pre-rollout):
-  //   ytd-add-to-playlist-renderer
-  //     #playlists / yt-checkbox-list-renderer
-  //       ytd-playlist-add-to-option-renderer  (rows; .data has playlistId)
-  //         tp-yt-paper-checkbox               (toggle)
-  //         #label / yt-formatted-string       (title)
-  //
-  // NEW (view-model, post-rollout):
-  //   yt-sheet-view-model                              ← scrolls
-  //     yt-contextual-sheet-layout                     ← MODAL_HOST (also used
-  //       yt-panel-header-view-model[aria-label=          by other sheets like
-  //         "Save video to..."]                          upload Visibility —
-  //       yt-list-view-model                             distinguish via the
-  //         toggleable-list-item-view-model  ← ROW       :has(toggleable-…)
-  //           yt-list-item-view-model[                   guard, since the old
-  //             role=listitem,                           narrowing-only fix
-  //             aria-pressed=true|false,                 (commit d652799)
-  //             aria-label="<title>, <Private|Public|    blocked the new
-  //               Unlisted>, <Selected|Not selected>"]   modal entirely.
-  //             button.ytListItemViewModelButtonOrAnchor[aria-pressed]
-  //               span.ytListItemViewModelTitle  ← TITLE TEXT (clean, no
-  //                 "Watch later"                  children, normalizable)
-  //               span.ytListItemViewModelSubtitle  ← privacy ("Private")
-  //             yt-collection-thumbnail-view-model  ← playlist marker; the
-  //                                                   visibility dialog has
-  //                                                   no collection thumbs
-  //       yt-panel-footer-view-model
-  //
-  // Notes for future maintenance:
-  // - View-model rows have NO Polymer .data/.__data — getRowPlaylistId returns
-  //   null for them. Existing rows just get hidden/shown; saving still works
-  //   because the user clicks YouTube's own toggle button. Synth rows (filtered
-  //   API matches) carry the playlistId from the InnerTube response, so they
-  //   call innertubeSaveVideo directly without needing DOM-derived IDs.
-  // - The new modal is not virtualized: all 200+ playlists render up-front.
-  // - aria-label on yt-list-item-view-model is locale-dependent ("Private",
-  //   "Selected") — never key off it for matching; use it only as a last-resort
-  //   text fallback.
-  //
-  // Generic dialog containers (tp-yt-paper-dialog, yt-contextual-sheet-layout)
-  // are reused across the site for non-playlist surfaces. The :has(...) guard
-  // ensures we only attach when the dialog actually contains playlist rows.
-  //
-  // yt-collection-thumbnail-view-model is required inside the toggleable rows
-  // because the "Save video to…" sheet's rows always carry playlist thumbnails,
-  // while bulk-action sheets (e.g. "Add all to…" from the playlist ⋮ menu) and
-  // unrelated contextual menus (Shuffle / Download / etc.) do not.
-  // Belt-and-suspenders: isSaveVideoModal() in refresh() adds a JS-level check
-  // on the old-style Polymer renderer that guards against the "Add all to…"
-  // sub-dialog when data.videoId is absent.
-  const MODAL_HOST_SELECTOR =
-    "ytd-add-to-playlist-renderer, " +
-    "yt-add-to-playlist-renderer, " +
-    "yt-contextual-sheet-layout:has(toggleable-list-item-view-model yt-collection-thumbnail-view-model), " +
-    "tp-yt-paper-dialog:has(toggleable-list-item-view-model yt-collection-thumbnail-view-model)";
-
-  const MODAL_ROW_SELECTOR =
-    "toggleable-list-item-view-model, ytd-playlist-add-to-option-renderer, yt-playlist-add-to-option-renderer, yt-checkbox-list-entry-renderer, yt-list-item-view-model, yt-collection-item-view-model";
-  const PLAYLISTS_GRID_SELECTOR =
-    "ytd-rich-grid-renderer, ytd-grid-renderer, ytd-item-section-renderer";
-  const PLAYLISTS_CONTENTS_SELECTOR = ":scope > #contents, :scope > #items";
-  const PLAYLISTS_OUTER_ROW_SELECTOR =
-    "ytd-rich-item-renderer, ytd-rich-grid-media, yt-lockup-view-model";
-  const PLAYLIST_RENDERER_SELECTOR =
-    "ytd-grid-playlist-renderer, ytd-playlist-renderer, ytd-compact-playlist-renderer, yt-lockup-view-model, yt-collection-item-view-model";
-  const PLAYLISTS_FEED_PATH_RE = /^\/feed\/(playlists|library)\/?(\?.*)?$/;
-  // YouTube migrated playlist URLs in 2026 from /playlist?list=PL... to
-  // /show/VL{PL...}?sbp=...; keep both for back-compat. Also accept watch
-  // URLs that carry &list= (e.g., the lockup's primary "play next" link).
-  const PLAYLIST_LINK_SELECTOR =
-    "a[href*='/playlist?list='], a[href*='youtube.com/playlist?list='], a[href*='/show/VL'], a[href*='youtube.com/show/VL'], a[href*='/watch?'][href*='list=']";
-
-  const CHECKBOX_SELECTOR =
-    "tp-yt-paper-checkbox, [role='checkbox'], input[type='checkbox']";
-  const MODAL_RELEVANT_SELECTOR = `${MODAL_HOST_SELECTOR}, ${MODAL_ROW_SELECTOR}, ${CHECKBOX_SELECTOR}`;
-  const PAGE_RELEVANT_SELECTOR = `${PLAYLISTS_GRID_SELECTOR}, ${PLAYLISTS_OUTER_ROW_SELECTOR}, ${PLAYLIST_RENDERER_SELECTOR}`;
-
-  const ITEM_TEXT_SELECTOR =
-    "#label, #video-title, .playlist-title, yt-formatted-string[id='label'], yt-formatted-string, span#label, a#video-title, .ytListItemViewModelTitle, .yt-lockup-metadata-view-model-wiz__title, [class*='LockupMetadataViewModelTitle']";
+  // Selectors and URL patterns now live in src/lib/selectors.js (imported at
+  // the top of this file). The OLD/NEW renderer reference notes that used
+  // to be here moved with them — see that file for the maintenance context.
   const FILTER_BASE_STYLES = `
     .ytpf-inline {
       position: sticky;
@@ -536,11 +515,11 @@
   // Used at five sites where we're about to cause our own DOM changes that
   // would otherwise re-enter refresh(): synth row insert, save success/fail,
   // filter pass, input focus. Navigate/page-data signals bypass this pause.
-  function suppressMutations(ms = 120) {
+  function suppressMutations(ms = TIMINGS.SUPPRESS_MUTATIONS_DEFAULT_MS) {
     reconciler.pauseUntil = Math.max(reconciler.pauseUntil, nowMs() + ms);
   }
 
-  function enqueueReconcile(reason, debounceMs = 120) {
+  function enqueueReconcile(reason, debounceMs = TIMINGS.RECONCILE_DEBOUNCE_MS) {
     // Mutation-driven enqueues respect the suppression window. Other reasons
     // (navigate, page-data) are user-intent signals — bypass.
     if (reason === "mutation" && nowMs() < reconciler.pauseUntil) return;
@@ -768,21 +747,14 @@
     const s = rowStateFor(row);
     if (typeof s.text === "string") return s.text;
 
-    const data = row.data || row.__data;
-    if (data) {
-      const dataTitle =
-        data.title?.simpleText ||
-        data.title?.runs?.[0]?.text ||
-        (typeof data.title === "string" ? data.title : null) ||
-        data.label?.simpleText ||
-        data.label?.runs?.[0]?.text ||
-        (typeof data.label === "string" ? data.label : null) ||
-        null;
-      if (dataTitle) {
-        const text = normalizeText(dataTitle);
-        s.text = text;
-        return text;
-      }
+    // Polymer-data branch — see extractTitleFromPolymerData in dom-parse.js
+    // for the full list of shapes we know about. When YouTube ships a new
+    // title shape, that's the function to update + add a test for.
+    const dataTitle = extractTitleFromPolymerData(row.data || row.__data);
+    if (dataTitle) {
+      const text = normalizeText(dataTitle);
+      s.text = text;
+      return text;
     }
 
     const label = row.querySelector(ITEM_TEXT_SELECTOR);
@@ -831,14 +803,7 @@
     return null;
   }
 
-  function getRowPlaylistId(row) {
-    const data = row.data || row.__data;
-    if (data?.playlistId) return data.playlistId;
-    const onTap = data?.onTap || data?.data?.onTap;
-    const cmd = onTap?.addToPlaylistCommand || onTap?.toggledServiceEndpoint;
-    if (cmd?.playlistId) return cmd.playlistId;
-    return null;
-  }
+  // getRowPlaylistId now lives in src/lib/dom-parse.js — imported at top.
 
   // Single source of truth for "text + ranges -> highlighted output".
   // Returns a DocumentFragment of text nodes and <mark class="ytpf-mark"> elements.
@@ -1349,111 +1314,31 @@
     return response.json();
   }
 
-  function rendererTitle(r) {
-    return r.title?.runs?.[0]?.text || r.title?.simpleText || "Untitled";
-  }
-
+  // parsePlaylistRenderers + rendererTitle now live in src/lib/innertube-parse.js
+  // as pure functions (JSON in, normalized {id,title,itemCount}[] out). This
+  // wrapper threads the shape-canary callback into recordDiagnostic so any new
+  // renderer YouTube ships surfaces in chrome.storage.local.ytpfDiagnostics
+  // the FIRST time it appears in the wild — even on mid-rollouts where SOME
+  // items still parse via known shapes. That's the 1.6.9 regression class the
+  // canary's "fire on unknown keys" trigger is sized to catch.
+  //
+  // The diagnostic invariant key encodes the sorted unknown-keys so distinct
+  // migrations get their own throttled entries instead of one suppressing
+  // the other (the keys are pre-sorted in innertube-parse.js).
   function parsePlaylistRenderers(data) {
-    const playlists = [];
-    let continuation = null;
-
-    function visitItems(items) {
-      if (!Array.isArray(items)) return;
-      for (const item of items) {
-        const gpr = item.gridPlaylistRenderer;
-        if (gpr?.playlistId) {
-          playlists.push({
-            id: gpr.playlistId,
-            title: rendererTitle(gpr),
-            itemCount:
-              parseInt(
-                gpr.videoCountShortText?.simpleText ||
-                  gpr.thumbnailText?.runs?.[0]?.text ||
-                  "0",
-                10,
-              ) || 0,
-          });
-          continue;
-        }
-
-        const pr = item.playlistRenderer;
-        if (pr?.playlistId) {
-          playlists.push({
-            id: pr.playlistId,
-            title: rendererTitle(pr),
-            itemCount: parseInt(pr.videoCount || "0", 10) || 0,
-          });
-          continue;
-        }
-
-        // YouTube migrated /feed/playlists rows to lockupViewModel in 2026.
-        // Without this branch the parser silently dropped every lockup-shaped
-        // playlist, capping results at whatever the API still happened to
-        // return as legacy renderers (~200 latest).
-        const lvm = item.lockupViewModel;
-        if (lvm?.contentId && /PLAYLIST/.test(lvm.contentType || "")) {
-          const title =
-            lvm.metadata?.lockupMetadataViewModel?.title?.content || "Untitled";
-          let itemCount = 0;
-          const rows =
-            lvm.metadata?.lockupMetadataViewModel?.metadata
-              ?.contentMetadataViewModel?.metadataRows || [];
-          outer: for (const row of rows) {
-            for (const part of row?.metadataParts || []) {
-              const m = /(\d[\d,]*)/.exec(part?.text?.content || "");
-              if (m) {
-                itemCount = parseInt(m[1].replace(/,/g, ""), 10) || 0;
-                if (itemCount) break outer;
-              }
-            }
-          }
-          playlists.push({ id: lvm.contentId, title, itemCount });
-          continue;
-        }
-
-        const rich = item.richItemRenderer?.content;
-        if (rich) visitItems([rich]);
-
-        const cont =
-          item.continuationItemRenderer?.continuationEndpoint
-            ?.continuationCommand?.token;
-        if (cont) continuation = cont;
-      }
-    }
-
-    const tabs =
-      data?.contents?.twoColumnBrowseResultsRenderer?.tabs || [];
-    for (const tab of tabs) {
-      const content = tab?.tabRenderer?.content;
-      const sections =
-        content?.sectionListRenderer?.contents || [];
-      for (const section of sections) {
-        const grid =
-          section?.itemSectionRenderer?.contents?.[0]?.gridRenderer;
-        if (grid) {
-          visitItems(grid.items);
-          const gc = grid.continuations?.[0]?.nextContinuationData?.continuation;
-          if (gc) continuation = gc;
-        }
-        const shelf = section?.shelfRenderer?.content?.gridRenderer;
-        if (shelf) {
-          visitItems(shelf.items);
-        }
-      }
-      const richGrid = content?.richGridRenderer?.contents;
-      if (richGrid) visitItems(richGrid);
-    }
-
-    const actions = data?.onResponseReceivedActions || [];
-    for (const action of actions) {
-      visitItems(
-        action?.appendContinuationItemsAction?.continuationItems ||
-          action?.reloadContinuationItemsCommand?.continuationItems ||
-          [],
-      );
-    }
-
-    return { playlists, continuation };
+    return parsePlaylistRenderersPure(data, (info) => {
+      const keySignature = info.unknownItemKeys.join(",") || "<empty>";
+      recordDiagnostic(`innertube_shape_unknown:${keySignature}`, info);
+      try {
+        const partial = info.playlistsExtracted > 0
+          ? ` (PARTIAL: ${info.playlistsExtracted} known playlists also returned — mid-rollout)`
+          : "";
+        console.warn(
+          `[ytpf] InnerTube response contained renderer key(s) we don't handle: [${keySignature}]${partial}. Likely a YouTube migration. Diag:`,
+          info,
+        );
+      } catch {}
+    });
   }
 
   async function innertubeLoadPlaylists() {
@@ -1575,22 +1460,22 @@
             setTimeout(() => {
               title.style.color = "";
               paintTitle();
-            }, 2000);
+            }, TIMINGS.SYNTH_ERROR_FADEOUT_MS);
             return;
           }
 
-          suppressMutations(160);
+          suppressMutations(TIMINGS.SUPPRESS_MUTATIONS_AFTER_UI_OP_MS);
           action.disabled = true;
           innertubeSaveVideo(playlist.id, videoId)
             .then(() => {
-              suppressMutations(160);
+              suppressMutations(TIMINGS.SUPPRESS_MUTATIONS_AFTER_UI_OP_MS);
               action.disabled = false;
               action.innerHTML = ICON_CHECK;
               action.classList.add(SYNTH_DONE_CLASS);
             })
             .catch((err) => {
               console.warn("[ytpf] Save to playlist failed:", err);
-              suppressMutations(160);
+              suppressMutations(TIMINGS.SUPPRESS_MUTATIONS_AFTER_UI_OP_MS);
               action.disabled = false;
               action.innerHTML = ICON_PLUS;
             });
@@ -1776,7 +1661,7 @@
 
     const fullSet = ctrl.rows;
 
-    suppressMutations(160);
+    suppressMutations(TIMINGS.SUPPRESS_MUTATIONS_AFTER_UI_OP_MS);
 
     const allMatches = query
       ? searchUnified(ctrl, query)
@@ -1923,7 +1808,7 @@
       applyFilter(ctrl);
     });
     ui.input.addEventListener("focus", () => {
-      suppressMutations(300);
+      suppressMutations(TIMINGS.SUPPRESS_MUTATIONS_ON_FOCUS_MS);
     });
     ui.input.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && ui.input.value) {
@@ -2035,16 +1920,7 @@
   // Those renderers have no data.videoId; legitimate video-save invocations
   // always carry one.  Defaults to true for new-style view-model sheets
   // (guarded structurally by the yt-collection-thumbnail-view-model selector).
-  function isSaveVideoModal(host) {
-    if (!host.matches("ytd-add-to-playlist-renderer, yt-add-to-playlist-renderer")) {
-      return true;
-    }
-    const d = host.data || host.__data;
-    // Only reject when data is loaded AND explicitly shows no videoId.
-    // If data hasn't hydrated yet (d === undefined) we allow through.
-    if (d !== undefined && "videoId" in d && !d.videoId) return false;
-    return true;
-  }
+  // isSaveVideoModal now lives in src/lib/dom-parse.js — imported at top.
 
   function refresh() {
     sweepOrphanedHidden();
@@ -2153,7 +2029,7 @@
         htmlTruncated: html.length >= DIAG_HTML_SNAPSHOT_MAX,
         html,
       });
-    }, 2500);
+    }, TIMINGS.MOUNT_CHECK_DELAY_MS);
   }
 
   // Page-surface mirror of scheduleFilterBarMountCheck. Triggered from
@@ -2168,7 +2044,7 @@
     const path = window.location.pathname;
     const last = _pageSurfaceProbedAt.get(path) || 0;
     const now = Date.now();
-    if (now - last < 4000) return;
+    if (now - last < TIMINGS.PAGE_SURFACE_PROBE_COOLDOWN_MS) return;
     _pageSurfaceProbedAt.set(path, now);
     setTimeout(() => {
       if (!isPlaylistsFeedPage()) return;
@@ -2177,7 +2053,7 @@
       const probe = probePageSurface();
       recordDiagnostic("page_surface_missing", probe);
       try { console.warn("[ytpf] page surface failed to mount", probe); } catch {}
-    }, 2500);
+    }, TIMINGS.MOUNT_CHECK_DELAY_MS);
   }
 
   // Pure inspection of the current DOM through every selector that
@@ -2273,15 +2149,15 @@
 
     _bodyObserver = new MutationObserver((mutations) => {
       if (shouldRefreshFromMutations(mutations)) {
-        enqueueReconcile("mutation", 120);
+        enqueueReconcile("mutation", TIMINGS.RECONCILE_DEBOUNCE_MS);
       }
     });
     _bodyObserver.observe(document.body, { childList: true, subtree: true });
 
     refresh();
 
-    _onNavigateFinish = () => enqueueReconcile("navigate", 250);
-    _onPageDataUpdated = () => enqueueReconcile("page-data", 120);
+    _onNavigateFinish = () => enqueueReconcile("navigate", TIMINGS.NAVIGATE_SETTLE_MS);
+    _onPageDataUpdated = () => enqueueReconcile("page-data", TIMINGS.RECONCILE_DEBOUNCE_MS);
 
     window.addEventListener("yt-navigate-finish", _onNavigateFinish);
     window.addEventListener("yt-page-data-updated", _onPageDataUpdated);
