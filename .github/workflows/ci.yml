@@ -25,8 +25,17 @@ jobs:
           node --check src/onboarding-state.js
           node --check src/welcome.js
 
+      - name: Install typecheck deps
+        run: npm install --no-package-lock --no-audit --no-fund
+
+      - name: Typecheck (JSDoc + tsc --checkJs)
+        run: npm run typecheck
+
       - name: Regression tests
         run: node src/test-search.js
+
+      - name: Feed-page mount regression
+        run: node tests/test-feed-page-mount.mjs
 
       - name: CWS structural validator
         run: node scripts/validate-cws.mjs

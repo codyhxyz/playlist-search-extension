@@ -1,6 +1,33 @@
 (() => {
   "use strict";
 
+  /**
+   * Per-host controller. One per active modal/page surface. Lives in the
+   * `controllers` Map, keyed by host element. Disposed by teardownHost().
+   *
+   * Adding a field? Initialize it in attachHost(). Reading a field? Trust
+   * that attachHost set it — if tsc says otherwise, attachHost missed an
+   * init path.
+   *
+   * @typedef {object} Ctrl
+   * @property {Element} host                Outer host element (modal sheet / page grid contents).
+   * @property {"modal" | "page"} surface    Where this controller lives.
+   * @property {Element[]} rows              Current DOM rows being filtered.
+   * @property {any} bm25                    MiniSearch index over rows + API playlists.
+   * @property {Element} root                Our injected filter-bar UI root.
+   * @property {HTMLInputElement} input      The search input.
+   * @property {HTMLButtonElement} clear     The clear (×) button.
+   * @property {HTMLElement} meta            The "N of M" meta element (page surface only).
+   * @property {Element | null} parent       Row container — where synth rows get appended.
+   * @property {boolean} sortResults         Whether matched rows reorder to the top.
+   * @property {Element[]} synthRows         API-only synthetic rows we injected.
+   * @property {number} apiToken             Counter that invalidates late API responses on teardown.
+   * @property {Element | null | undefined} scrollContainer  Cached scroll target (modal only).
+   * @property {string} lastQuery            Previous query string (for empty→non-empty transitions).
+   */
+
+  /** @typedef {{ id: string, title: string, itemCount: number }} Playlist */
+
   const HIDDEN_CLASS = "ytpf-hidden";
   const FILTER_CLASS = "ytpf-inline";
   const STYLE_ID = "ytpf-inline-style";
@@ -426,6 +453,7 @@
   // only because WeakMap isn't iterable, and forgetting to keep the two
   // in sync was the 1.6.11 bug that swallowed every refresh tick on
   // /feed/playlists. Collapsed to remove the foot-gun.
+  /** @type {Map<Element, Ctrl>} */
   const controllers = new Map();
   let _bodyObserver = null;
   let _onNavigateFinish = null;
@@ -502,13 +530,13 @@
       nodeRoot.querySelectorAll(selector).forEach(addResult);
 
       const walker = document.createTreeWalker(nodeRoot, NodeFilter.SHOW_ELEMENT);
-      let node = walker.currentNode;
+      let node = /** @type {Element | null} */ (walker.currentNode);
 
       while (node) {
         if (node.shadowRoot) {
           walk(node.shadowRoot);
         }
-        node = walker.nextNode();
+        node = /** @type {Element | null} */ (walker.nextNode());
       }
     }
 
@@ -1085,6 +1113,7 @@
     );
     if (!grids.length) return null;
 
+    /** @type {{ contents: Element, rows: Element[], score: number[] } | null} */
     let best = null;
 
     grids.forEach((grid) => {
@@ -1842,6 +1871,11 @@
     }
   }
 
+  /**
+   * @param {Element} host
+   * @param {Element[]} rows
+   * @param {"modal" | "page"} [surface]
+   */
   function attachHost(host, rows, surface = "modal") {
     const mount = findMountPoint(rows, host, surface);
     if (!mount) return;
@@ -1860,7 +1894,8 @@
       // because they already handle saving without triggering a close.
       host.addEventListener("click", (e) => {
         if (!ytpfSettings.keepDialogOpen) return;
-        const row = e.target.closest(
+        const target = /** @type {Element | null} */ (e.target);
+        const row = target?.closest?.(
           "toggleable-list-item-view-model, ytd-playlist-add-to-option-renderer, yt-playlist-add-to-option-renderer"
         );
         if (!row || isOurUiNode(row) || row.classList.contains("ytpf-synth-row")) return;
@@ -1876,6 +1911,7 @@
       mount.parent.appendChild(ui.root);
     }
 
+    /** @type {Ctrl} */
     const ctrl = {
       host,
       surface,
@@ -1938,6 +1974,11 @@
     }
   }
 
+  /**
+   * @param {Element} host
+   * @param {Element[]} rows
+   * @param {"modal" | "page"} [surface]
+   */
   function upsertHost(host, rows, surface = "modal") {
     if (!rows.length) return;
     const existing = controllers.get(host);
