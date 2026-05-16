@@ -1240,34 +1240,55 @@
 
   async function innertubeRequest(endpoint, body) {
     const auth = await getSapisidHash();
-    if (!auth) throw new Error("Not signed in to YouTube");
+    if (!auth) {
+      recordDiagnostic("innertube_no_sapisid", { endpoint });
+      throw new Error("Not signed in to YouTube");
+    }
 
     const { apiKey, clientVersion } = getInnertubeConfig();
 
-    const response = await fetch(
-      `https://www.youtube.com/youtubei/v1/${endpoint}?key=${apiKey}&prettyPrint=false`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: auth,
-          "X-Goog-AuthUser": "0",
-          "X-Origin": "https://www.youtube.com",
-        },
-        body: JSON.stringify({
-          context: {
-            client: {
-              clientName: "WEB",
-              clientVersion,
-              hl: document.documentElement.lang || "en",
-            },
+    let response;
+    try {
+      response = await fetch(
+        `https://www.youtube.com/youtubei/v1/${endpoint}?key=${apiKey}&prettyPrint=false`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: auth,
+            "X-Goog-AuthUser": "0",
+            "X-Origin": "https://www.youtube.com",
           },
-          ...body,
-        }),
-      },
-    );
+          body: JSON.stringify({
+            context: {
+              client: {
+                clientName: "WEB",
+                clientVersion,
+                hl: document.documentElement.lang || "en",
+              },
+            },
+            ...body,
+          }),
+        },
+      );
+    } catch (err) {
+      // Network-level failure (offline, DNS, CORS shim, etc.). Distinct from
+      // HTTP-level failure handled below.
+      recordDiagnostic("innertube_network_error", {
+        endpoint,
+        message: String(err?.message || err).slice(0, 200),
+      });
+      throw err;
+    }
 
     if (!response.ok) {
+      // 401/403 typically mean SAPISID rotated or the cookie expired; 429 is
+      // rate-limit; 5xx is YouTube-side. All three are silent UX failures the
+      // user has no way to debug without a paper trail.
+      recordDiagnostic("innertube_http_error", {
+        endpoint,
+        status: response.status,
+      });
       throw new Error(`YouTube request failed (HTTP ${response.status})`);
     }
 
