@@ -149,6 +149,9 @@ import {
   // to be here moved with them — see that file for the maintenance context.
   const FILTER_BASE_STYLES = `
     .ytpf-inline {
+      /* Inherit YouTube's color-scheme so descendant <input> form controls render
+         dark on html[dark] (avoids UA-painted light input on a dark modal). */
+      color-scheme: inherit;
       position: sticky;
       top: 0;
       z-index: 1;

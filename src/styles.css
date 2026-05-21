@@ -5,6 +5,10 @@
   --ytpf-muted: var(--yt-spec-text-secondary, currentColor);
   --ytpf-accent: var(--yt-spec-call-to-action, var(--yt-spec-brand-button-background, #065fd4));
 
+  /* Inherit YouTube's color-scheme so descendant <input> form controls render
+     dark on html[dark] (avoids UA-painted light input on a dark modal). */
+  color-scheme: inherit;
+
   position: sticky;
   top: 0;
   z-index: 1;
