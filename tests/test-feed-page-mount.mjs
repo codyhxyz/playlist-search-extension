@@ -80,11 +80,26 @@ const minisearchJs = readFileSync(
 );
 const stylesCss = readFileSync(path.join(REPO, "src/styles.css"), "utf8");
 
+// Inject a fake native chip-bar above the fixture content so the
+// post-1.6.15 chip-mount path activates. The fixture is from a channel
+// page (no chip bar of its own); the harness re-hosts it at /feed/playlists
+// so isPlaylistsFeedPage() returns true, which makes the chip mount the
+// expected target. Without this synthetic chip bar the test would only
+// exercise the grid-mount fallback and chip-path regressions would slip.
+const fakeChipBar = `
+<chip-bar-view-model class="ytChipBarViewModelHost">
+  <div class="ytChipBarViewModelChipBarScrollContainer" role="tablist">
+    <div class="ytChipBarViewModelChipWrapper"><chip-view-model>Recently added</chip-view-model></div>
+    <div class="ytChipBarViewModelChipWrapper"><chip-view-model>Playlists</chip-view-model></div>
+  </div>
+</chip-bar-view-model>`;
+
 const harness = `<!doctype html>
 <html><head><meta charset="utf-8"><title>ytpf mount harness</title>
 <style>${stylesCss}</style>
 </head>
 <body>
+${fakeChipBar}
 ${fixtureHtml}
 <script>
   // Minimal chrome.* shim. content.js uses storage.sync/local and runtime;
@@ -116,10 +131,14 @@ ${fixtureHtml}
         const c = grid.querySelector(":scope > #contents");
         debug.itemSectionContents = c ? Array.from(c.children).map((e) => ({ tag: e.tagName.toLowerCase(), cls: e.className || null })) : null;
       }
+      const chipBar = document.querySelector(".ytpf-chip");
+      const chipRow = document.querySelector(".ytChipBarViewModelChipBarScrollContainer");
       window.__ytpfResult = {
         ok: true,
         diag: window.__ytpfDiag ? window.__ytpfDiag() : null,
-        barMounted: !!document.querySelector(".ytpf-inline-page"),
+        barMounted: !!(chipBar || document.querySelector(".ytpf-inline-page")),
+        chipMounted: !!chipBar,
+        chipInsideChipRow: !!(chipBar && chipRow && chipRow.contains(chipBar)),
         barCount: document.querySelectorAll(".ytpf-inline").length,
         anyBarHtml: anyBar ? anyBar.outerHTML.slice(0, 300) : null,
         errors: window.__ytpfErrors,
@@ -195,7 +214,15 @@ try {
     check((diag?.gridCount || 0) > 0, `gridCount > 0 (got ${diag?.gridCount})`);
     const goodCandidate = (diag?.candidates || []).find((c) => c.filteredRowCount > 0);
     check(!!goodCandidate, "at least one grid has filteredRowCount > 0");
-    check(result.barMounted, ".ytpf-inline-page actually rendered into the DOM");
+    check(result.barMounted, ".ytpf-chip or .ytpf-inline-page actually rendered into the DOM");
+    // Chip-path regression guard: when a chip-bar is present in the page
+    // (the harness injects one above), the bar MUST mount as a chip child
+    // of that chip bar — never as the grid-span fallback. Catches:
+    //   - findChipRow() failing to discover the chip-bar-view-model
+    //   - attachHost choosing the wrong variant despite chip-row presence
+    //   - the chip wrapper rendering OUTSIDE the chip-bar-view-model
+    check(result.chipMounted, "chip variant mounted (a chip-bar was present, chip path should win)");
+    check(result.chipInsideChipRow, "chip mounted INSIDE .ytChipBarViewModelChipBarScrollContainer");
 
     console.log(`feed-page-mount: ${passed.length} passed, ${failed.length} failed`);
     passed.forEach((m) => console.log("  ok   " + m));

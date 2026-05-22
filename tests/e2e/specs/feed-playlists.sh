@@ -8,34 +8,51 @@ source "$LIB/assert.sh"
 # Catches the 1.6.7 "stupid spot" regression (bar mounted in a nested wrapper,
 # rendered narrow / off-center) and the 1.6.11 WeakMap regression (refresh
 # threw on iteration, page-surface code never ran).
+#
+# Two valid mount variants as of 1.6.15:
+#   - chip variant (.ytpf-chip) inside YouTube's native chip-bar-view-model
+#     — preferred, looks like a YT control, ~280px wide
+#   - grid variant (.ytpf-inline-page) — full-width fallback when no chip
+#     bar is on the page (older accounts mid-rollout, future YT redesigns)
+# Behavioral assertions (typing narrows, placeholder count) apply to both.
+# Layout assertions split by variant below.
 
 agent-browser --session "$SESSION" open "https://www.youtube.com/feed/playlists" >/dev/null
 ab_wait_for "playlist grid rendered" "!!document.querySelector('$SEL_PLAYLISTS_GRID')" 12000
-ab_wait_for "inline page bar mounted" "!!document.querySelector('$SEL_INLINE_PAGE')" 8000
+ab_wait_for "inline page bar mounted (chip or grid variant)" "!!document.querySelector('$SEL_INLINE_PAGE')" 8000
 
 # Single-mount assertion: catches double-injection regressions (e.g. an e2e
 # manifest variant adding static content_scripts on top of background.js's
 # dynamic registerContentScripts, or background.js firing register twice).
+# Sums chip + grid variants; exactly one total must be mounted.
 ab_assert_true "exactly one inline page bar (no duplicates)" "document.querySelectorAll('$SEL_INLINE_PAGE').length === 1"
 
-# Mount-position assertion: the bar's parent must be the rich-grid #contents,
-# not a nested wrapper. This is what 1.6.7 got wrong.
-ab_assert_true "mounted as direct sibling of grid contents" "(() => {
-  const bar = document.querySelector('$SEL_INLINE_PAGE');
-  if (!bar) return false;
-  const parent = bar.parentElement;
-  if (!parent) return false;
-  if (parent.id !== 'contents') return false;
-  const grid = parent.closest('ytd-rich-grid-renderer');
-  return !!grid;
+# Variant-specific mount-position assertions. Each branch checks ONLY when
+# its variant is active, and the "bar exists somewhere" wait above already
+# guarantees one of them fires.
+
+# CHIP variant: bar must live inside the native chip-bar scroll container.
+# This is what 1.6.15 introduced — search-as-a-chip alongside Recently/
+# Playlists/Music/Owned. If the chip bar isn't present on this account,
+# the check is vacuously true (the grid branch covers fallback).
+ab_assert_true "chip variant: mounted inside native chip-bar scroll container (or fallback)" "(() => {
+  const chip = document.querySelector('$SEL_INLINE_PAGE_CHIP');
+  if (!chip) return true; // fallback path; grid branch covers it
+  const chipRow = document.querySelector('$SEL_CHIP_ROW');
+  if (!chipRow) return false; // chip rendered without a chip bar = bug
+  return chipRow.contains(chip);
 })()"
 
-# Width assertion: the bar should span the full grid width. A nested-wrapper
-# mount typically renders ≤ 400px (the stupid-spot symptom). Threshold is
-# 600px which is well below normal full-width but well above the bug.
-ab_assert_true "bar width >= 600px" "(() => {
-  const bar = document.querySelector('$SEL_INLINE_PAGE');
-  return bar && bar.getBoundingClientRect().width >= 600;
+# GRID variant: bar must be a direct sibling of grid #contents (1.6.7 bug
+# guard). Only checked when the chip variant isn't active. Width must be
+# ≥ 600px (the stupid-spot symptom was ≤ 400px).
+ab_assert_true "grid variant: mounted as direct sibling of grid contents AND width ≥ 600px (or N/A)" "(() => {
+  const grid = document.querySelector('$SEL_INLINE_PAGE_GRID');
+  if (!grid) return true; // chip variant in use; this assertion is N/A
+  const parent = grid.parentElement;
+  if (!parent || parent.id !== 'contents') return false;
+  if (!parent.closest('ytd-rich-grid-renderer')) return false;
+  return grid.getBoundingClientRect().width >= 600;
 })()"
 
 # Behavior assertion: typing into the input filters rows. Don't rely on a

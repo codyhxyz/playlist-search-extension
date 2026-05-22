@@ -94,6 +94,51 @@ export const PLAYLIST_RENDERER_SELECTOR =
 
 export const PLAYLISTS_FEED_PATH_RE = /^\/feed\/(playlists|library)\/?(\?.*)?$/;
 
+/**
+ * Native filter-chip-bar on /feed/playlists ("Recently added · Playlists ·
+ * Music · Owned"). When present, we prepend our search input as a sibling
+ * chip so it reads as part of YouTube's UI instead of getting its own
+ * full-width row below. Ordered most-specific → least so the first match
+ * wins; the absent-chip-row case falls back to the grid-spanning bar
+ * (the historic `.ytpf-inline-page` mount).
+ *
+ * As of 2026-05 YouTube has migrated this surface from the legacy Polymer
+ * `ytd-feed-filter-chip-bar-renderer` → the new `chip-bar-view-model` web
+ * component. We probe view-model first, then Polymer for back-compat with
+ * any mid-rollout user still on the old chip bar. The view-model layout:
+ *
+ *   ytd-rich-grid-renderer
+ *     #header  ← chip bar lives here
+ *       chip-bar-view-model.ytChipBarViewModelHost
+ *         div.ytChipBarViewModelChipBarScrollContainer[role='tablist']
+ *           div.ytChipBarViewModelChipWrapper   (one per native chip)
+ *             chip-view-model.ytChipViewModelHost
+ *     #contents
+ *       … playlist lockups …  ← grid mount target for the fallback bar
+ *
+ * Mount strategy: prepend a `<div class="ytChipBarViewModelChipWrapper">`
+ * to the scroll container so our chip inherits the native chip-spacing
+ * margins. The LCA with the grid is `ytd-rich-grid-renderer`, which is
+ * also where the existing `.ytpf-inline-page` mount lives.
+ */
+export const CHIP_ROW_SELECTORS = [
+  // Post-2026 view-model (current production rollout)
+  "chip-bar-view-model .ytChipBarViewModelChipBarScrollContainer",
+  "chip-bar-view-model [role='tablist']",
+  // Legacy Polymer chip-bar (kept for mid-rollout fallback; remove once
+  // the view-model rollout is universal and a release cycle has passed)
+  "ytd-feed-filter-chip-bar-renderer #chips",
+  "yt-chip-cloud-renderer #chips",
+];
+
+/**
+ * Wrapper class for our chip when mounted in the view-model chip bar.
+ * Adding this class around our `<input>` makes the chip inherit native
+ * chip spacing for free — the chip-bar style sheet keys off this class.
+ * Empty for legacy chip bar (those use `#chips` flex gap, no wrapper).
+ */
+export const CHIP_ROW_WRAPPER_CLASS = "ytChipBarViewModelChipWrapper";
+
 // YouTube migrated playlist URLs in 2026 from /playlist?list=PL... to
 // /show/VL{PL...}?sbp=...; keep both for back-compat. Also accept watch
 // URLs that carry &list= (e.g., the lockup's primary "play next" link).

@@ -15,6 +15,8 @@ import {
   MODAL_RELEVANT_SELECTOR,
   PAGE_RELEVANT_SELECTOR,
   ITEM_TEXT_SELECTOR,
+  CHIP_ROW_SELECTORS,
+  CHIP_ROW_WRAPPER_CLASS,
 } from "./lib/selectors.js";
 import {
   parsePlaylistRenderers as parsePlaylistRenderersPure,
@@ -395,7 +397,78 @@ import {
     }
   `;
 
-  const ALL_STYLES = [FILTER_BASE_STYLES, MODAL_STYLES, MODAL_EXPANDED_STYLES, PAGE_STYLES, SYNTH_STYLES].join("\n");
+  // Chip-variant styles for the /feed/playlists native chip-bar mount.
+  // Sized + colored to match a `chip-view-model` chip 1:1: 32px tall, 8px
+  // border-radius, --yt-spec-badge-chip-background fill. Width is fit-content
+  // with a clamp so "Filter 9999 playlists" doesn't push the native chips
+  // offscreen on narrow viewports. color-scheme: inherit carries forward the
+  // dark-mode fix so the <input> doesn't get UA-painted light.
+  const CHIP_STYLES = `
+    .ytpf-inline.ytpf-chip {
+      /* Override base .ytpf-inline rules — chips don't need sticky/border. */
+      position: static;
+      top: auto;
+      z-index: auto;
+      margin: 0;
+      padding: 0;
+      border: none;
+      border-bottom: none;
+      background: transparent;
+      display: inline-flex;
+      align-items: center;
+      box-sizing: border-box;
+      color-scheme: inherit;
+    }
+    .ytpf-chip .ytpf-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 12px;
+      border-radius: 8px;
+      background: var(--yt-spec-badge-chip-background, var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.05)));
+      width: clamp(220px, 24vw, 320px);
+      box-sizing: border-box;
+    }
+    .ytpf-chip .ytpf-icon {
+      flex: 0 0 16px;
+      width: 16px;
+      height: 16px;
+      opacity: 0.85;
+      color: var(--yt-spec-text-primary, #0f0f0f);
+    }
+    .ytpf-chip .ytpf-input-wrap {
+      flex: 1;
+      min-width: 0;
+      position: static;
+    }
+    .ytpf-chip .ytpf-input {
+      width: 100%;
+      height: 24px;
+      border: none;
+      border-radius: 0;
+      padding: 0;
+      background: transparent;
+      color: var(--yt-spec-text-primary, #0f0f0f);
+      font-family: "YouTube Sans", Roboto, Arial, sans-serif;
+      font-weight: 500;
+      font-size: 14px;
+    }
+    .ytpf-chip .ytpf-input:focus {
+      outline: none;
+      border-color: transparent;
+    }
+    .ytpf-chip .ytpf-clear {
+      position: static;
+      transform: none;
+      width: 18px;
+      height: 18px;
+      font-size: 14px;
+    }
+    .ytpf-chip .ytpf-meta { display: none; }
+  `;
+
+  const ALL_STYLES = [FILTER_BASE_STYLES, MODAL_STYLES, MODAL_EXPANDED_STYLES, PAGE_STYLES, SYNTH_STYLES, CHIP_STYLES].join("\n");
 
   // Per-row state, keyed on the row element. Held weakly so GC reclaims when
   // YouTube tears down its DOM. Previously these were two separate WeakMaps
@@ -1063,6 +1136,25 @@ import {
     return 0;
   }
 
+  /**
+   * Find the native filter-chip row on /feed/playlists, if present. Returns
+   * the inner scroll container (where chip wrappers live), so callers can
+   * `prepend` a sibling chip directly. We probe all selectors in order and
+   * return the first hit — view-model is preferred over legacy Polymer.
+   *
+   * Returns null when no chip bar is on the page (channel pages, video
+   * pages, mid-rollout users on a stripped UI). Callers fall back to the
+   * full-width `.ytpf-inline-page` mount in that case.
+   */
+  function findChipRow() {
+    if (!isPlaylistsFeedPage()) return null;
+    for (const selector of CHIP_ROW_SELECTORS) {
+      const hits = queryAllDeep(selector).filter((el) => el && el.isConnected && isVisible(el));
+      if (hits.length) return hits[0];
+    }
+    return null;
+  }
+
   function collectFeedPageSurface() {
     if (!isPlaylistsFeedPage()) return null;
 
@@ -1163,13 +1255,46 @@ import {
     };
   }
 
-  function createInlineFilterUi(surface) {
-    const root = document.createElement("section");
-    root.className = FILTER_CLASS;
-    if (surface === "page") {
-      root.classList.add("ytpf-inline-page");
+  /**
+   * Magnifying-glass icon for the chip variant. Inline SVG (16x16) sized to
+   * match the chip-view-model icon slot. Stroke uses currentColor so it
+   * picks up the chip's text color in both light and dark themes.
+   */
+  function createSearchIcon() {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "ytpf-icon");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    svg.innerHTML = '<path fill="currentColor" d="M20.87 20.17l-5.59-5.59C16.35 13.35 17 11.75 17 10c0-3.87-3.13-7-7-7s-7 3.13-7 7 3.13 7 7 7c1.75 0 3.35-.65 4.58-1.71l5.59 5.59.7-.71zM10 16c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6z"/>';
+    return svg;
+  }
+
+  /**
+   * @param {"modal" | "page"} surface
+   * @param {"modal" | "grid" | "chip"} [variant]
+   */
+  function createInlineFilterUi(surface, variant) {
+    const resolvedVariant = variant || (surface === "modal" ? "modal" : "grid");
+
+    // For the chip variant we render INSIDE a `.ytChipBarViewModelChipWrapper`
+    // wrapper so the chip inherits native chip-bar spacing margins for free.
+    // ui.root is the wrapper (the node that gets inserted/removed); the
+    // inner `.ytpf-inline.ytpf-chip` carries the FILTER_CLASS so the rest
+    // of the controller (querySelector, orphan sweep) finds it.
+    const wrapper = resolvedVariant === "chip"
+      ? document.createElement("div")
+      : null;
+    if (wrapper) wrapper.className = CHIP_ROW_WRAPPER_CLASS;
+
+    const inline = document.createElement(resolvedVariant === "chip" ? "span" : "section");
+    inline.className = FILTER_CLASS;
+    if (resolvedVariant === "chip") {
+      inline.classList.add("ytpf-chip");
+    } else if (surface === "page") {
+      inline.classList.add("ytpf-inline-page");
     } else {
-      root.classList.add(MODAL_INLINE_CLASS);
+      inline.classList.add(MODAL_INLINE_CLASS);
     }
 
     const row = document.createElement("div");
@@ -1194,22 +1319,29 @@ import {
     inputWrap.className = "ytpf-input-wrap";
     inputWrap.appendChild(input);
     inputWrap.appendChild(clear);
+
+    if (resolvedVariant === "chip") {
+      row.appendChild(createSearchIcon());
+    }
     row.appendChild(inputWrap);
 
     const meta = document.createElement("span");
     meta.className = "ytpf-meta";
     meta.setAttribute("aria-live", "polite");
 
-    root.appendChild(row);
-    if (surface !== "modal") {
-      root.appendChild(meta);
+    inline.appendChild(row);
+    if (surface !== "modal" && resolvedVariant !== "chip") {
+      inline.appendChild(meta);
     }
 
+    if (wrapper) wrapper.appendChild(inline);
+
     return {
-      root,
+      root: wrapper || inline,
       input,
       clear,
       meta,
+      variant: resolvedVariant,
     };
   }
 
@@ -1755,11 +1887,36 @@ import {
    * @param {"modal" | "page"} [surface]
    */
   function attachHost(host, rows, surface = "modal") {
-    const mount = findMountPoint(rows, host, surface);
+    /** @type {{parent: Element, before?: Element|null, after?: Element|null} | null} */
+    let mount = null;
+    /** @type {"modal" | "grid" | "chip"} */
+    let variant;
+
+    if (surface === "page") {
+      // Prefer the native chip-bar mount: looks like a YouTube control, takes
+      // zero extra vertical space, inherits chip spacing for free. Falls back
+      // to the historic full-width grid mount when no chip bar is present
+      // (channel pages we don't target today, or future YT redesigns that
+      // drop the chip bar entirely). The grid mount is the failsafe; do NOT
+      // remove it until both rollouts are universal AND we have telemetry
+      // confirming the chip bar is always present.
+      const chipRow = findChipRow();
+      if (chipRow) {
+        mount = { parent: chipRow, before: chipRow.firstElementChild };
+        variant = "chip";
+      } else {
+        mount = findMountPoint(rows, host, "page");
+        variant = "grid";
+      }
+    } else {
+      mount = findMountPoint(rows, host, surface);
+      variant = "modal";
+    }
+
     if (!mount) return;
     ensureScopedStyles(mount.parent.getRootNode?.() || document);
 
-    const ui = createInlineFilterUi(surface);
+    const ui = createInlineFilterUi(surface, variant);
     guardModalUiInteractions(ui, surface);
     if (surface === "modal") {
       host.classList.add(MODAL_EXPANDED_CLASS);

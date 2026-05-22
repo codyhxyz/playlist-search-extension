@@ -83,6 +83,65 @@
   display: none !important;
 }
 
+/* Chip variant — mounted into YouTube's native filter-chip row on
+   /feed/playlists. Sized + colored to match a `chip-view-model` chip 1:1
+   (32px tall, 8px radius, --yt-spec-badge-chip-background fill). Overrides
+   the .ytpf-inline base rules (sticky, padding, border) that are sized for
+   the full-width bar variant. */
+.ytpf-inline.ytpf-chip {
+  position: static;
+  top: auto;
+  z-index: auto;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-bottom: none;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+}
+
+.ytpf-chip .ytpf-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--yt-spec-badge-chip-background, var(--ytpf-border));
+  width: clamp(220px, 24vw, 320px);
+  box-sizing: border-box;
+}
+
+.ytpf-chip .ytpf-icon {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  opacity: 0.85;
+  color: var(--ytpf-text);
+}
+
+.ytpf-chip .ytpf-input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  font-family: "YouTube Sans", Roboto, Arial, sans-serif;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.ytpf-chip .ytpf-input:focus {
+  outline: none;
+  border-color: transparent;
+}
+
+.ytpf-chip .ytpf-meta { display: none; }
+
 @media (max-width: 700px) {
   .ytpf-inline {
     padding: 8px 12px 6px;
