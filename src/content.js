@@ -226,8 +226,12 @@ import {
     mark.ytpf-mark {
       all: unset;
       display: inline !important;
-      background-color: rgba(255, 255, 0, 0.4) !important;
-      color: inherit !important;
+      /* Punchy yellow + forced dark text. Single rule that's legible on
+         YouTube's light AND dark themes — the previous rgba(255,255,0,0.4)
+         + color:inherit produced unreadable light-on-muddy-yellow in dark
+         mode. Dark text on a saturated yellow always passes contrast. */
+      background-color: rgba(255, 213, 0, 0.85) !important;
+      color: #0f0f0f !important;
       border-radius: 2px;
       padding: 0 1px;
     }
