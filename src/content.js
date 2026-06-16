@@ -62,6 +62,7 @@ import {
   const STYLE_ID = "ytpf-inline-style";
   const MODAL_EXPANDED_CLASS = "ytpf-modal-expanded";
   const MODAL_INLINE_CLASS = "ytpf-inline-modal";
+  const DARK_THEME_CLASS = "ytpf-theme-dark";
   const MODAL_API_RESULTS_LIMIT = 24;
   const ROW_MATCH_CLASS = "ytpf-row-match";
   const SYNTH_DONE_CLASS = "ytpf-synth-done";
@@ -192,6 +193,25 @@ import {
       outline-offset: 0;
       border-color: rgba(6, 95, 212, 0.55);
     }
+    .ytpf-inline.ytpf-theme-dark {
+      color-scheme: dark;
+      border-bottom-color: var(--yt-spec-10-percent-layer, rgba(255, 255, 255, 0.12));
+      background: var(--yt-spec-menu-background, var(--yt-spec-raised-background, #212121));
+    }
+    .ytpf-theme-dark .ytpf-input {
+      border-color: var(--yt-spec-10-percent-layer, rgba(255, 255, 255, 0.24));
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--yt-spec-text-primary, #f1f1f1);
+    }
+    .ytpf-theme-dark .ytpf-input::placeholder,
+    .ytpf-theme-dark .ytpf-clear,
+    .ytpf-theme-dark .ytpf-meta {
+      color: var(--yt-spec-text-secondary, #aaa);
+    }
+    .ytpf-theme-dark .ytpf-clear:hover {
+      background: var(--yt-spec-10-percent-layer, rgba(255, 255, 255, 0.12));
+      color: var(--yt-spec-text-primary, #f1f1f1);
+    }
     .ytpf-clear {
       display: none;
       position: absolute;
@@ -297,6 +317,10 @@ import {
       border: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.12));
       border-radius: 999px;
       background: var(--yt-spec-base-background, #fff);
+    }
+    .ytpf-inline-page.ytpf-theme-dark .ytpf-row {
+      border-color: var(--yt-spec-10-percent-layer, rgba(255, 255, 255, 0.16));
+      background: var(--yt-spec-base-background, #0f0f0f);
     }
     .ytpf-inline-page .ytpf-input {
       height: 34px;
@@ -430,6 +454,15 @@ import {
       width: clamp(220px, 24vw, 320px);
       box-sizing: border-box;
     }
+    .ytpf-chip.ytpf-theme-dark .ytpf-row {
+      background: var(--yt-spec-badge-chip-background, rgba(255, 255, 255, 0.10));
+    }
+    .ytpf-chip .ytpf-row:hover {
+      background: var(--yt-spec-button-chip-background-hover, var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.08)));
+    }
+    .ytpf-chip.ytpf-theme-dark .ytpf-row:hover {
+      background: var(--yt-spec-button-chip-background-hover, rgba(255, 255, 255, 0.14));
+    }
     .ytpf-chip .ytpf-icon {
       flex: 0 0 16px;
       width: 16px;
@@ -495,6 +528,8 @@ import {
   /** @type {Map<Element, Ctrl>} */
   const controllers = new Map();
   let _bodyObserver = null;
+  let _themeObserver = null;
+  let _onThemeMediaChange = null;
   let _onNavigateFinish = null;
   let _onPageDataUpdated = null;
   const apiSessionCache = {
@@ -589,6 +624,96 @@ import {
 
   function nowMs() {
     return performance.now();
+  }
+
+  function colorValueLooksDark(value) {
+    if (!value) return false;
+    const text = String(value).trim();
+    let r;
+    let g;
+    let b;
+
+    const hex = text.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+    if (hex) {
+      const raw = hex[1].length === 3
+        ? hex[1].split("").map((ch) => ch + ch).join("")
+        : hex[1];
+      r = parseInt(raw.slice(0, 2), 16);
+      g = parseInt(raw.slice(2, 4), 16);
+      b = parseInt(raw.slice(4, 6), 16);
+    } else {
+      const rgb = text.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);
+      if (!rgb) return false;
+      r = Number(rgb[1]);
+      g = Number(rgb[2]);
+      b = Number(rgb[3]);
+    }
+
+    if (![r, g, b].every(Number.isFinite)) return false;
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) < 128;
+  }
+
+  function isYouTubeDarkTheme() {
+    const root = document.documentElement;
+    const body = document.body;
+    if (root?.hasAttribute("dark") || body?.hasAttribute("dark")) return true;
+    if (root?.classList?.contains("dark") || body?.classList?.contains("dark")) return true;
+    if (document.querySelector("ytd-app[dark], ytd-popup-container[dark], tp-yt-paper-dialog[dark]")) return true;
+
+    try {
+      const rootStyle = window.getComputedStyle(root);
+      const ytBase = rootStyle.getPropertyValue("--yt-spec-base-background").trim();
+      if (ytBase && /^(#|rgba?\()/i.test(ytBase)) return colorValueLooksDark(ytBase);
+
+      const docBg = rootStyle.backgroundColor;
+      if (docBg && docBg !== "transparent" && docBg !== "rgba(0, 0, 0, 0)") {
+        return colorValueLooksDark(docBg);
+      }
+    } catch { /* computed style is best-effort only */ }
+
+    return !!window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+  }
+
+  function getFilterInlineRoot(root) {
+    if (!root) return null;
+    if (root.classList?.contains(FILTER_CLASS)) return root;
+    return root.querySelector?.(`.${FILTER_CLASS}`) || null;
+  }
+
+  function setFilterThemeClass(root, dark = isYouTubeDarkTheme()) {
+    const inline = getFilterInlineRoot(root);
+    if (!inline) return;
+    inline.classList.toggle(DARK_THEME_CLASS, dark);
+  }
+
+  function syncFilterThemeClasses() {
+    const dark = isYouTubeDarkTheme();
+    for (const ctrl of controllers.values()) {
+      setFilterThemeClass(ctrl.root, dark);
+    }
+    queryAllDeep(`.${FILTER_CLASS}`).forEach((inline) => {
+      inline.classList.toggle(DARK_THEME_CLASS, dark);
+    });
+  }
+
+  function startThemeObserver() {
+    if (_themeObserver) return;
+
+    const scheduleSync = () => requestAnimationFrame(syncFilterThemeClasses);
+    const options = {
+      attributes: true,
+      attributeFilter: ["dark", "class", "style", "data-theme"],
+    };
+
+    _themeObserver = new MutationObserver(scheduleSync);
+    _themeObserver.observe(document.documentElement, options);
+    if (document.body) _themeObserver.observe(document.body, options);
+
+    const media = window.matchMedia?.("(prefers-color-scheme: dark)");
+    if (media?.addEventListener) {
+      _onThemeMediaChange = scheduleSync;
+      media.addEventListener("change", _onThemeMediaChange);
+    }
   }
 
   // Pause the reconciler from acting on mutation-driven enqueues for `ms`.
@@ -1296,8 +1421,13 @@ import {
     } else {
       inline.classList.add(MODAL_INLINE_CLASS);
     }
+    setFilterThemeClass(inline);
 
-    const row = document.createElement("div");
+    // Chip variant uses <label> so clicks anywhere in the chip (icon, padding)
+    // proxy focus to the wrapped input via native label semantics — no for=
+    // needed when the input is nested. Other variants keep <div> to preserve
+    // historical behavior (modal/page rows don't want padding-click focus).
+    const row = document.createElement(resolvedVariant === "chip" ? "label" : "div");
     row.className = "ytpf-row";
 
     const input = document.createElement("input");
@@ -1900,9 +2030,14 @@ import {
       // drop the chip bar entirely). The grid mount is the failsafe; do NOT
       // remove it until both rollouts are universal AND we have telemetry
       // confirming the chip bar is always present.
+      //
+      // We APPEND (rightmost) rather than prepend: native YT chips on the left
+      // are the primary navigation/filter selectors ("All", "Music", …). Mounting
+      // our search at the trailing edge reads as a refinement on top of whatever
+      // chip the user picked, not as competing primary navigation.
       const chipRow = findChipRow();
       if (chipRow) {
-        mount = { parent: chipRow, before: chipRow.firstElementChild };
+        mount = { parent: chipRow, before: null };
         variant = "chip";
       } else {
         mount = findMountPoint(rows, host, "page");
@@ -2087,6 +2222,7 @@ import {
   // isSaveVideoModal now lives in src/lib/dom-parse.js — imported at top.
 
   function refresh() {
+    syncFilterThemeClasses();
     sweepOrphanedHidden();
 
     queryAllDeep(MODAL_HOST_SELECTOR)
@@ -2317,6 +2453,7 @@ import {
       }
     });
     _bodyObserver.observe(document.body, { childList: true, subtree: true });
+    startThemeObserver();
 
     refresh();
 

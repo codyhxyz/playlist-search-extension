@@ -47,6 +47,22 @@
   border-color: var(--ytpf-accent);
 }
 
+.ytpf-inline.ytpf-theme-dark {
+  --ytpf-bg: var(--yt-spec-menu-background, var(--yt-spec-raised-background, #212121));
+  --ytpf-border: var(--yt-spec-10-percent-layer, rgba(255, 255, 255, 0.16));
+  --ytpf-text: var(--yt-spec-text-primary, #f1f1f1);
+  --ytpf-muted: var(--yt-spec-text-secondary, #aaa);
+  color-scheme: dark;
+}
+
+.ytpf-theme-dark .ytpf-input {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ytpf-theme-dark .ytpf-clear:hover {
+  background: var(--yt-spec-10-percent-layer, rgba(255, 255, 255, 0.12));
+}
+
 .ytpf-clear {
   display: none;
   align-items: center;
@@ -112,6 +128,18 @@
   background: var(--yt-spec-badge-chip-background, var(--ytpf-border));
   width: clamp(220px, 24vw, 320px);
   box-sizing: border-box;
+}
+
+.ytpf-chip.ytpf-theme-dark .ytpf-row {
+  background: var(--yt-spec-badge-chip-background, rgba(255, 255, 255, 0.10));
+}
+
+.ytpf-chip .ytpf-row:hover {
+  background: var(--yt-spec-button-chip-background-hover, var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.08)));
+}
+
+.ytpf-chip.ytpf-theme-dark .ytpf-row:hover {
+  background: var(--yt-spec-button-chip-background-hover, rgba(255, 255, 255, 0.14));
 }
 
 .ytpf-chip .ytpf-icon {
