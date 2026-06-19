@@ -224,6 +224,39 @@ try {
     check(result.chipMounted, "chip variant mounted (a chip-bar was present, chip path should win)");
     check(result.chipInsideChipRow, "chip mounted INSIDE .ytChipBarViewModelChipBarScrollContainer");
 
+    // Regression guard for the screenshot-class failure: on direct-lockup
+    // grids (no direct ytd-rich-grid-row wrappers), typing a filter must NOT
+    // force our generic re-grid CSS. Native YouTube layout already packs
+    // direct children correctly; overriding it makes tiny/squashed cards.
+    const probeRaw = (await ab("eval", `(async () => {
+      const input = document.querySelector(".ytpf-chip input, .ytpf-inline-page input");
+      if (!input) return JSON.stringify({ ok: false, reason: "no input" });
+      input.value = "zzzqqqzzz";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 350));
+      const host = Array.from(document.querySelectorAll("#items, #contents"))
+        .find((el) => el.classList.contains("ytpf-page-filtering"));
+      const hasDirectRichGridRows = !!host && Array.from(host.children || [])
+        .some((child) => child.matches?.("ytd-rich-grid-row"));
+      const out = {
+        ok: !!host,
+        hostTag: host?.tagName?.toLowerCase() || null,
+        hostId: host?.id || null,
+        hasDirectRichGridRows,
+        rowReflowClass: !!host?.classList.contains("ytpf-page-filtering-rows"),
+        display: host ? getComputedStyle(host).display : null,
+      };
+      input.value = "";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      return JSON.stringify(out);
+    })()`)).trim();
+    const probeStr = probeRaw.startsWith('"') ? JSON.parse(probeRaw) : probeRaw;
+    const filterProbe = JSON.parse(probeStr);
+    check(filterProbe.ok, "filter probe found the active page host");
+    check(filterProbe.hasDirectRichGridRows === false, "fixture uses direct lockup grid (no ytd-rich-grid-row wrappers)");
+    check(filterProbe.rowReflowClass === false, "direct lockup grid does not get row-reflow class while filtering");
+    check(filterProbe.display !== "grid", `direct lockup grid was not force-regridded (display: ${filterProbe.display})`);
+
     console.log(`feed-page-mount: ${passed.length} passed, ${failed.length} failed`);
     passed.forEach((m) => console.log("  ok   " + m));
     failed.forEach((m) => console.log("  FAIL " + m));

@@ -354,14 +354,22 @@ import {
      * pack tight. Scoped to the filtering state, so the native layout is
      * untouched when no query is active.
      */
-    .ytpf-page-filtering {
+    .ytpf-page-filtering-rows {
       display: grid !important;
       grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)) !important;
       gap: 16px !important;
+      justify-items: stretch !important;
     }
-    .ytpf-page-filtering > ytd-rich-grid-row,
-    .ytpf-page-filtering > ytd-rich-grid-row > #contents {
+    .ytpf-page-filtering-rows > ytd-rich-grid-row,
+    .ytpf-page-filtering-rows > ytd-rich-grid-row > #contents {
       display: contents !important;
+    }
+    .ytpf-page-filtering-rows > ytd-rich-grid-row > #contents > ytd-rich-item-renderer,
+    .ytpf-page-filtering-rows > ytd-rich-grid-row > #contents > ytd-rich-grid-media,
+    .ytpf-page-filtering-rows > ytd-rich-grid-row > #contents > yt-lockup-view-model {
+      min-width: 0 !important;
+      width: 100% !important;
+      max-width: none !important;
     }
   `;
 
@@ -1984,9 +1992,17 @@ import {
 
     // Page surface: while filtering, collapse YouTube's ytd-rich-grid-row
     // wrappers via CSS so the remaining lockups reflow into a tight grid
-    // instead of floating inside their original row slots.
+    // instead of floating inside their original row slots. Only do this when
+    // those row wrappers are actually direct children; direct-lockup grids
+    // already reflow natively, and forcing our generic grid there squashes
+    // YouTube's 2026 chip/feed layout into tiny cards.
     if (ctrl.surface === "page" && ctrl.host?.classList) {
-      ctrl.host.classList.toggle("ytpf-page-filtering", Boolean(query));
+      const filtering = Boolean(query);
+      const hasRichGridRows = Array.from(ctrl.host.children || []).some((child) =>
+        child.matches?.("ytd-rich-grid-row"),
+      );
+      ctrl.host.classList.toggle("ytpf-page-filtering", filtering);
+      ctrl.host.classList.toggle("ytpf-page-filtering-rows", filtering && hasRichGridRows);
     }
 
     // Only snap to top on the empty -> non-empty transition (the user just
@@ -2209,8 +2225,11 @@ import {
     document.querySelectorAll(`.${HIDDEN_CLASS}`).forEach((el) => {
       if (!tracked.has(el)) showRow(el);
     });
-    document.querySelectorAll(".ytpf-page-filtering").forEach((el) => {
-      if (!liveHosts.has(el)) el.classList.remove("ytpf-page-filtering");
+    document.querySelectorAll(".ytpf-page-filtering, .ytpf-page-filtering-rows").forEach((el) => {
+      if (!liveHosts.has(el)) {
+        el.classList.remove("ytpf-page-filtering");
+        el.classList.remove("ytpf-page-filtering-rows");
+      }
     });
   }
 

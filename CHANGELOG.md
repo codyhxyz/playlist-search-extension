@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.17 - 2026-06-18
+- Fixed `/feed/playlists` filtering on YouTube's direct-lockup layout. The old row-wrapper reflow workaround is now applied only when the playlist grid actually has direct `ytd-rich-grid-row` children; direct `yt-lockup-view-model` grids keep YouTube's native layout, preventing filtered results from collapsing into tiny squashed cards.
+- Added a feed-page regression probe that types into the filter and asserts direct-lockup grids are not force-regridded.
+
 ## 1.6.16 - 2026-06-15
 - Fixed the remaining dark-mode mismatch in YouTube's "Save to..." modal. The previous `color-scheme: inherit` improvement still let some modal contexts paint the injected search bar as a light/white strip. The filter UI now detects YouTube dark mode from root/body attributes, YouTube dark host attributes, computed YouTube background tokens, and system dark preference as a fallback, then applies a dedicated `ytpf-theme-dark` class.
 - Added explicit dark styles for the modal, page, and chip variants: dark background, dark-aware input fill, lighter borders, muted placeholder/meta text, clear-button hover color, and dark chip hover fallback. Existing bars resync on YouTube theme changes without requiring a page reload.
