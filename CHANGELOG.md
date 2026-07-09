@@ -42,6 +42,12 @@
 
 ## 1.6.10 - 2026-05-10
 - Fixed `/feed/playlists` showing floating cards with massive gaps when filtering. YouTube wraps lockups inside fixed `ytd-rich-grid-row` slots; hiding individual lockups left those slots half-empty. While a filter query is active, `#contents` now becomes a flat grid and the row wrappers collapse via `display: contents` so visible lockups pack tight. Native layout is untouched when no query is active.
+  <!-- Editorial note (added 1.6.17): the framing above reads as a universal
+       rule of /feed/playlists. It was not — it only applied to the
+       row-wrapped layout (direct ytd-rich-grid-row children). YouTube also
+       ships a direct-lockup grid where this override squashed cards into
+       tiny slots (the 1.6.17 regression). The reflow is now shape-gated;
+       see CONTRIBUTING.md "Intervening in YouTube's DOM". -->
 - Fixed the "filter bar disappears but cards stay hidden" lock-in. Row hiding is now class-only (`ytpf-hidden`) instead of inline `display:none`, and every `refresh()` tick sweeps any `.ytpf-hidden` node that isn't claimed by a live controller. If the controller is ever lost mid-filter (SPA cache restore, racing re-render), the next tick unhides everything instead of stranding the user in a filtered-but-uncontrollable state.
 
 ## 1.6.9 - 2026-05-10

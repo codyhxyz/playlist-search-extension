@@ -99,6 +99,50 @@ signal the coupling surface is leaking — consider extending the extraction.
 - Keep it simple — the extension is intentionally lightweight
 - Match the existing style in the file you're editing
 
+## Intervening in YouTube's DOM (principles)
+
+YouTube ships multiple playlist-grid layouts in parallel (row-wrapped
+`ytd-rich-grid-row` slots, direct `yt-lockup-view-model` grids, chip-bar
+hosts, and more arrive without notice). Several past regressions came from
+written framing that read like a universal rule of the surface but was
+really a workaround for **one** observed DOM shape. To keep that from
+happening again, follow these rules:
+
+1. **Native layout is the default.** Do not replace YouTube's grid with
+   our own CSS unless the *current* DOM shape proves it needs that exact
+   intervention. Hiding/showing/highlighting rows is the expected scope of
+   a filter; owning container layout is the exception, not the rule.
+
+2. **Feature-detect the shape before overriding it.** Classify the host
+   (e.g. row-wrapped vs direct-lockup) and branch on that. Never branch
+   layout behavior on route/URL alone — `/feed/playlists` has shipped
+   multiple shapes concurrently.
+
+3. **State classes ≠ layout-mode classes.** A class like `.ytpf-page-filtering`
+   means "a filter query is active." A separate class (e.g.
+   `.ytpf-page-filtering-rows`) means "apply the row-wrapper reflow hack."
+   Keep the two concerns separate so one can be true without forcing the
+   other.
+
+4. **Every layout override needs two tests: a positive one (it applies on
+   the shape that needs it) and a negative one (it must NOT apply on every
+   other shape).** A mount+narrowing test passes even when the filtered
+   cards are tiny/broken — geometry must be asserted too.
+
+5. **Don't generalize from one captured fixture.** A fixture is *one*
+   observed shape, not "the /feed/playlists layout." Document fixtures as
+   shape coverage, not as a 1:1 representation of the surface, and keep
+   multiple shapes in fixtures when they diverge.
+
+6. **Write comments about the *current shape*, not about "YouTube."**
+   Phrasing like "YouTube wraps lockups inside row slots" reads as a law
+   of the surface. Prefer "on the row-wrapped layout, lockups sit inside
+   row slots, so…" — so the next reader knows it's conditional.
+
+The short version: **native-first, shape-gated, minimally invasive.**
+Treat YouTube's layout as hostile/variable infrastructure we nudge, not a
+stable component we restyle wholesale.
+
 ## Reporting Bugs
 
 Open an issue with:

@@ -19,10 +19,14 @@
  * Fixture provenance: tests/fixtures/channel-playlists-lockup-2026.html
  * was captured live from youtube.com/@MrBeast/playlists on 2026-05-13 via
  * agent-browser eval. The DOM shape — yt-lockup-view-model nested in
- * ytd-item-section-renderer > ytd-grid-renderer — matches /feed/playlists's
- * post-2026 layout 1:1.  We host the fixture at http://127.0.0.1:PORT/feed/
- * playlists so isPlaylistsFeedPage() returns true without any test-only
- * branch in production code.
+ * ytd-item-section-renderer > ytd-grid-renderer — is ONE observed shape,
+ * not a 1:1 representation of every /feed/playlists layout (YouTube ships
+ * row-wrapped, direct-lockup, and chip-bar hosts in parallel). Treat this
+ * fixture as shape coverage for the direct-lockup case; do NOT generalize
+ * its structure to the whole surface — add a second fixture + assertions
+ * before relying on a different shape's behavior. We host the fixture at
+ * http://127.0.0.1:PORT/feed/playlists so isPlaylistsFeedPage() returns
+ * true without any test-only branch in production code.
  *
  * Run:   node tests/test-feed-page-mount.mjs
  * Skip:  set YTPF_SKIP_BROWSER_TESTS=1 (CI without agent-browser available)

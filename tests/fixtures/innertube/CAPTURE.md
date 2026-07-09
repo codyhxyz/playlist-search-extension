@@ -8,6 +8,23 @@ thought of; the 1.6.9 regression was a shape nobody thought of. Replace
 each synthetic fixture with a real capture and every YouTube migration
 shows up as a red test instead of a support email.
 
+## One fixture is one shape, not the surface
+
+YouTube ships multiple playlist renderers / grid layouts **in parallel**
+(row-wrapped `ytd-rich-grid-row` slots, direct `yt-lockup-view-model`
+grids, chip-bar hosts). A captured fixture represents ONE observed shape,
+not "the /feed/playlists layout." Before generalizing behavior from a
+fixture:
+
+- Document it as coverage for a specific shape, not a 1:1 model of the
+  surface.
+- When two shapes diverge (e.g. row-wrapped vs direct-lockup), capture
+  **both** and add assertions for each. The 1.6.17 regression came from a
+  layout override that was correct for one shape but applied to all of
+  them because only one shape was captured/tested.
+- Any layout-level CSS override needs a *negative* test proving it does
+  NOT fire on the shapes where native layout should win.
+
 ## Fastest path: the capture script
 
 `scripts/capture-innertube.mjs` wraps the agent-browser dance below into

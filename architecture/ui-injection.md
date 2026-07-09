@@ -29,6 +29,15 @@ Both use the same `createInlineFilterUi(surface)` (content.js:975) builder. Styl
 
 YouTube ships many component variants depending on client version, A/B test bucket, and device. We match the playlist-specific renderers directly, then scope row discovery within that host:
 
+> **Layout-intervention principle:** native layout is the default. We hide,
+> show, and highlight rows freely; we only override YouTube's *container*
+> layout (e.g. flattening `#contents` into a grid) when the current DOM
+> shape proves it needs that exact fix — and the override is gated on a
+> shape check plus carries a negative test for shapes where it must not
+> fire. See `CONTRIBUTING.md` → "Intervening in YouTube's DOM". The 1.6.17
+> regression was a universal grid override that was correct for the
+> row-wrapped layout but squashed the direct-lockup layout.
+
 ```js
 // Playlist-add renderers only. Do NOT add tp-yt-paper-dialog or
 // yt-contextual-sheet-layout here — YouTube reuses those for many other
