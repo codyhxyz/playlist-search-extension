@@ -6,7 +6,7 @@
 - Reconciled modern ID-less playlist rows without duplicate synthetic results. Synthetic saves now share one request per account, video, and playlist and retain pending or completed state across rerenders.
 - Kept the Save dialog open without swallowing YouTube's native playlist toggle.
 - Removed persistent and page-readable diagnostics, purged legacy diagnostic records, and updated the privacy policy.
-- Added deterministic modal lifecycle, identity, account-routing, row-replacement, and save-deduplication checks. Fixed the live E2E build and assertions so unsupported compact pickers cannot report a false pass.
+- Added deterministic modal lifecycle, identity, account-routing, row-replacement, and save-deduplication checks. Fixed the live E2E build and assertions so signed-out sessions and unsupported compact pickers cannot report false passes. The harness now uses its own persistent Chromium profile and does not copy another browser's cookies.
 - Hardened publishing so the upload ZIP is rebuilt from current source and checked byte-for-byte before submission.
 
 ## 1.6.17 - 2026-06-18

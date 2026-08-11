@@ -15,52 +15,26 @@ The fixture suite (`tests/test-feed-page-mount.mjs`) stays — it's fast, doesn'
 
 All four run sequentially, sharing one signed-in agent-browser session named `ytpf-e2e`.
 
-## How auth works (no clicks per run)
+## How auth works
 
-Two technical walls forced an unusual design:
-
-1. **Google's automation block** — accounts.google.com refuses to log in inside an automated browser ("This browser or app may not be secure"). So we can't programmatically sign in.
-2. **macOS Chrome blocks `--load-extension`** — Google's recent anti-malware policy makes real Chrome silently drop the CLI flag. So we can't load the unpacked extension into real Chrome via agent-browser.
-
-Resolution: bundled Chromium (which loads `--extension` fine) is launched fresh each run, and we extract the auth cookies out-of-band from a **real Chrome `YT Test` profile** that's signed into the test account. The cookies are decrypted via the macOS Keychain key, then injected into the live agent-browser session via the cookies API. Zero manual steps per run.
+The harness launches agent-browser's bundled Chromium with both the unpacked extension and a dedicated persistent profile. The profile owns its cookies, so the harness does not copy cookies from daily Chrome, read Keychain secrets, or require Full Disk Access.
 
 ## One-time setup
 
-```bash
-bash tests/e2e/setup.sh
-```
+1. Run `bash tests/e2e/run.sh`.
+2. If `sanity.sh` reports `not signed in`, sign into the test account in the Chromium window that the command opened.
+3. Keep at least four playlists in the test account so YouTube renders the supported full Save modal.
+4. Run `bash tests/e2e/run.sh` again.
 
-This creates a Python venv at `/tmp/ytpf-venv` with `pycryptodome` (needed to decrypt Chrome's cookie DB).
-
-Then **create the Chrome profile** that holds the test account's auth state:
-
-1. Open Chrome → click your profile icon (top right) → **Add**.
-2. Name the new profile `YT Test` (or anything — set `YTPF_CHROME_PROFILE_DIR=<absolute-path>` to override).
-3. In the new Chromium window, sign into youtube.com with your **test** YouTube account (not your daily one — the extension reads its playlist library during tests).
-4. Close that Chrome window.
-
-The new profile is fully isolated — no bookmarks, history, extensions, or cookies carry over from your main profile. Your normal Chrome is untouched.
-
-Then run the suite:
-
-```bash
-bash tests/e2e/run.sh
-```
-
-The first run may trigger a one-time macOS Keychain prompt asking for permission to read "Chrome Safe Storage" — click **Always Allow** so future runs are silent.
-
-## When the session expires
-
-Cookies in the YT Test profile last as long as YouTube wants them to (typically months). When `sanity.sh` reports `not signed in`, open real Chrome with that profile, sign back in, close Chrome, re-run.
+The default profile is `~/.config/browser-harness/profiles/yt-test-auto`. Set `YTPF_BROWSER_PROFILE_DIR` to use another isolated profile. Do not point it at daily Chrome's user-data directory.
 
 ## Architecture
 
 | Step | Component |
 |---|---|
 | Build extension test variant (`e2e-build/`) | `scripts/build-e2e.sh` |
-| Launch bundled Chromium with `--extension` | `agent-browser --session ytpf-e2e --extension ...` |
-| Decrypt cookies from real Chrome's `YT Test` profile | `tests/e2e/import-chrome-cookies.py` (pycryptodome) |
-| Inject cookies into running session | `agent-browser cookies set` (per cookie) |
+| Launch bundled Chromium with `--extension` and an isolated profile | `agent-browser --profile ... --extension ...` |
+| Preserve test-account auth | The isolated profile's own cookie store |
 | Run specs | `tests/e2e/specs/{sanity,feed-playlists,save-modal,innertube-fetch}.sh` |
 
 ## Adding a new spec
@@ -92,7 +66,6 @@ Chromium's extension loader requires a real (headed) browser window. Headless mo
 
 Each failing spec dumps:
 - A screenshot to `tests/e2e/artifacts/<spec>-fail-<timestamp>.png`
-- A failure screenshot (runtime diagnostics remain console-only)
 - A one-line summary on stderr: `[<spec>] FAIL: <message>`
 
 Artifacts directory is gitignored.
@@ -100,9 +73,8 @@ Artifacts directory is gitignored.
 ## Tunable thresholds
 
 - `YTPF_EXPECTED_MIN_PLAYLISTS=120 bash tests/e2e/run.sh` — raise the bound for `innertube-fetch.sh`. Default 3 (low because the test account is sparse; set higher for a real-account check).
-- `YTPF_CHROME_PROFILE_DIR='/path/to/Profile X' bash tests/e2e/run.sh` — override which Chrome profile the cookie-import reads from. Default `~/Library/Application Support/Google/Chrome/Profile 2` (the second profile created, which Chrome assigns when you click "Add" once).
+- `YTPF_BROWSER_PROFILE_DIR='/path/to/isolated-profile' bash tests/e2e/run.sh` — override the persistent test profile.
 - `YTPF_TEST_SESSION=foo bash tests/e2e/run.sh` — override the agent-browser session name. Default `ytpf-e2e`.
-- `YTPF_VENV_PY=/path/to/python bash tests/e2e/run.sh` — override the cookie-decrypt python interpreter. Default `~/.local/share/ytpf-venv/bin/python` (set up by `tests/e2e/setup.sh`).
 
 ## Known gaps
 
