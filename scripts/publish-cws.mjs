@@ -11,7 +11,7 @@
 // If zip-path is omitted, looks for dist/youtube-playlist-filter-<version>.zip
 // where <version> matches src/manifest.json.
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,12 +35,37 @@ function findDefaultZip() {
   const distDir = join(ROOT, "dist");
   if (!existsSync(distDir)) return null;
   const version = readManifestVersion();
-  // Prefer the zip that matches the current manifest version; fall back to
-  // the lexicographically-latest .zip so we don't silently ship a stale one.
   const exact = `youtube-playlist-filter-${version}.zip`;
-  if (existsSync(join(distDir, exact))) return join(distDir, exact);
-  const zips = readdirSync(distDir).filter((f) => f.endsWith(".zip")).sort();
-  return zips.length ? join(distDir, zips[zips.length - 1]) : null;
+  return existsSync(join(distDir, exact)) ? join(distDir, exact) : null;
+}
+
+function validateZipAgainstSource(zipPath) {
+  const list = spawnSync("unzip", ["-Z1", zipPath], { encoding: "utf8" });
+  if (list.status !== 0) throw new Error(`cannot list zip: ${zipPath}`);
+  const allowedTopLevel = new Set([
+    "manifest.json", "background.js", "content.bundle.js", "styles.css",
+    "onboarding-state.js", "welcome.html", "welcome.js",
+  ]);
+  const files = list.stdout.split("\n").filter((name) => name && !name.endsWith("/"));
+  for (const file of files) {
+    if (
+      !allowedTopLevel.has(file) &&
+      !file.startsWith("icons/") &&
+      !file.startsWith("vendor/") &&
+      !file.startsWith("welcome-assets/")
+    ) {
+      throw new Error(`unexpected file in upload zip: ${file}`);
+    }
+    const sourcePath = join(ROOT, "src", file);
+    if (!existsSync(sourcePath)) throw new Error(`zip file has no source counterpart: ${file}`);
+    const zipped = spawnSync("unzip", ["-p", zipPath, file], { encoding: null, maxBuffer: 16 * 1024 * 1024 });
+    if (zipped.status !== 0 || !zipped.stdout.equals(readFileSync(sourcePath))) {
+      throw new Error(`upload zip does not match tested source: ${file}`);
+    }
+  }
+  for (const required of allowedTopLevel) {
+    if (!files.includes(required)) throw new Error(`upload zip is missing ${required}`);
+  }
 }
 
 const transitions = [];
@@ -69,6 +94,18 @@ function runPrePublishE2EGate() {
 }
 
 async function run() {
+  // Build the default upload from the current source in this process. Testing
+  // source and then selecting an old dist zip was not an artifact gate.
+  if (!ZIP_PATH_ARG) {
+    log("building", "running scripts/build-store-zip.sh");
+    const build = spawnSync("bash", [join(ROOT, "scripts", "build-store-zip.sh")], {
+      stdio: "inherit",
+    });
+    if (build.status !== 0) {
+      return { kind: "tests-failed", reason: `build-store-zip.sh exited ${build.status}` };
+    }
+  }
+
   if (!runPrePublishE2EGate()) {
     return { kind: "tests-failed", reason: "tests/run-all.sh did not exit 0 \u2014 see test output above" };
   }
@@ -83,6 +120,7 @@ async function run() {
     console.error(`publish-cws: no zip found${ZIP_PATH_ARG ? ` at ${ZIP_PATH_ARG}` : " in dist/"}. Run bash scripts/build-store-zip.sh first.`);
     process.exit(2);
   }
+  validateZipAgainstSource(zipPath);
   log("uploading", `path=${zipPath}`);
   const upload = await uploadZip(secrets, zipPath);
   if (upload?.uploadState === "FAILURE") {

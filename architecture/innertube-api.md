@@ -57,18 +57,9 @@ Sent as the `Authorization` header. YouTube's server validates it against the SA
 
 ## Config extraction from page scripts
 
-`getInnertubeConfig()` (content.js:20) pulls the InnerTube API key and client version out of the current page's bootstrap scripts:
+`getInnertubeConfig()` rescans bounded bootstrap-script text on every API session snapshot. It extracts the API key, client version, `SESSION_INDEX`, `DELEGATED_SESSION_ID`, and `DATASYNC_ID`; later configuration blocks win. It is intentionally not memoized because YouTube can switch Google accounts or Brand channels without replacing the content-script document.
 
-```js
-for (const script of document.getElementsByTagName("script")) {
-  if (!script.textContent.includes("INNERTUBE_API_KEY")) continue;
-  const keyMatch = script.textContent.match(/"INNERTUBE_API_KEY"\s*:\s*"([^"]+)"/);
-  const verMatch = script.textContent.match(/"INNERTUBE_CLIENT_VERSION"\s*:\s*"([^"]+)"/);
-  ...
-}
-```
-
-This is resilient to YouTube rotating keys or bumping client versions — we always use whatever the current page thinks is correct. `INNERTUBE_API_KEY_FALLBACK` and `INNERTUBE_CLIENT_VERSION_FALLBACK` at the top of the file are only used if extraction fails (e.g., bundler changes that break our regex).
+Authenticated requests send the extracted session index as `X-Goog-AuthUser` and, for delegated channels, send `X-Goog-PageId`. If the active account identity cannot be determined, the extension fails safely to DOM-only search instead of assuming account 0.
 
 ## Pagination
 
@@ -103,31 +94,15 @@ All of this is necessary because YouTube varies its response shape by account, e
 
 ## Session cache
 
-```js
-const apiSessionCache = { playlists: null, fetchedAt: 0 };
-const PLAYLIST_CACHE_TTL_MS = 6 * 60 * 60 * 1000;  // 6 hours
-```
+`apiSessionCaches` stores one in-memory cache entry per `[SESSION_INDEX, DELEGATED_SESSION_ID, DATASYNC_ID]` identity. Cache hits and in-flight joins therefore cannot cross Google accounts or Brand channels. Each controller also keeps the exact API playlist snapshot and account key used to build its index.
 
-`loadAllPlaylists()` (content.js:1352) consults this before hitting the network. One cache per extension session (i.e., per page load), shared across every modal the user opens while the page lives. **Nothing is persisted to `chrome.storage`** — we intentionally don't want to track or persist the user's playlist library.
+Entries refresh after six hours when next requested. **Nothing is persisted to `chrome.storage`**.
 
 ## Stale-request cancellation
 
-When a modal opens, `bootstrapModalApi(ctrl)` (content.js:1366) fetches playlists asynchronously. If the user closes and reopens the modal quickly, we'd have two in-flight requests. The per-controller `apiToken` counter solves this:
+When a modal opens, `bootstrapModalApi(ctrl)` snapshots the active account and increments the per-controller `apiToken`. A response is applied only when the controller is still live, its token still matches, and the current account key equals the request snapshot. `apiPendingAccountKey` prevents duplicate bootstrap calls while still allowing a new account to start its own request immediately.
 
-```js
-const token = (ctrl.apiToken || 0) + 1;
-ctrl.apiToken = token;
-try {
-  await loadAllPlaylists();
-} finally {
-  if (ctrl.apiToken === token) {       // still the latest request?
-    ctrl.bm25 = createUnifiedIndex(...);
-    applyFilter(ctrl);
-  }
-}
-```
-
-`teardownHost` (content.js:1422) also increments `apiToken` on close, so any pending request is treated as stale when it completes.
+`teardownHost` increments `apiToken`, so a response for a closed modal lands in the account cache but cannot update dead UI.
 
 ## Saving a video to a playlist
 
@@ -140,14 +115,12 @@ await innertubeRequest("browse/edit_playlist", {
 });
 ```
 
-Called when the user clicks the "+" button on a synthetic row (an API-only playlist that YouTube didn't render in the modal). Success flips the button to a checkmark for 160ms.
+Called when the user clicks the "+" button on a synthetic API-only row. Pending/done operations are keyed by account, video, and playlist, so filtering can recreate DOM rows without issuing duplicate requests. Completed operations retain a short checkmark/dedup window, then expire rather than pretending to be permanent membership state.
 
-Getting the current video ID is more involved than you'd expect — `getCurrentVideoId()` (content.js:1226) tries:
+`getCurrentVideoId()` trusts only:
 
-1. `?v=` query param
-2. `/shorts/:id` path match
-3. `ytd-watch-flexy[video-id]` attribute
-4. Any `[video-id]` element within the modal host
-5. Any `a[href*='/watch?v=']` link
+1. The modal's own hydrated `data.videoId` / `__data.videoId`.
+2. An 11-character `?v=` or `ytd-watch-flexy[video-id]` on `/watch`.
+3. An 11-character `/shorts/:id` path.
 
-…because the modal opens from many surfaces (watch page, home feed, channel pages, shorts).
+It never guesses from arbitrary page links. If no authoritative target exists, synthetic saves are disabled while native YouTube rows remain usable.

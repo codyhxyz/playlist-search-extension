@@ -43,6 +43,11 @@ import {
    * @property {"modal" | "page"} surface    Where this controller lives.
    * @property {Element[]} rows              Current DOM rows being filtered.
    * @property {MiniSearch | null} bm25      MiniSearch index over rows + API playlists.
+   * @property {Playlist[] | null} apiPlaylists  Account-scoped API snapshot used by this index.
+   * @property {string | null} apiAccountKey Account identity for apiPlaylists.
+   * @property {string | null} apiPendingAccountKey Account currently being fetched.
+   * @property {string} targetVideoId        Modal-owned video target; never guessed from unrelated links.
+   * @property {string[]} rowFingerprints    Row-content snapshot for recycled DOM detection.
    * @property {Element} root                Our injected filter-bar UI root.
    * @property {HTMLInputElement} input      The search input.
    * @property {HTMLButtonElement} clear     The clear (×) button.
@@ -52,6 +57,7 @@ import {
    * @property {Element[]} synthRows         API-only synthetic rows we injected.
    * @property {number} apiToken             Counter that invalidates late API responses on teardown.
    * @property {Element | null | undefined} scrollContainer  Cached scroll target (modal only).
+   * @property {((e: Event) => void) | null} modalClickGuard  Keep-dialog-open listener to remove on teardown.
    * @property {string} lastQuery            Previous query string (for empty→non-empty transitions).
    */
 
@@ -101,43 +107,71 @@ import {
     // After yt-navigate-finish, wait for YouTube to settle its SPA render
     // before re-running refresh(). Empirically 250ms covers /feed/* mounts.
     NAVIGATE_SETTLE_MS: 250,
-    // Synth-row error message visibility before reverting to the +/check icon.
-    SYNTH_ERROR_FADEOUT_MS: 2000,
     // How long to wait after attach before we conclude the filter bar / page
     // surface failed to mount and we should record a diagnostic.
     MOUNT_CHECK_DELAY_MS: 2500,
     // Cooldown between page-surface probes per pathname, so SPA navigations
-    // re-arm but mutation-driven refresh churn doesn't spam the ring.
+    // re-arm but mutation-driven refreshes don't spam the console.
     PAGE_SURFACE_PROBE_COOLDOWN_MS: 4000,
   };
 
-  // Self-only diagnostics: when an in-product invariant fails we console.warn
-  // it live and append a short entry to a bounded ring buffer in
-  // chrome.storage.local for later inspection. Nothing leaves the machine.
-  // To read the ring in the devtools console (from a youtube.com tab):
-  //   chrome.storage.local.get("ytpfDiagnostics", (v) => console.table(v.ytpfDiagnostics))
+  // Diagnostics are console-only. This key exists only to purge unsafe rings
+  // written by older releases.
   const DIAG_STORAGE_KEY = "ytpfDiagnostics";
-  const DIAG_RING_SIZE = 20;
   const DIAG_THROTTLE_MS = 30_000;
-  const DIAG_HTML_SNAPSHOT_MAX = 10_000;
 
-  let _innertubeConfig = null;
-  function getInnertubeConfig() {
-    if (_innertubeConfig) return _innertubeConfig;
-    for (const script of document.getElementsByTagName("script")) {
-      const text = script.textContent;
-      if (text.length > 500000 || !text.includes("INNERTUBE_API_KEY")) continue;
-      const keyMatch = text.match(/"INNERTUBE_API_KEY"\s*:\s*"([^"]+)"/);
-      const verMatch = text.match(/"INNERTUBE_CLIENT_VERSION"\s*:\s*"([^"]+)"/);
-      if (keyMatch) {
-        _innertubeConfig = {
-          apiKey: keyMatch[1],
-          clientVersion: verMatch?.[1] || INNERTUBE_CLIENT_VERSION_FALLBACK,
-        };
-        return _innertubeConfig;
-      }
+  function readLastConfigValue(text, key) {
+    const pattern = new RegExp(`"${key}"\\s*:\\s*(?:"([^"]*)"|(-?\\d+)|null)`, "g");
+    let value;
+    for (let match; (match = pattern.exec(text));) {
+      value = match[1] ?? match[2] ?? null;
     }
-    return { apiKey: INNERTUBE_API_KEY_FALLBACK, clientVersion: INNERTUBE_CLIENT_VERSION_FALLBACK };
+    return value;
+  }
+
+  let _innertubeConfigCache = null;
+  function getInnertubeConfig(force = false) {
+    if (!force && _innertubeConfigCache) return _innertubeConfigCache;
+    let apiKey;
+    let clientVersion;
+    let sessionIndex;
+    let delegatedSessionId;
+    let datasyncId;
+
+    // Navigation/page-data/config-script signals clear this cache. Authenticated
+    // operations force a rescan. Later ytcfg blocks win.
+    for (const script of document.getElementsByTagName("script")) {
+      const text = script.textContent || "";
+      if (text.length > 500000) continue;
+      const nextApiKey = readLastConfigValue(text, "INNERTUBE_API_KEY");
+      const nextClientVersion =
+        readLastConfigValue(text, "INNERTUBE_CLIENT_VERSION") ??
+        readLastConfigValue(text, "INNERTUBE_CONTEXT_CLIENT_VERSION");
+      const nextSessionIndex = readLastConfigValue(text, "SESSION_INDEX");
+      const nextDelegatedSessionId = readLastConfigValue(text, "DELEGATED_SESSION_ID");
+      const nextDatasyncId = readLastConfigValue(text, "DATASYNC_ID");
+      if (nextApiKey !== undefined) apiKey = nextApiKey;
+      if (nextClientVersion !== undefined) clientVersion = nextClientVersion;
+      if (nextSessionIndex !== undefined) sessionIndex = nextSessionIndex;
+      if (nextDelegatedSessionId !== undefined) delegatedSessionId = nextDelegatedSessionId;
+      if (nextDatasyncId !== undefined) datasyncId = nextDatasyncId;
+    }
+
+    const authUser = sessionIndex == null ? null : String(sessionIndex);
+    const pageId = delegatedSessionId || null;
+    const stableAccountId = pageId || datasyncId || null;
+    const accountKey = authUser == null || stableAccountId == null
+      ? null
+      : JSON.stringify([authUser, pageId || "", datasyncId || ""]);
+
+    _innertubeConfigCache = {
+      apiKey: apiKey || INNERTUBE_API_KEY_FALLBACK,
+      clientVersion: clientVersion || INNERTUBE_CLIENT_VERSION_FALLBACK,
+      authUser,
+      pageId,
+      accountKey,
+    };
+    return _innertubeConfigCache;
   }
 
   const BM25_SEARCH_OPTIONS = {
@@ -262,7 +296,16 @@ import {
 
   const MODAL_STYLES = `
     .ytpf-inline-modal {
-      padding: 6px 12px 4px;
+      /* The modal control is mounted before YouTube's list container, not as
+         another list item. Keep it in normal flow so it reserves its own row
+         instead of sharing the first playlist's grid slot. */
+      position: static;
+      top: auto;
+      z-index: auto;
+      box-sizing: border-box;
+      width: 100%;
+      flex: 0 0 auto;
+      padding: 6px 12px 8px;
       border-bottom-color: var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.08));
     }
     .ytpf-inline-modal .ytpf-row {
@@ -356,9 +399,10 @@ import {
      */
     .ytpf-page-filtering-rows {
       display: grid !important;
-      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)) !important;
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)) !important;
       gap: 16px !important;
       justify-items: stretch !important;
+      align-items: start !important;
     }
     .ytpf-page-filtering-rows > ytd-rich-grid-row,
     .ytpf-page-filtering-rows > ytd-rich-grid-row > #contents {
@@ -370,6 +414,14 @@ import {
       min-width: 0 !important;
       width: 100% !important;
       max-width: none !important;
+    }
+    .ytpf-page-filtering-rows #video-title,
+    .ytpf-page-filtering-rows .playlist-title,
+    .ytpf-page-filtering-rows .yt-lockup-metadata-view-model-wiz__title,
+    .ytpf-page-filtering-rows [class*='LockupMetadataViewModelTitle'] {
+      white-space: normal !important;
+      word-break: normal !important;
+      overflow-wrap: break-word !important;
     }
   `;
 
@@ -514,10 +566,10 @@ import {
   // Per-row state, keyed on the row element. Held weakly so GC reclaims when
   // YouTube tears down its DOM. Previously these were two separate WeakMaps
   // (textCache, hiddenRows); collapsed to reduce top-level surface.
-  // labelHtmlCache stays separate because it keys on LABEL elements, which
-  // have a different lifetime from rows (a row can swap its label).
-  const rowState = new WeakMap(); // row → { text?: string, hidden?: boolean }
-  const labelHtmlCache = new WeakMap();
+  // labelState keys on LABEL elements, which can have a different lifetime
+  // from their rows.
+  const rowState = new WeakMap(); // row → { text?: string, textFingerprint?: string, hidden?: boolean }
+  const labelState = new WeakMap(); // label → { html: string, text: string }
 
   function rowStateFor(row) {
     let s = rowState.get(row);
@@ -536,15 +588,21 @@ import {
   /** @type {Map<Element, Ctrl>} */
   const controllers = new Map();
   let _bodyObserver = null;
+  let _lifecycleObserver = null;
   let _themeObserver = null;
   let _onThemeMediaChange = null;
   let _onNavigateFinish = null;
   let _onPageDataUpdated = null;
-  const apiSessionCache = {
-    playlists: null,
-    fetchedAt: 0,
-    inFlight: null, // Promise<Playlist[]> | null — set while a fetch is mid-air
+  const _observedMutationRoots = new WeakSet();
+  const invalidatedModalSessions = new WeakSet();
+  const ROOT_MUTATION_OPTIONS = { childList: true, subtree: true };
+  const LIFECYCLE_MUTATION_OPTIONS = {
+    attributes: true,
+    attributeOldValue: true,
+    attributeFilter: ["hidden", "aria-hidden", "open", "opened", "style", "class"],
   };
+  // One independent cache per active Google account / delegated channel.
+  const apiSessionCaches = new Map();
 
   // Reconciler: one debounced channel for "re-evaluate hosts" intents.
   // All signal sources (MutationObserver, yt-navigate-finish,
@@ -595,6 +653,13 @@ import {
     }
   }
 
+  function observeMutationRoot(root) {
+    if (!_bodyObserver || !root || _observedMutationRoots.has(root)) return;
+    _observedMutationRoots.add(root);
+    _bodyObserver.observe(root, ROOT_MUTATION_OPTIONS);
+  }
+
+  /** @param {Document | Element | ShadowRoot} [root] */
   function queryAllDeep(selector, root = document) {
     const results = [];
     const seen = new Set();
@@ -608,6 +673,7 @@ import {
 
     function walk(nodeRoot) {
       if (!nodeRoot?.querySelectorAll) return;
+      if (nodeRoot instanceof ShadowRoot) observeMutationRoot(nodeRoot);
 
       nodeRoot.querySelectorAll(selector).forEach(addResult);
 
@@ -696,12 +762,7 @@ import {
 
   function syncFilterThemeClasses() {
     const dark = isYouTubeDarkTheme();
-    for (const ctrl of controllers.values()) {
-      setFilterThemeClass(ctrl.root, dark);
-    }
-    queryAllDeep(`.${FILTER_CLASS}`).forEach((inline) => {
-      inline.classList.toggle(DARK_THEME_CLASS, dark);
-    });
+    for (const ctrl of controllers.values()) setFilterThemeClass(ctrl.root, dark);
   }
 
   function startThemeObserver() {
@@ -733,11 +794,13 @@ import {
   }
 
   function enqueueReconcile(reason, debounceMs = TIMINGS.RECONCILE_DEBOUNCE_MS) {
-    // Mutation-driven enqueues respect the suppression window. Other reasons
-    // (navigate, page-data) are user-intent signals — bypass.
-    if (reason === "mutation" && nowMs() < reconciler.pauseUntil) return;
-
-    const fireAt = nowMs() + debounceMs;
+    // Never drop a real YouTube mutation. During our own paint window, defer
+    // one trailing reconciliation until the window closes.
+    const now = nowMs();
+    const delay = reason === "mutation"
+      ? Math.max(debounceMs, reconciler.pauseUntil - now)
+      : debounceMs;
+    const fireAt = now + Math.max(0, delay);
     if (reconciler.flushTimer && reconciler.scheduledAt >= fireAt) {
       // A longer-or-equal-wait flush is already pending — let it ride.
       // Critical for the navigate signal: yt-navigate-finish enqueues a
@@ -757,7 +820,7 @@ import {
       reconciler.scheduledAt = 0;
       reconciler.pendingReason = null;
       refresh();
-    }, debounceMs);
+    }, Math.max(0, fireAt - nowMs()));
   }
 
   function normalizeText(value) {
@@ -776,15 +839,8 @@ import {
   }
 
   function closestComposed(node, selector) {
-    let cur = node;
-    while (cur) {
-      if (cur.matches?.(selector)) return cur;
-      if (cur.parentElement) {
-        cur = cur.parentElement;
-        continue;
-      }
-      const root = cur.getRootNode?.();
-      cur = root instanceof ShadowRoot ? root.host : null;
+    for (let current = node; current; current = composedParent(current)) {
+      if (current.matches?.(selector)) return current;
     }
     return null;
   }
@@ -811,16 +867,27 @@ import {
 
     if (Array.isArray(apiPlaylists) && apiPlaylists.length) {
       const domIds = new Set();
+      const anonymousTitleCounts = new Map();
       rows.forEach((row) => {
         const id = getRowPlaylistId(row);
-        if (id) domIds.add(id);
+        if (id) {
+          domIds.add(id);
+          return;
+        }
+        const title = getItemText(row);
+        if (title) anonymousTitleCounts.set(title, (anonymousTitleCounts.get(title) || 0) + 1);
       });
-      // Only dedup by playlist ID, never by title. Title-based dedup caused
-      // exact-match playlists (e.g. "Favorites") to be silently excluded
-      // when a DOM row shared the same normalized text.
+
       apiPlaylists.forEach((pl) => {
         if (domIds.has(pl.id)) return;
         const t = normalizeText(pl.title || "");
+        const anonymousMatches = anonymousTitleCounts.get(t) || 0;
+        if (t && anonymousMatches > 0) {
+          // ponytail: ID-less view-model rows can only be reconciled by stable
+          // title order; replace this with IDs if YouTube exposes them again.
+          anonymousTitleCounts.set(t, anonymousMatches - 1);
+          return;
+        }
         docs.push({
           id: `api:${pl.id}`,
           text: t,
@@ -834,9 +901,9 @@ import {
     return index;
   }
 
-  function buildApiPlaylistMap() {
+  function buildApiPlaylistMap(playlists) {
     const map = new Map();
-    (apiSessionCache.playlists || []).forEach((pl) => map.set(pl.id, pl));
+    (playlists || []).forEach((pl) => map.set(pl.id, pl));
     return map;
   }
 
@@ -860,7 +927,7 @@ import {
     const results = ctrl.bm25.search(query, BM25_SEARCH_OPTIONS);
     const matches = [];
     const seen = new Set();
-    const apiMap = buildApiPlaylistMap();
+    const apiMap = buildApiPlaylistMap(ctrl.apiPlaylists);
 
     results.forEach((result) => {
       const key = `${result.source}:${result.ref}`;
@@ -881,7 +948,7 @@ import {
       } else {
         const playlist = apiMap.get(result.ref);
         if (!playlist) {
-          console.warn("[ytpf] BM25 ref api:%s not in playlist cache", result.ref);
+          console.warn("[ytpf] BM25 API ref was not present in the account snapshot");
           return;
         }
         matches.push({ source: "api", playlist, score: Number(result.score) || 0, terms });
@@ -899,6 +966,40 @@ import {
     return true;
   }
 
+  function fingerprintRows(rows) {
+    return rows.map((row) => getRowTextFingerprint(row, getRawItemText(row)));
+  }
+
+  function sameValues(a, b) {
+    return a.length === b.length && a.every((value, i) => value === b[i]);
+  }
+
+  function composedParent(node) {
+    if (node?.parentElement) return node.parentElement;
+    const root = node?.getRootNode?.();
+    return root instanceof ShadowRoot ? root.host : null;
+  }
+
+  function composedContains(ancestor, node) {
+    for (let current = node; current; current = composedParent(current)) {
+      if (current === ancestor) return true;
+    }
+    return false;
+  }
+
+  function refreshLifecycleObservation(hosts) {
+    if (!_lifecycleObserver) return;
+    _lifecycleObserver.disconnect();
+    const seen = new Set();
+    for (const host of hosts) {
+      for (let node = host; node && node !== document.body; node = composedParent(node)) {
+        if (seen.has(node)) continue;
+        seen.add(node);
+        _lifecycleObserver.observe(node, LIFECYCLE_MUTATION_OPTIONS);
+      }
+    }
+  }
+
   function isOurUiNode(node) {
     if (!(node instanceof Element)) return false;
     if (node.id === STYLE_ID) return true;
@@ -909,31 +1010,78 @@ import {
     return false;
   }
 
+  function nativeModalRowForEvent(event, ctrl) {
+    const path = typeof event.composedPath === "function" ? event.composedPath() : [event.target];
+    const trackedRows = new Set(ctrl.rows);
+    for (const node of path) {
+      if (!(node instanceof Element)) continue;
+      if (!trackedRows.has(node) && !node.matches(MODAL_ROW_SELECTOR)) continue;
+      if (isOurUiNode(node) || node.classList.contains("ytpf-synth-row")) return null;
+      return node;
+    }
+    return null;
+  }
+
   function nodeTouchesRelevantSurface(node) {
     if (!(node instanceof Element)) return false;
     if (isOurUiNode(node)) return false;
 
+    for (const host of controllers.keys()) {
+      if (composedContains(host, node)) return true;
+    }
+
     if (node.matches(MODAL_RELEVANT_SELECTOR)) return true;
-    if (node.querySelector(MODAL_RELEVANT_SELECTOR)) return true;
-    if (node.closest(MODAL_HOST_SELECTOR)) return true;
+    if (hasDeepMatch(node, MODAL_RELEVANT_SELECTOR)) return true;
+    if (closestComposed(node, MODAL_HOST_SELECTOR)) return true;
 
     if (!isPlaylistsFeedPage()) return false;
     if (node.matches(PAGE_RELEVANT_SELECTOR)) return true;
-    if (node.querySelector(PAGE_RELEVANT_SELECTOR)) return true;
-    if (node.closest(PLAYLISTS_GRID_SELECTOR)) return true;
+    if (hasDeepMatch(node, PAGE_RELEVANT_SELECTOR)) return true;
+    if (closestComposed(node, PLAYLISTS_GRID_SELECTOR)) return true;
     return false;
   }
 
+  function mutationElement(node) {
+    if (node instanceof Element) return node;
+    if (node instanceof ShadowRoot) return node.host;
+    return node?.parentElement || null;
+  }
+
+  function lifecycleMutationInvalidates(mutation) {
+    if (mutation.type !== "attributes") return false;
+    const target = mutationElement(mutation.target);
+    if (!target) return false;
+    const name = mutation.attributeName;
+    const lifecycleAttribute = ["hidden", "aria-hidden", "open", "opened"].includes(name);
+    const looksHidden = (value) => /display\s*:\s*none|visibility\s*:\s*hidden/i.test(value || "");
+    const hiddenStyleChanged = name === "style" &&
+      looksHidden(mutation.oldValue) !== looksHidden(target.getAttribute("style"));
+    const oldClasses = new Set((mutation.oldValue || "").split(/\s+/).filter(Boolean));
+    const newClasses = new Set((target.getAttribute("class") || "").split(/\s+/).filter(Boolean));
+    const lifecycleClassChanged = name === "class" &&
+      ["iron-overlay-opened", "opening", "closing", "hidden"].some(
+        (token) => oldClasses.has(token) !== newClasses.has(token),
+      );
+    if (!lifecycleAttribute && !hiddenStyleChanged && !lifecycleClassChanged) return false;
+
+    let invalidated = false;
+    for (const [host, ctrl] of controllers) {
+      if (ctrl.surface === "modal" && composedContains(target, host)) {
+        invalidatedModalSessions.add(host);
+        invalidated = true;
+      }
+    }
+    return invalidated;
+  }
+
   function shouldRefreshFromMutations(mutations) {
-    // Suppression is now checked inside enqueueReconcile(reason="mutation"),
-    // not here — this filter is purely "is the mutation relevant?".
     for (const mutation of mutations) {
-      if (nodeTouchesRelevantSurface(mutation.target)) return true;
+      if (nodeTouchesRelevantSurface(mutationElement(mutation.target))) return true;
       for (const node of mutation.addedNodes) {
-        if (nodeTouchesRelevantSurface(node)) return true;
+        if (nodeTouchesRelevantSurface(mutationElement(node))) return true;
       }
       for (const node of mutation.removedNodes) {
-        if (nodeTouchesRelevantSurface(node)) return true;
+        if (nodeTouchesRelevantSurface(mutationElement(node))) return true;
       }
     }
     return false;
@@ -941,7 +1089,7 @@ import {
 
   function isVisible(el) {
     if (!el || !el.isConnected) return false;
-    if (el.closest("[hidden], [aria-hidden='true']")) return false;
+    if (closestComposed(el, "[hidden], [aria-hidden='true']")) return false;
 
     const style = window.getComputedStyle(el);
     if (style.display === "none" || style.visibility === "hidden") return false;
@@ -956,30 +1104,44 @@ import {
     return false;
   }
 
-  function getItemText(row) {
-    const s = rowStateFor(row);
-    if (typeof s.text === "string") return s.text;
-
+  function getRawItemText(row) {
     // Polymer-data branch — see extractTitleFromPolymerData in dom-parse.js
     // for the full list of shapes we know about. When YouTube ships a new
     // title shape, that's the function to update + add a test for.
     const dataTitle = extractTitleFromPolymerData(row.data || row.__data);
-    if (dataTitle) {
-      const text = normalizeText(dataTitle);
-      s.text = text;
-      return text;
-    }
+    if (dataTitle) return dataTitle;
 
     const label = row.querySelector(ITEM_TEXT_SELECTOR);
-    const rawText = (
+    return (
       label?.textContent ||
       row.getAttribute("aria-label") ||
       row.getAttribute("title") ||
       ""
     );
-    const text = normalizeText(rawText);
+  }
 
+  function getRowTextFingerprint(row, rawText) {
+    // YouTube reuses save-sheet row elements across opens. A WeakMap keyed by
+    // row alone can therefore pair an old title/highlight with a new thumbnail
+    // and click target. Fold every cheap row identity signal into the cache
+    // key so recycled rows self-invalidate before we read or restore labels.
+    return [
+      getRowPlaylistId(row) || "",
+      rawText || "",
+      row.getAttribute?.("aria-label") || "",
+      row.getAttribute?.("title") || "",
+    ].join("\n");
+  }
+
+  function getItemText(row) {
+    const rawText = getRawItemText(row);
+    const fingerprint = getRowTextFingerprint(row, rawText);
+    const s = rowStateFor(row);
+    if (typeof s.text === "string" && s.textFingerprint === fingerprint) return s.text;
+
+    const text = normalizeText(rawText);
     s.text = text;
+    s.textFingerprint = fingerprint;
     return text;
   }
 
@@ -1043,8 +1205,9 @@ import {
   }
 
   function ensureOriginalLabelHtml(label) {
-    if (!labelHtmlCache.has(label)) {
-      labelHtmlCache.set(label, label.innerHTML);
+    const currentText = label.textContent || "";
+    if (labelState.get(label)?.text !== currentText) {
+      labelState.set(label, { html: label.innerHTML, text: currentText });
     }
   }
 
@@ -1052,11 +1215,16 @@ import {
     row.classList.remove(ROW_MATCH_CLASS);
     const label = getLabelElement(row);
     if (!label) return;
-    const original = labelHtmlCache.get(label);
-    if (original === undefined) return;
-    if (label.innerHTML !== original) {
-      label.innerHTML = original;
+    const original = labelState.get(label);
+    if (!original) return;
+
+    // Never restore HTML from a playlist that previously used this label node.
+    if ((label.textContent || "") !== original.text) {
+      labelState.delete(label);
+      return;
     }
+
+    if (label.innerHTML !== original.html) label.innerHTML = original.html;
   }
 
   function getHighlightRanges(rawText, terms) {
@@ -1109,11 +1277,9 @@ import {
 
     ensureOriginalLabelHtml(label);
 
-    // Restore first so we work from clean DOM each time
-    const original = labelHtmlCache.get(label);
-    if (original !== undefined && label.innerHTML !== original) {
-      label.innerHTML = original;
-    }
+    // Restore first so we work from clean DOM each time.
+    const original = labelState.get(label)?.html;
+    if (original !== undefined && label.innerHTML !== original) label.innerHTML = original;
 
     const textNodes = getTextNodes(label);
     if (!textNodes.length) return;
@@ -1138,8 +1304,8 @@ import {
   }
 
   function findLikelyRow(checkbox, host) {
-    const explicit = checkbox.closest(MODAL_ROW_SELECTOR);
-    if (explicit && host.contains(explicit)) return explicit;
+    const explicit = closestComposed(checkbox, MODAL_ROW_SELECTOR);
+    if (explicit && composedContains(host, explicit)) return explicit;
 
     let node = checkbox;
     for (let depth = 0; depth < 10 && node; depth += 1) {
@@ -1169,7 +1335,7 @@ import {
     // hideRow() actually collapses the visible row instead of leaving an empty
     // shell behind.
     const dropNested = (rows) =>
-      rows.filter((row) => !rows.some((other) => other !== row && other.contains(row)));
+      rows.filter((row) => !rows.some((other) => other !== row && composedContains(other, row)));
 
     const directRows = dropNested(unique(queryAllDeep(MODAL_ROW_SELECTOR, host))).filter(
       (row) =>
@@ -1227,8 +1393,8 @@ import {
   function toOuterPlaylistRow(node, contents) {
     if (!node || !contents) return null;
     const outer = closestComposed(node, PLAYLISTS_OUTER_ROW_SELECTOR);
-    if (outer && contents.contains(outer)) return outer;
-    if (node.matches?.(PLAYLISTS_OUTER_ROW_SELECTOR) && contents.contains(node)) {
+    if (outer && composedContains(contents, outer)) return outer;
+    if (node.matches?.(PLAYLISTS_OUTER_ROW_SELECTOR) && composedContains(contents, node)) {
       return node;
     }
     return null;
@@ -1351,8 +1517,27 @@ import {
     }
 
     if (surface === "modal" && rows[0]?.parentElement) {
+      const rowParent = rows[0].parentElement;
+      const listContainer = closestComposed(
+        rows[0],
+        "#playlists, #contents, yt-checkbox-list-renderer, yt-list-view-model, [role='listbox']",
+      );
+
+      // Modern Save sheets lay playlist rows in a grid. Injecting our section
+      // as the grid's first child can place it in the same visual slot as the
+      // first playlist (search/title/thumbnail overlap). Mount immediately
+      // before the list instead, so the sheet's normal block/flex flow reserves
+      // a dedicated row. Retain the old insertion point for legacy hosts where
+      // there is no distinct list wrapper.
+      if (listContainer?.parentElement && listContainer !== host) {
+        return {
+          parent: listContainer.parentElement,
+          before: listContainer,
+        };
+      }
+
       return {
-        parent: rows[0].parentElement,
+        parent: rowParent,
         before: rows[0],
       };
     }
@@ -1502,6 +1687,9 @@ import {
       "auxclick",
       "contextmenu",
       "tap",
+      "keydown",
+      "keyup",
+      "keypress",
       "focus",
       "focusin",
     ].forEach((type) => {
@@ -1534,32 +1722,36 @@ import {
     return `SAPISIDHASH ${timestamp}_${hash}`;
   }
 
-  async function innertubeRequest(endpoint, body) {
+  async function innertubeRequest(endpoint, body, session = getInnertubeConfig()) {
     const auth = await getSapisidHash();
     if (!auth) {
       recordDiagnostic("innertube_no_sapisid", { endpoint });
       throw new Error("Not signed in to YouTube");
     }
+    if (!session.accountKey || session.authUser == null) {
+      throw new Error("Could not determine the active YouTube account");
+    }
 
-    const { apiKey, clientVersion } = getInnertubeConfig();
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: auth,
+      "X-Goog-AuthUser": session.authUser,
+      "X-Origin": "https://www.youtube.com",
+    };
+    if (session.pageId) headers["X-Goog-PageId"] = session.pageId;
 
     let response;
     try {
       response = await fetch(
-        `https://www.youtube.com/youtubei/v1/${endpoint}?key=${apiKey}&prettyPrint=false`,
+        `https://www.youtube.com/youtubei/v1/${endpoint}?key=${session.apiKey}&prettyPrint=false`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: auth,
-            "X-Goog-AuthUser": "0",
-            "X-Origin": "https://www.youtube.com",
-          },
+          headers,
           body: JSON.stringify({
             context: {
               client: {
                 clientName: "WEB",
-                clientVersion,
+                clientVersion: session.clientVersion,
                 hl: document.documentElement.lang || "en",
               },
             },
@@ -1568,12 +1760,7 @@ import {
         },
       );
     } catch (err) {
-      // Network-level failure (offline, DNS, CORS shim, etc.). Distinct from
-      // HTTP-level failure handled below.
-      recordDiagnostic("innertube_network_error", {
-        endpoint,
-        message: String(err?.message || err).slice(0, 200),
-      });
+      recordDiagnostic("innertube_network_error", { endpoint });
       throw err;
     }
 
@@ -1593,11 +1780,8 @@ import {
 
   // parsePlaylistRenderers + rendererTitle now live in src/lib/innertube-parse.js
   // as pure functions (JSON in, normalized {id,title,itemCount}[] out). This
-  // wrapper threads the shape-canary callback into recordDiagnostic so any new
-  // renderer YouTube ships surfaces in chrome.storage.local.ytpfDiagnostics
-  // the FIRST time it appears in the wild — even on mid-rollouts where SOME
-  // items still parse via known shapes. That's the 1.6.9 regression class the
-  // canary's "fire on unknown keys" trigger is sized to catch.
+  // wrapper sends shape-only canary details to the local console; it never
+  // persists playlist data.
   //
   // The diagnostic invariant key encodes the sorted unknown-keys so distinct
   // migrations get their own throttled entries instead of one suppressing
@@ -1618,13 +1802,13 @@ import {
     });
   }
 
-  async function innertubeLoadPlaylists() {
+  async function innertubeLoadPlaylists(session) {
     const byId = new Map();
     let token = null;
 
     let data = await innertubeRequest("browse", {
       browseId: "FEplaylist_aggregation",
-    });
+    }, session);
 
     for (let page = 0; page < 50; page += 1) {
       const { playlists, continuation } = parsePlaylistRenderers(data);
@@ -1633,53 +1817,103 @@ import {
       }
       token = continuation;
       if (!token) break;
-      data = await innertubeRequest("browse", { continuation: token });
+      data = await innertubeRequest("browse", { continuation: token }, session);
     }
 
     return [...byId.values()];
   }
 
-  async function innertubeSaveVideo(playlistId, videoId) {
+  async function innertubeSaveVideo(playlistId, videoId, session) {
     const data = await innertubeRequest("browse/edit_playlist", {
       playlistId,
       actions: [{ action: "ACTION_ADD_VIDEO", addedVideoId: videoId }],
-    });
+    }, session);
     if (data?.status !== "STATUS_SUCCEEDED") {
       throw new Error("Failed to save video to playlist");
     }
     return data;
   }
 
+  const VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
+  const validVideoId = (value) => VIDEO_ID_RE.test(String(value || "")) ? String(value) : "";
+
   function getCurrentVideoId(host) {
-    const fromWatch = new URLSearchParams(window.location.search).get("v");
-    if (fromWatch) return fromWatch;
+    const data = host?.data || host?.__data;
+    const fromModal = validVideoId(data?.videoId || data?.data?.videoId);
+    if (fromModal) return fromModal;
 
-    const shortsMatch = window.location.pathname.match(/^\/shorts\/([a-zA-Z0-9_-]{6,})/);
-    if (shortsMatch?.[1]) return shortsMatch[1];
-
-    const watchFlexy = document.querySelector("ytd-watch-flexy[video-id]");
-    const fromWatchFlexy = watchFlexy?.getAttribute("video-id");
-    if (fromWatchFlexy) return fromWatchFlexy;
-
-    const fromHost = host?.querySelector?.("[video-id]")?.getAttribute?.("video-id");
-    if (fromHost) return fromHost;
-
-    const watchLink = host?.querySelector?.("a[href*='/watch?v=']") ||
-      document.querySelector("a[href*='/watch?v=']");
-    if (watchLink?.href) {
-      try {
-        const parsed = new URL(watchLink.href, window.location.origin);
-        const value = parsed.searchParams.get("v");
-        if (value) return value;
-      } catch {
-        // ignore malformed links
-      }
+    if (window.location.pathname === "/watch") {
+      const fromUrl = validVideoId(new URLSearchParams(window.location.search).get("v"));
+      if (fromUrl) return fromUrl;
+      return validVideoId(
+        document.querySelector("ytd-watch-flexy[video-id]")?.getAttribute("video-id"),
+      );
     }
 
-    return "";
+    const shortsMatch = window.location.pathname.match(/^\/shorts\/([A-Za-z0-9_-]{11})(?:\/|$)/);
+    return shortsMatch?.[1] || "";
   }
 
+  // accountKey -> videoId -> playlistId -> shared operation
+  const synthSaveOperations = new Map();
 
+  function getSynthSaveOperation(accountKey, videoId, playlistId) {
+    return synthSaveOperations.get(accountKey)?.get(videoId)?.get(playlistId) || null;
+  }
+
+  function beginSynthSave(accountKey, videoId, playlistId, save) {
+    let byVideo = synthSaveOperations.get(accountKey);
+    if (!byVideo) synthSaveOperations.set(accountKey, byVideo = new Map());
+    let byPlaylist = byVideo.get(videoId);
+    if (!byPlaylist) byVideo.set(videoId, byPlaylist = new Map());
+    const existing = byPlaylist.get(playlistId);
+    if (existing) return existing;
+
+    const removeOperation = () => {
+      if (byPlaylist.get(playlistId) === operation) byPlaylist.delete(playlistId);
+      if (!byPlaylist.size) byVideo.delete(videoId);
+      if (!byVideo.size) synthSaveOperations.delete(accountKey);
+    };
+    const operation = { status: "pending", promise: Promise.resolve() };
+    byPlaylist.set(playlistId, operation);
+    try {
+      operation.promise = Promise.resolve(save()).then(() => {
+        operation.status = "done";
+        const hasLiveOwner = [...controllers.values()].some(
+          (ctrl) => ctrl.apiAccountKey === accountKey && ctrl.targetVideoId === videoId,
+        );
+        if (!hasLiveOwner) removeOperation();
+      }, (error) => {
+        removeOperation();
+        throw error;
+      });
+    } catch (error) {
+      removeOperation();
+      operation.promise = Promise.reject(error);
+    }
+    return operation;
+  }
+
+  function paintSynthAction(action, operation) {
+    const pending = operation?.status === "pending";
+    const done = operation?.status === "done";
+    action.disabled = Boolean(pending || done);
+    action.classList.toggle(SYNTH_DONE_CLASS, Boolean(done));
+    action.innerHTML = done ? ICON_CHECK : ICON_PLUS;
+    if (pending) action.setAttribute("aria-busy", "true");
+    else action.removeAttribute("aria-busy");
+  }
+
+  function clearCompletedSynthOperations(ctrl) {
+    const byVideo = synthSaveOperations.get(ctrl.apiAccountKey);
+    const byPlaylist = byVideo?.get(ctrl.targetVideoId);
+    if (!byPlaylist) return;
+    for (const [playlistId, operation] of byPlaylist) {
+      if (operation.status === "done") byPlaylist.delete(playlistId);
+    }
+    if (!byPlaylist.size) byVideo.delete(ctrl.targetVideoId);
+    if (!byVideo.size) synthSaveOperations.delete(ctrl.apiAccountKey);
+  }
 
   function clearSynthRows(ctrl) {
     ctrl.synthRows.forEach((el) => el.remove());
@@ -1693,10 +1927,7 @@ import {
 
     if (!query || !apiMatches.length) return;
     if (!ctrl.parent?.isConnected) {
-      recordDiagnostic("synth_parent_disconnected", {
-        apiMatches: apiMatches.length,
-        query,
-      });
+      recordDiagnostic("synth_parent_disconnected", { apiMatches: apiMatches.length });
       return;
     }
 
@@ -1714,7 +1945,6 @@ import {
         const action = document.createElement("button");
         action.type = "button";
         action.className = "ytpf-synth-action";
-        action.innerHTML = ICON_PLUS;
         action.setAttribute("aria-label", `Save video to ${label}`);
 
         const title = document.createElement("span");
@@ -1727,35 +1957,51 @@ import {
         };
         paintTitle();
 
+        const videoId = ctrl.targetVideoId || getCurrentVideoId(ctrl.host);
+        if (videoId && !ctrl.targetVideoId) ctrl.targetVideoId = videoId;
+        let operation = ctrl.apiAccountKey && videoId
+          ? getSynthSaveOperation(ctrl.apiAccountKey, videoId, playlist.id)
+          : null;
+        paintSynthAction(action, operation);
+        if (!videoId || !ctrl.apiAccountKey) action.disabled = true;
+
+        const repaint = () => {
+          if (action.isConnected) paintSynthAction(action, operation);
+        };
+        if (operation?.status === "pending") {
+          operation.promise.then(repaint, () => {
+            operation = null;
+            repaint();
+          });
+        }
+
         const handleSave = () => {
-          const videoId = getCurrentVideoId(ctrl.host);
-          if (!videoId) {
-            console.warn("[ytpf] Could not determine video ID for save action");
-            action.innerHTML = ICON_PLUS;
-            title.style.color = "var(--yt-spec-text-secondary, #aaa)";
-            title.textContent = "Could not find video ID";
-            setTimeout(() => {
-              title.style.color = "";
-              paintTitle();
-            }, TIMINGS.SYNTH_ERROR_FADEOUT_MS);
+          const session = getInnertubeConfig(true);
+          const targetVideoId = ctrl.targetVideoId || getCurrentVideoId(ctrl.host);
+          if (!targetVideoId || !ctrl.apiAccountKey || session.accountKey !== ctrl.apiAccountKey) {
+            console.warn("[ytpf] Refusing synthetic save with stale account or video identity");
+            bootstrapModalApi(ctrl);
             return;
           }
 
+          ctrl.targetVideoId = targetVideoId;
           suppressMutations(TIMINGS.SUPPRESS_MUTATIONS_AFTER_UI_OP_MS);
-          action.disabled = true;
-          innertubeSaveVideo(playlist.id, videoId)
-            .then(() => {
-              suppressMutations(TIMINGS.SUPPRESS_MUTATIONS_AFTER_UI_OP_MS);
-              action.disabled = false;
-              action.innerHTML = ICON_CHECK;
-              action.classList.add(SYNTH_DONE_CLASS);
-            })
-            .catch((err) => {
-              console.warn("[ytpf] Save to playlist failed:", err);
-              suppressMutations(TIMINGS.SUPPRESS_MUTATIONS_AFTER_UI_OP_MS);
-              action.disabled = false;
-              action.innerHTML = ICON_PLUS;
-            });
+          operation = beginSynthSave(
+            ctrl.apiAccountKey,
+            targetVideoId,
+            playlist.id,
+            () => innertubeSaveVideo(playlist.id, targetVideoId, session),
+          );
+          paintSynthAction(action, operation);
+          operation.promise.then(() => {
+            suppressMutations(TIMINGS.SUPPRESS_MUTATIONS_AFTER_UI_OP_MS);
+            repaint();
+          }).catch((err) => {
+            console.warn("[ytpf] Save to playlist failed:", err);
+            suppressMutations(TIMINGS.SUPPRESS_MUTATIONS_AFTER_UI_OP_MS);
+            operation = null;
+            repaint();
+          });
         };
 
         row.setAttribute("role", "button");
@@ -1779,60 +2025,78 @@ import {
         ctrl.parent.appendChild(row);
         ctrl.synthRows.push(row);
       } catch (err) {
-        console.warn("[ytpf] synth row failed", match?.playlist?.id, err);
+        console.warn("[ytpf] synth row failed", err);
       }
     });
 
     if (limited.length > 0 && ctrl.synthRows.length === 0) {
-      recordDiagnostic("synth_rows_none_rendered", {
-        attempted: limited.length,
-        query,
-      });
+      recordDiagnostic("synth_rows_none_rendered", { attempted: limited.length });
     }
   }
 
-  async function loadAllPlaylists() {
+  function trimApiCaches(keepKey) {
     const now = Date.now();
-    if (
-      apiSessionCache.playlists &&
-      now - apiSessionCache.fetchedAt < PLAYLIST_CACHE_TTL_MS
-    ) {
-      return apiSessionCache.playlists;
-    }
-    // Promise-singleton: if a fetch is already mid-air, join it instead of
-    // kicking off a duplicate 50-page InnerTube walk. Two simultaneous modal
-    // hosts (or a modal-open during page-load) used to double-fetch.
-    if (apiSessionCache.inFlight) {
-      return apiSessionCache.inFlight;
-    }
-    const promise = (async () => {
-      try {
-        const playlists = await innertubeLoadPlaylists();
-        apiSessionCache.playlists = playlists;
-        apiSessionCache.fetchedAt = Date.now();
-        return playlists;
-      } finally {
-        apiSessionCache.inFlight = null;
+    for (const [key, cache] of apiSessionCaches) {
+      if (
+        key !== keepKey &&
+        !cache.inFlight &&
+        (apiSessionCaches.size > 2 || (cache.fetchedAt && now - cache.fetchedAt >= PLAYLIST_CACHE_TTL_MS))
+      ) {
+        apiSessionCaches.delete(key);
       }
-    })();
-    apiSessionCache.inFlight = promise;
+    }
+  }
+
+  async function loadAllPlaylists(session) {
+    if (!session.accountKey) throw new Error("Could not determine the active YouTube account");
+    let cache = apiSessionCaches.get(session.accountKey);
+    if (!cache) {
+      cache = { playlists: null, fetchedAt: 0, inFlight: null };
+      apiSessionCaches.set(session.accountKey, cache);
+      trimApiCaches(session.accountKey);
+    }
+
+    const now = Date.now();
+    if (cache.playlists !== null && now - cache.fetchedAt < PLAYLIST_CACHE_TTL_MS) return cache.playlists;
+    if (cache.inFlight) return cache.inFlight;
+
+    const promise = innertubeLoadPlaylists(session).then((playlists) => {
+      cache.playlists = playlists;
+      cache.fetchedAt = Date.now();
+      return playlists;
+    }).finally(() => {
+      if (cache.inFlight === promise) cache.inFlight = null;
+      trimApiCaches(session.accountKey);
+    });
+    cache.inFlight = promise;
     return promise;
   }
 
   async function bootstrapModalApi(ctrl) {
-    if (ctrl.surface !== "modal") return;
-    if (!isLoggedIn()) return;
+    if (ctrl.surface !== "modal" || !isLoggedIn()) return;
+    const session = getInnertubeConfig(true);
+    if (!session.accountKey || ctrl.apiPendingAccountKey === session.accountKey) return;
     const token = (ctrl.apiToken || 0) + 1;
     ctrl.apiToken = token;
+    ctrl.apiPendingAccountKey = session.accountKey;
 
     try {
-      await loadAllPlaylists();
-    } catch (err) {
-      console.warn("[ytpf] Playlist fetch failed:", err);
-    } finally {
-      if (ctrl.apiToken === token) {
-        ctrl.bm25 = createUnifiedIndex(ctrl.rows, apiSessionCache.playlists);
+      const playlists = await loadAllPlaylists(session);
+      if (
+        ctrl.apiToken === token &&
+        controllers.get(ctrl.host) === ctrl &&
+        getInnertubeConfig(true).accountKey === session.accountKey
+      ) {
+        ctrl.apiPlaylists = playlists;
+        ctrl.apiAccountKey = session.accountKey;
+        ctrl.bm25 = createUnifiedIndex(ctrl.rows, playlists);
         applyFilter(ctrl);
+      }
+    } catch (err) {
+      if (ctrl.apiToken === token) console.warn("[ytpf] Playlist fetch failed:", err);
+    } finally {
+      if (ctrl.apiToken === token && ctrl.apiPendingAccountKey === session.accountKey) {
+        ctrl.apiPendingAccountKey = null;
       }
     }
   }
@@ -1842,7 +2106,7 @@ import {
     const candidates = [];
 
     function add(node) {
-      if (node instanceof Element && ctrl.host.contains(node) && !seen.has(node)) {
+      if (node instanceof Element && composedContains(ctrl.host, node) && !seen.has(node)) {
         seen.add(node);
         candidates.push(node);
       }
@@ -1850,7 +2114,7 @@ import {
 
     add(ctrl.rows[0]?.parentElement);
     add(ctrl.rows[0]);
-    for (const el of ctrl.host.querySelectorAll("#playlists, #contents, [role='listbox'], yt-checkbox-list-renderer")) {
+    for (const el of queryAllDeep("#playlists, #contents, [role='listbox'], yt-checkbox-list-renderer, yt-list-view-model", ctrl.host)) {
       add(el);
     }
     add(ctrl.host);
@@ -1875,7 +2139,7 @@ import {
         }
         if (pastHost && ++stepsAboveHost > ABOVE_HOST_LIMIT) break;
         if (node === ctrl.host) pastHost = true;
-        node = node.parentElement;
+        node = composedParent(node);
       }
     }
 
@@ -1888,6 +2152,7 @@ import {
 
     ctrl.apiToken = (ctrl.apiToken || 0) + 1;
     clearSynthRows(ctrl);
+    clearCompletedSynthOperations(ctrl);
 
     ctrl.rows.forEach((row) => {
       showRow(row);
@@ -1895,25 +2160,18 @@ import {
     });
     if (ctrl.surface === "modal") {
       ctrl.host.classList.remove(MODAL_EXPANDED_CLASS);
+      if (ctrl.modalClickGuard) {
+        ctrl.host.removeEventListener("click", ctrl.modalClickGuard);
+      }
     }
     ctrl.root.remove();
 
     controllers.delete(host);
+    _filterBarMountChecked.delete(host);
 
-    if (controllers.size === 0) {
-      if (_bodyObserver) {
-        _bodyObserver.disconnect();
-        _bodyObserver = null;
-      }
-      if (_onNavigateFinish) {
-        window.removeEventListener("yt-navigate-finish", _onNavigateFinish);
-        _onNavigateFinish = null;
-      }
-      if (_onPageDataUpdated) {
-        window.removeEventListener("yt-page-data-updated", _onPageDataUpdated);
-        _onPageDataUpdated = null;
-      }
-    }
+    // Keep the global observers alive even when the last current controller is
+    // gone. YouTube modals are transient; disconnecting here would make the
+    // extension miss the next Save-to-playlist open in the same tab.
   }
 
   function applyFilter(ctrl) {
@@ -1921,8 +2179,14 @@ import {
     const isModal = ctrl.surface === "modal";
 
     if (isModal && ctrl.host?.isConnected) {
-      const freshRows = collectRows(ctrl.host);
-      if (freshRows.length > ctrl.rows.length) {
+      const freshRows = collectRows(ctrl.host).filter(
+        (row) => closestComposed(row, MODAL_HOST_SELECTOR) === ctrl.host,
+      );
+      const fingerprints = fingerprintRows(freshRows);
+      if (
+        freshRows.length &&
+        (!sameRows(freshRows, ctrl.rows) || !sameValues(fingerprints, ctrl.rowFingerprints))
+      ) {
         const nextSet = new Set(freshRows);
         ctrl.rows.forEach((row) => {
           if (!nextSet.has(row)) {
@@ -1931,8 +2195,10 @@ import {
           }
         });
         ctrl.rows = freshRows;
-        ctrl.bm25 = createUnifiedIndex(freshRows, isModal ? apiSessionCache.playlists : null);
+        ctrl.rowFingerprints = fingerprints;
+        ctrl.bm25 = createUnifiedIndex(freshRows, ctrl.apiPlaylists);
         ctrl.parent = freshRows[0]?.parentElement || ctrl.parent;
+        ctrl.scrollContainer = findModalScrollContainer(ctrl);
       }
     }
 
@@ -1998,11 +2264,17 @@ import {
     // YouTube's 2026 chip/feed layout into tiny cards.
     if (ctrl.surface === "page" && ctrl.host?.classList) {
       const filtering = Boolean(query);
-      const hasRichGridRows = Array.from(ctrl.host.children || []).some((child) =>
-        child.matches?.("ytd-rich-grid-row"),
+      const hostChildren = Array.from(ctrl.host.children || []);
+      const hasRichGridRows = hostChildren.some((child) => child.matches?.("ytd-rich-grid-row"));
+      const hasDirectPlaylistLockups = hostChildren.some((child) =>
+        child.matches?.("ytd-rich-item-renderer, ytd-rich-grid-media, yt-lockup-view-model"),
       );
+      const enoughRoomForSafeCards = window.innerWidth >= 760;
       ctrl.host.classList.toggle("ytpf-page-filtering", filtering);
-      ctrl.host.classList.toggle("ytpf-page-filtering-rows", filtering && hasRichGridRows);
+      ctrl.host.classList.toggle(
+        "ytpf-page-filtering-rows",
+        filtering && hasRichGridRows && !hasDirectPlaylistLockups && enoughRoomForSafeCards,
+      );
     }
 
     // Only snap to top on the empty -> non-empty transition (the user just
@@ -2021,10 +2293,7 @@ import {
       ctrl.meta.textContent = query ? `${safeVisible} of ${safeTotal}` : "";
     }
 
-    if (isModal) {
-      renderSynthRows(ctrl, apiMatches, query);
-      checkForVisibleDuplicates(ctrl);
-    }
+    if (isModal) renderSynthRows(ctrl, apiMatches, query);
   }
 
   /**
@@ -2069,6 +2338,8 @@ import {
 
     const ui = createInlineFilterUi(surface, variant);
     guardModalUiInteractions(ui, surface);
+    /** @type {((e: Event) => void) | null} */
+    let modalClickGuard = null;
     if (surface === "modal") {
       host.classList.add(MODAL_EXPANDED_CLASS);
 
@@ -2079,14 +2350,16 @@ import {
       // backdrop dismissal). Do NOT add a setting for this — it's a taste call,
       // documented in README.md "Behavior" and CHANGELOG. Synth rows (our own
       // API results) are excluded because they handle saving without closing.
-      host.addEventListener("click", (e) => {
-        const target = /** @type {Element | null} */ (e.target);
-        const row = target?.closest?.(
-          "toggleable-list-item-view-model, ytd-playlist-add-to-option-renderer, yt-playlist-add-to-option-renderer"
-        );
-        if (!row || isOurUiNode(row) || row.classList.contains("ytpf-synth-row")) return;
+      modalClickGuard = (e) => {
+        const current = controllers.get(host);
+        if (current?.surface !== "modal" || !nativeModalRowForEvent(e, current)) return;
+        // Bubble phase: YouTube's native row toggle runs first; only the
+        // ancestor sheet-close handler is blocked.
+        // ponytail: propagation cannot split handlers if YouTube moves both
+        // actions onto this same host; the fixture test must catch that change.
         e.stopPropagation();
-      });
+      };
+      host.addEventListener("click", modalClickGuard);
     }
 
     if (mount.after) {
@@ -2102,7 +2375,12 @@ import {
       host,
       surface,
       rows,
-      bm25: createUnifiedIndex(rows, surface === "modal" ? apiSessionCache.playlists : null),
+      bm25: createUnifiedIndex(rows, null),
+      apiPlaylists: null,
+      apiAccountKey: null,
+      apiPendingAccountKey: null,
+      targetVideoId: surface === "modal" ? getCurrentVideoId(host) : "",
+      rowFingerprints: fingerprintRows(rows),
       root: ui.root,
       input: ui.input,
       clear: ui.clear,
@@ -2112,6 +2390,7 @@ import {
       synthRows: [],
       apiToken: 0,
       scrollContainer: undefined,
+      modalClickGuard,
       lastQuery: "",
     };
 
@@ -2127,6 +2406,8 @@ import {
     });
     ui.input.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && ui.input.value) {
+        event.preventDefault();
+        event.stopPropagation();
         ui.input.value = "";
         applyFilter(ctrl);
       }
@@ -2150,13 +2431,23 @@ import {
     });
 
     if (surface === "modal") {
-      setTimeout(() => {
-        const liveCtrl = controllers.get(host);
-        if (liveCtrl) {
-          bootstrapModalApi(liveCtrl);
-        }
-        ui.input.focus({ preventScroll: true });
-      }, 0);
+      const liveCtrl = controllers.get(host);
+      if (liveCtrl) bootstrapModalApi(liveCtrl);
+
+      // Opening Save is an explicit search intent: put the caret in the filter
+      // without requiring a second click. Two animation frames let YouTube
+      // finish mounting/focusing its sheet before we claim focus; the final
+      // microtask makes our focus the last action in that render turn.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          queueMicrotask(() => {
+            const current = controllers.get(host);
+            if (current?.root === ui.root && ui.input.isConnected && isVisible(host)) {
+              ui.input.focus({ preventScroll: true });
+            }
+          });
+        });
+      });
     }
   }
 
@@ -2186,7 +2477,33 @@ import {
       return;
     }
 
-    if (sameRows(existing.rows, rows)) {
+    const targetVideoId = surface === "modal" ? getCurrentVideoId(host) : "";
+    if (existing.targetVideoId && targetVideoId && existing.targetVideoId !== targetVideoId) {
+      teardownHost(host);
+      attachHost(host, rows, surface);
+      return;
+    }
+    if (!existing.targetVideoId && targetVideoId) existing.targetVideoId = targetVideoId;
+
+    let accountChanged = false;
+    if (surface === "modal" && existing.apiAccountKey) {
+      const accountKey = getInnertubeConfig().accountKey;
+      if (accountKey !== existing.apiAccountKey) {
+        existing.apiToken += 1;
+        clearCompletedSynthOperations(existing);
+        existing.apiPlaylists = null;
+        existing.apiAccountKey = null;
+        existing.apiPendingAccountKey = null;
+        existing.bm25 = createUnifiedIndex(existing.rows, null);
+        clearSynthRows(existing);
+        accountChanged = true;
+      }
+    }
+
+    const fingerprints = fingerprintRows(rows);
+    if (sameRows(existing.rows, rows) && sameValues(existing.rowFingerprints, fingerprints)) {
+      if (accountChanged) applyFilter(existing);
+      if (surface === "modal" && !existing.apiPlaylists) bootstrapModalApi(existing);
       return;
     }
 
@@ -2198,15 +2515,12 @@ import {
       }
     });
     existing.rows = rows;
-    existing.bm25 = createUnifiedIndex(rows, existing.surface === "modal" ? apiSessionCache.playlists : null);
+    existing.rowFingerprints = fingerprints;
+    existing.bm25 = createUnifiedIndex(rows, existing.apiPlaylists);
     existing.parent = rows[0]?.parentElement || existing.parent;
     existing.sortResults = surface === "modal";
     applyFilter(existing);
-    if (surface === "modal") {
-      if (!apiSessionCache.playlists) {
-        bootstrapModalApi(existing);
-      }
-    }
+    if (surface === "modal" && !existing.apiPlaylists) bootstrapModalApi(existing);
   }
 
   // Safety net for the "filter bar gone, cards still hidden" lock-in.
@@ -2222,10 +2536,10 @@ import {
       if (ctrl.host) liveHosts.add(ctrl.host);
       for (const row of ctrl.rows) tracked.add(row);
     }
-    document.querySelectorAll(`.${HIDDEN_CLASS}`).forEach((el) => {
+    queryAllDeep(`.${HIDDEN_CLASS}`).forEach((el) => {
       if (!tracked.has(el)) showRow(el);
     });
-    document.querySelectorAll(".ytpf-page-filtering, .ytpf-page-filtering-rows").forEach((el) => {
+    queryAllDeep(".ytpf-page-filtering, .ytpf-page-filtering-rows").forEach((el) => {
       if (!liveHosts.has(el)) {
         el.classList.remove("ytpf-page-filtering");
         el.classList.remove("ytpf-page-filtering-rows");
@@ -2241,94 +2555,73 @@ import {
   // isSaveVideoModal now lives in src/lib/dom-parse.js — imported at top.
 
   function refresh() {
+    // A close/open transition can reuse the exact same host and row objects.
+    // Teardown is the session reset; discovery below reattaches if already open.
+    for (const [host, ctrl] of [...controllers]) {
+      if (ctrl.surface === "modal" && invalidatedModalSessions.has(host)) {
+        invalidatedModalSessions.delete(host);
+        teardownHost(host);
+      }
+    }
+
     syncFilterThemeClasses();
     sweepOrphanedHidden();
 
-    queryAllDeep(MODAL_HOST_SELECTOR)
-      .filter(isVisible)
-      .filter(isSaveVideoModal)
-      .forEach((host) => {
-        const rows = collectRows(host);
-        if (!rows.length) return;
-        upsertHost(host, rows, "modal");
-        scheduleFilterBarMountCheck(host);
-      });
+    const modalCandidates = queryAllDeep(MODAL_HOST_SELECTOR);
+    refreshLifecycleObservation(modalCandidates);
+    const modalHosts = modalCandidates.filter(isVisible).filter(isSaveVideoModal);
+    modalHosts.forEach((host) => {
+      const allRows = collectRows(host);
+      if (!allRows.length) return;
+      // One physical dialog can match nested generic hosts. Its rows belong to
+      // the nearest composed host, so only that host gets a controller/bar.
+      const rows = allRows.filter((row) => closestComposed(row, MODAL_HOST_SELECTOR) === host);
+      if (!rows.length) {
+        teardownHost(host);
+        return;
+      }
+      upsertHost(host, rows, "modal");
+      scheduleFilterBarMountCheck(host);
+    });
 
     const pageSurface = collectFeedPageSurface();
     if (pageSurface) {
       upsertHost(pageSurface.host, pageSurface.rows, "page");
     } else if (isPlaylistsFeedPage()) {
-      // Page surface failed to assemble on a path that should host it. Log a
-      // self-diagnostic so the next selector drift doesn't ship silently.
-      // Modal had scheduleFilterBarMountCheck for years; the page surface
-      // never did, which is exactly how we kept shipping invisible-bar bugs
-      // on /feed/playlists. See tests/test-feed-page-mount.js for the
-      // jsdom regression coverage that backs this up.
       schedulePageSurfaceProbe();
     }
 
-    // Only tear down controllers whose host element is actually gone.
-    // YouTube frequently re-renders the modal's inner list, making collectRows
-    // momentarily return empty; if we tore down on that, the filter bar would
-    // disappear mid-use with no error (exactly the bug we kept shipping). If
-    // the host is still attached, rows will come back on the next refresh —
-    // we don't need to rebuild the UI in the meantime. If ui.root itself gets
-    // detached, upsertHost's !existing.root.isConnected branch re-attaches it.
     for (const [host, ctrl] of [...controllers]) {
-      if (host.isConnected) continue;
-      if (ctrl && ctrl.root.contains(document.activeElement)) continue;
-      teardownHost(host);
+      if (!host.isConnected) {
+        teardownHost(host);
+        continue;
+      }
+      if (ctrl.surface === "page") {
+        if (!pageSurface || pageSurface.host !== host || !isVisible(host)) teardownHost(host);
+        continue;
+      }
+
+      // YouTube reuses contextual-sheet elements for unrelated menus.
+      const stillSaveModal =
+        isVisible(host) &&
+        host.matches(MODAL_HOST_SELECTOR) &&
+        isSaveVideoModal(host) &&
+        modalHosts.includes(host);
+      if (!stillSaveModal) teardownHost(host);
     }
   }
 
   // ── Diagnostics ────────────────────────────────────────────────────────────
-  // Pure ring-buffer tail. Extracted so test-search.js can exercise it without
-  // a chrome.storage fake. Returns a new array — never mutates the input.
-  function appendToRing(ring, entry, maxSize) {
-    const next = Array.isArray(ring) ? ring.slice() : [];
-    next.push(entry);
-    while (next.length > maxSize) next.shift();
-    return next;
-  }
-
+  // Console-only by design. Playlist/search/modal data must never be persisted
+  // or bridged into YouTube's page-readable DOM.
   const _lastDiagAt = new Map();
 
-  async function recordDiagnostic(invariant, context = {}) {
-    try {
-      const now = Date.now();
-      const prev = _lastDiagAt.get(invariant) || 0;
-      if (now - prev < DIAG_THROTTLE_MS) return;
-      _lastDiagAt.set(invariant, now);
-
-      let version = "unknown";
-      let clientVersion = "unknown";
-      try { version = chrome?.runtime?.getManifest?.()?.version || "unknown"; } catch {}
-      try { clientVersion = getInnertubeConfig().clientVersion; } catch {}
-
-      const entry = {
-        invariant,
-        context,
-        path: (typeof location !== "undefined" && location.pathname) || "",
-        version,
-        clientVersion,
-        ts: now,
-      };
-      console.warn(`[ytpf] diagnostic: ${invariant}`, entry);
-
-      if (typeof chrome === "undefined" || !chrome?.storage?.local) return;
-      const stored = await chrome.storage.local.get(DIAG_STORAGE_KEY);
-      const nextRing = appendToRing(stored[DIAG_STORAGE_KEY], entry, DIAG_RING_SIZE);
-      await chrome.storage.local.set({ [DIAG_STORAGE_KEY]: nextRing });
-      // Also mirror the latest ring to a DOM dataset attribute so the e2e
-      // harness can read it from page-world eval (chrome.storage.local lives
-      // in the isolated world, invisible to scripts running in the page).
-      // Bounded by DIAG_RING_SIZE * entry-size so dataset stays small.
-      try {
-        document.documentElement.dataset.ytpfDiag = JSON.stringify(nextRing);
-      } catch { /* dataset write must not break recording */ }
-    } catch {
-      // Recording must never break the extension.
-    }
+  function recordDiagnostic(invariant, context = {}) {
+    const now = Date.now();
+    const prev = _lastDiagAt.get(invariant) || 0;
+    if (now - prev < DIAG_THROTTLE_MS) return;
+    _lastDiagAt.set(invariant, now);
+    console.warn(`[ytpf] diagnostic: ${invariant}`, context);
   }
 
   const _filterBarMountChecked = new WeakSet();
@@ -2341,12 +2634,9 @@ import {
         host.querySelector?.(`.${FILTER_CLASS}`) ||
         queryAllDeep(`.${FILTER_CLASS}`, host).length > 0;
       if (mounted) return;
-      const html = (host.outerHTML || "").slice(0, DIAG_HTML_SNAPSHOT_MAX);
       recordDiagnostic("filter_bar_missing", {
         host: host.tagName?.toLowerCase() || "unknown",
         rowCount: collectRows(host).length,
-        htmlTruncated: html.length >= DIAG_HTML_SNAPSHOT_MAX,
-        html,
       });
     }, TIMINGS.MOUNT_CHECK_DELAY_MS);
   }
@@ -2356,8 +2646,8 @@ import {
   // returned null — meaning some gate (grid selector, contents selector,
   // renderer selector, link selector) didn't match the current DOM.
   // Captures one structured probe per path-load and surfaces it both to the
-  // console and the diagnostics ring. Keyed by pathname + a 4s cooldown so
-  // SPA navigations re-arm but mutation-driven refreshes don't spam.
+  // console. Keyed by pathname + a 4s cooldown so SPA navigations re-arm but
+  // mutation-driven refreshes don't spam.
   const _pageSurfaceProbedAt = new Map();
   function schedulePageSurfaceProbe() {
     const path = window.location.pathname;
@@ -2391,11 +2681,6 @@ import {
           hasPlaylistRenderer(row) &&
           (hasPlaylistLink(row) || isRowHidden(row)),
       );
-      const sampleHrefs = filtered
-        .slice(0, 3)
-        .flatMap((r) => Array.from(r.querySelectorAll?.("a[href]") || []))
-        .map((a) => a.getAttribute("href"))
-        .slice(0, 6);
       return {
         gridTag: grid.tagName?.toLowerCase(),
         contentsId: contents?.id || null,
@@ -2403,11 +2688,9 @@ import {
         rawRowCount: rawRows.length,
         filteredRowCount: filtered.length,
         firstFilteredRowTag: filtered[0]?.tagName?.toLowerCase() || null,
-        sampleHrefs,
       };
     });
     return {
-      path: window.location.pathname,
       isFeedPath: isPlaylistsFeedPage(),
       gridCount: grids.length,
       candidates,
@@ -2424,42 +2707,6 @@ import {
     });
   } catch { /* CSP or already defined — non-fatal */ }
 
-  function checkForVisibleDuplicates(ctrl) {
-    if (ctrl.surface !== "modal") return;
-
-    const domTitles = new Set();
-    ctrl.rows.forEach((row) => {
-      if (row.classList?.contains(HIDDEN_CLASS)) return;
-      const t = getItemText(row);
-      if (t) domTitles.add(t);
-    });
-
-    const synthCounts = new Map();
-    const collisions = [];
-    ctrl.synthRows.forEach((row) => {
-      const t = normalizeText(row.textContent || "");
-      if (!t) return;
-      synthCounts.set(t, (synthCounts.get(t) || 0) + 1);
-      if (domTitles.has(t)) collisions.push(t);
-    });
-    const synthDupes = [...synthCounts.entries()].filter(([, c]) => c > 1);
-
-    if (collisions.length) {
-      recordDiagnostic("dom_synth_title_collision", {
-        count: collisions.length,
-        query: ctrl.lastQuery || "",
-        samples: collisions.slice(0, 3),
-      });
-    }
-    if (synthDupes.length) {
-      recordDiagnostic("synth_row_duplicates", {
-        count: synthDupes.length,
-        query: ctrl.lastQuery || "",
-        samples: synthDupes.slice(0, 3).map(([title, c]) => ({ title, count: c })),
-      });
-    }
-  }
-
   function start() {
     if (!document.body) {
       requestAnimationFrame(start);
@@ -2467,17 +2714,47 @@ import {
     }
 
     _bodyObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          const element = mutationElement(node);
+          if (!element) continue;
+          queryAllDeep("#__ytpf_observe_only__", element);
+          if (element.matches?.("script") || element.querySelector?.("script")) {
+            _innertubeConfigCache = null;
+          }
+        }
+      }
       if (shouldRefreshFromMutations(mutations)) {
         enqueueReconcile("mutation", TIMINGS.RECONCILE_DEBOUNCE_MS);
       }
     });
-    _bodyObserver.observe(document.body, { childList: true, subtree: true });
+    _lifecycleObserver = new MutationObserver((mutations) => {
+      let invalidated = false;
+      for (const mutation of mutations) {
+        invalidated = lifecycleMutationInvalidates(mutation) || invalidated;
+      }
+      if (invalidated || shouldRefreshFromMutations(mutations)) {
+        enqueueReconcile("mutation", TIMINGS.RECONCILE_DEBOUNCE_MS);
+      }
+    });
+    observeMutationRoot(document.body);
+    queryAllDeep("#__ytpf_observe_only__", document.body);
     startThemeObserver();
+
+    // Purge legacy diagnostics that could contain playlist titles/IDs/HTML.
+    document.documentElement.removeAttribute("data-ytpf-diag");
+    try { chrome?.storage?.local?.remove(DIAG_STORAGE_KEY); } catch {}
 
     refresh();
 
-    _onNavigateFinish = () => enqueueReconcile("navigate", TIMINGS.NAVIGATE_SETTLE_MS);
-    _onPageDataUpdated = () => enqueueReconcile("page-data", TIMINGS.RECONCILE_DEBOUNCE_MS);
+    _onNavigateFinish = () => {
+      _innertubeConfigCache = null;
+      enqueueReconcile("navigate", TIMINGS.NAVIGATE_SETTLE_MS);
+    };
+    _onPageDataUpdated = () => {
+      _innertubeConfigCache = null;
+      enqueueReconcile("page-data", TIMINGS.RECONCILE_DEBOUNCE_MS);
+    };
 
     window.addEventListener("yt-navigate-finish", _onNavigateFinish);
     window.addEventListener("yt-page-data-updated", _onPageDataUpdated);
@@ -2497,8 +2774,11 @@ import {
       parseQueryTerms,
       BM25_SEARCH_OPTIONS,
       MODAL_HOST_SELECTOR,
-      appendToRing,
-      DIAG_RING_SIZE,
+      getCurrentVideoId,
+      getInnertubeConfig,
+      beginSynthSave,
+      getSynthSaveOperation,
+      nativeModalRowForEvent,
       // Page-surface probes — exposed so tests/test-feed-page-mount.js can
       // assert that collectFeedPageSurface returns a non-empty surface on a
       // captured /feed/playlists DOM. This is the regression coverage that

@@ -92,7 +92,7 @@ Chromium's extension loader requires a real (headed) browser window. Headless mo
 
 Each failing spec dumps:
 - A screenshot to `tests/e2e/artifacts/<spec>-fail-<timestamp>.png`
-- The first 400 chars of the in-product diagnostics ring (`chrome.storage.local.ytpfDiagnostics`)
+- A failure screenshot (runtime diagnostics remain console-only)
 - A one-line summary on stderr: `[<spec>] FAIL: <message>`
 
 Artifacts directory is gitignored.
@@ -106,4 +106,4 @@ Artifacts directory is gitignored.
 
 ## Known gaps
 
-- **`save-modal.sh` skips assertions on sparse test accounts.** YouTube renders a compact "Save to…" picker (instead of the full `tp-yt-paper-dialog` modal) for accounts with very few playlists. The extension intentionally only targets the full modal — that's where its search value lives. The spec detects which shape rendered and skips injection assertions on the compact case. To exercise the full modal, the test account needs more playlists (~10+ seems to be YouTube's threshold).
+- **`save-modal.sh` requires a full modal.** YouTube renders a compact picker for accounts with very few playlists. The spec fails instead of reporting a false pass. Keep enough playlists in the test account to exercise the full modal.

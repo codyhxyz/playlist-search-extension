@@ -50,10 +50,10 @@
  *
  * Notes for future maintenance:
  * - View-model rows have NO Polymer .data/.__data — getRowPlaylistId returns
- *   null for them. Existing rows just get hidden/shown; saving still works
- *   because the user clicks YouTube's own toggle button. Synth rows (filtered
- *   API matches) carry the playlistId from the InnerTube response, so they
- *   call innertubeSaveVideo directly without needing DOM-derived IDs.
+ *   null for them. Existing rows use YouTube's own toggle. During index merge,
+ *   ID-less native rows consume matching API titles by count so they do not
+ *   also appear as blind synthetic “add” actions; API-only remainder rows keep
+ *   their InnerTube playlist IDs.
  * - The new modal is not virtualized: all 200+ playlists render up-front.
  * - aria-label on yt-list-item-view-model is locale-dependent ("Private",
  *   "Selected") — never key off it for matching; use it only as a last-resort

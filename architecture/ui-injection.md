@@ -39,24 +39,18 @@ YouTube ships many component variants depending on client version, A/B test buck
 > row-wrapped layout but squashed the direct-lockup layout.
 
 ```js
-// Playlist-add renderers only. Do NOT add tp-yt-paper-dialog or
-// yt-contextual-sheet-layout here — YouTube reuses those for many other
-// dialogs (e.g. the upload Visibility step), and broadening this selector
-// causes the filter bar to attach to unrelated surfaces.
 const MODAL_HOST_SELECTOR =
-  "ytd-add-to-playlist-renderer, yt-add-to-playlist-renderer";
+  "ytd-add-to-playlist-renderer, yt-add-to-playlist-renderer, " +
+  "yt-contextual-sheet-layout:has(toggleable-list-item-view-model yt-collection-thumbnail-view-model), " +
+  "tp-yt-paper-dialog:has(toggleable-list-item-view-model yt-collection-thumbnail-view-model)";
 
-// Scoped to inside a playlist host, so generic row components are safe here.
 const MODAL_ROW_SELECTOR =
-  "ytd-playlist-add-to-option-renderer, yt-playlist-add-to-option-renderer, " +
-  "yt-checkbox-list-entry-renderer, yt-list-item-view-model, " +
-  "yt-collection-item-view-model";
-
-const PLAYLISTS_GRID_SELECTOR = "ytd-rich-grid-renderer";
-const PLAYLISTS_FEED_PATH_RE = /^\/feed\/(playlists|library)\/?(\?.*)?$/;
+  "toggleable-list-item-view-model, ytd-playlist-add-to-option-renderer, " +
+  "yt-playlist-add-to-option-renderer, yt-checkbox-list-entry-renderer, " +
+  "yt-list-item-view-model, yt-collection-item-view-model";
 ```
 
-If YouTube introduces a new playlist-add host variant, add its specific renderer tag here — not a generic container. `src/test-search.js` has a guard assertion that fails if the two generic components ever sneak back in.
+Generic dialog elements are allowed only with the playlist-thumbnail structural guard. During reconciliation, each row belongs to its nearest composed matching host, so nested paper-dialog/contextual-sheet wrappers cannot create duplicate bars.
 
 ## Shadow DOM traversal
 
@@ -129,4 +123,4 @@ Dark mode "just works" because YouTube sets `--yt-spec-*` tokens to dark values 
 
 ## Highlight marks
 
-Matched terms are wrapped in `<mark>` with our own styling so they don't look like browser-default yellow. The original HTML is cached in `labelHtmlCache` (a WeakMap keyed by the label element) — `restoreHighlight` restores it before each new search so marks don't nest.
+Matched terms use styled `<mark>` elements. `labelState` stores the original HTML and text for each label. `restoreHighlight` restores only a label that still has the same text, which prevents stale HTML after node recycling.

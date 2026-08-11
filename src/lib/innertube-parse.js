@@ -178,8 +178,8 @@ export function parsePlaylistRenderers(data, onShapeUnknown) {
         // mid-rollout (the bad case the original trigger missed).
         playlistsExtracted: playlists.length,
         hasContinuation: Boolean(continuation),
-        // Truncated sample so the diagnostic ring doesn't bloat — just the
-        // top-level keys plus a single nested level for shape inference.
+        // Keys/types only: enough for local shape diagnosis without titles,
+        // IDs, thumbnails, accessibility text, or tracking values.
         sampleItemShape: sampleUnknownItem
           ? summarizeShape(sampleUnknownItem)
           : null,
@@ -193,10 +193,8 @@ export function parsePlaylistRenderers(data, onShapeUnknown) {
 }
 
 /**
- * Return a 2-level keys-only shape summary of an object. Used by the canary
- * to describe an unrecognized renderer without dumping its entire payload
- * (renderers carry thumbnails, accessibility text, and tracking blobs that
- * would blow past the diagnostic ring's 10KB budget).
+ * Return a 2-level keys-only shape summary of an object. The canary can
+ * describe an unknown renderer without exposing its payload values.
  */
 function summarizeShape(obj, depth = 0) {
   if (obj === null || typeof obj !== "object" || depth > 1) {

@@ -12,7 +12,7 @@
 </head>
 <body>
   <h1>YouTube Playlist Search Privacy Policy</h1>
-  <p><strong>Last updated:</strong> April 15, 2026</p>
+  <p><strong>Last updated:</strong> August 10, 2026</p>
 
   <h2>Overview</h2>
   <p>
@@ -28,8 +28,9 @@
     The extension developer does not operate a backend server and never receives any of your data.
   </p>
   <p>
-    No personally identifying information is ever read, stored, or transmitted. Your username,
-    email, and profile photo are ignored by the extension.
+    Your username, email, and profile photo are ignored. The extension reads only the playlist
+    content and YouTube session value described below. It sends neither item to the developer or
+    any third party.
   </p>
 
   <h2>External Services</h2>
@@ -65,24 +66,28 @@
     <li>Playlist titles and IDs (from the page DOM and from InnerTube API responses)</li>
   </ul>
   <p>
-    This data is indexed locally in your browser using MiniSearch so you can type-ahead search
-    your playlists. The index lives only in the tab's memory &mdash; the extension does not use
-    <code>chrome.storage</code>, <code>localStorage</code>, cookies, or any other persistent
-    storage. A short (6-hour) in-memory cache of your playlist list may be kept while the tab is
-    open; it is cleared when the tab closes.
+    MiniSearch indexes this data in the current tab. Playlist titles, IDs, search text, URLs, and
+    modal HTML are not written to persistent storage or page diagnostics. Account-scoped playlist
+    caches refresh after six hours when next used. The browser clears them when the tab closes.
   </p>
   <p>
     All search, ranking, and filtering is performed locally in your browser.
   </p>
 
   <h2>Permissions</h2>
+  <p>The extension uses two Chrome API permissions:</p>
+  <ul>
+    <li><code>scripting</code> registers the content script after you grant YouTube access.</li>
+    <li><code>storage</code> stores onboarding flags and content-script registration errors.</li>
+  </ul>
   <p>
-    The extension requests <strong>no</strong> Chrome API permissions (the
-    <code>permissions</code> array in <code>manifest.json</code> is empty). Its only site access
-    is a content script injected into <code>https://www.youtube.com/*</code> &mdash; the single
-    host it needs in order to place a search bar inside YouTube's save-to-playlist dialog and
-    playlist feed. It does not run on any other site, subdomain, or scheme. There is no
-    background service worker and no popup.
+    These records contain no playlist, search, page, or authentication data. Runtime diagnostics
+    stay in the local DevTools console. The extension does not persist or expose them in page DOM.
+  </p>
+  <p>
+    Site access is limited to <code>https://www.youtube.com/*</code>. You grant this optional host
+    permission on the welcome page. A service worker manages this permission and opens the welcome
+    page after installation. The extension has no popup.
   </p>
 
   <h2>Third-Party Code</h2>

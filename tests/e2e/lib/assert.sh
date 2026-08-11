@@ -31,20 +31,13 @@ ab_snap() {
   echo "$path"
 }
 
-# Dump the in-product diagnostics ring. content.js mirrors the latest ring to
-# document.documentElement.dataset.ytpfDiag on every diag write — that's the
-# bridge from extension's isolated world into page-world reach.
-ab_dump_diag() {
-  ab_eval 'document.documentElement.dataset.ytpfDiag || "(empty)"'
-}
-
-# Fail with a one-line summary, plus screenshot + diag dump for forensics.
+# Fail with a one-line summary plus a screenshot for forensics. Runtime
+# diagnostics stay console-only; exposing them through page DOM leaked data.
 ab_fail() {
   local msg="$1"
   local snap; snap="$(ab_snap fail)"
   echo "[$SPEC_NAME] FAIL: $msg" >&2
   echo "[$SPEC_NAME]   screenshot: $snap" >&2
-  echo "[$SPEC_NAME]   diag ring:  $(ab_dump_diag | tr -d '\n' | cut -c1-400)" >&2
   exit 1
 }
 

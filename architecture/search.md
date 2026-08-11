@@ -12,7 +12,8 @@ The central idea: **one search index covers both DOM playlists and API-fetched p
 docs = [
   ...rows.map(i => ({ id: "dom:${i}", text, source: "dom", ref: i })),
   ...apiPlaylists
-       .filter(pl => !domIds.has(pl.id))   // dedup by ID
+       .filter(pl => !domIds.has(pl.id))
+       .filter(pl => !consumeAnonymousNativeTitle(pl.title))
        .map(pl => ({ id: "api:${pl.id}", text, source: "api", ref: pl.id }))
 ]
 ```
@@ -22,13 +23,13 @@ Each doc is tagged with its source (`"dom"` or `"api"`) and a `ref` back to the 
 - `source === "dom"` — show the existing DOM row (and reorder it in the modal)
 - `source === "api"` — render a **synthetic row** the user can click to save the video to a playlist YouTube didn't load
 
-## Deduplication by ID, never by title
+## Deduplication
 
-See the comment at content.js:429 — this is a load-bearing decision:
+Rows with playlist IDs deduplicate by ID. Distinct IDs remain searchable when titles match.
 
-> Only dedup by playlist ID, never by title. Title-based dedup caused exact-match playlists (e.g. "Favorites") to be silently excluded when a DOM row shared the same normalized text.
+Modern view-model rows do not expose IDs. Each ID-less native title consumes one equal API title in stable order. This prevents a native row from also appearing as a blind synthetic add action. Extra equal-title API playlists remain searchable.
 
-Users legitimately have multiple playlists with the same name. Earlier versions normalized titles and used them as dedup keys, which silently dropped playlists. `src/test-search.js` is the regression test.
+`src/test-search.cjs` covers both rules.
 
 ## BM25 options
 
@@ -63,7 +64,7 @@ Score is `1000 - position`, so earlier matches rank higher. API playlists are sk
 
 ## Highlighting
 
-`applyHighlight` (in the filter apply path, around content.js:730) walks the playlist's label element and wraps matched spans in `<mark>` tags. Before each search, `restoreHighlight` uses the `labelHtmlCache` WeakMap to restore the original HTML — otherwise repeated searches would accumulate nested `<mark>` elements.
+`applyHighlight` wraps matched label text in `<mark>` tags. Before each search, `restoreHighlight` uses the `labelState` WeakMap to restore the original HTML. The stored text prevents restoration after YouTube recycles the label for another playlist.
 
 The highlight respects shadow DOM: `getLabelElement` descends through single-child element chains to find the innermost text-bearing node (see content.js:611). YouTube's component tree varies, so we can't assume the title is at a fixed depth.
 

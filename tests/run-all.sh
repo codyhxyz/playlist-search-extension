@@ -12,6 +12,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
+echo "[run-all] build: production content bundle"
+npm run --silent build
+
 echo "[run-all] fixture: tests/test-feed-page-mount.mjs"
 node tests/test-feed-page-mount.mjs
 

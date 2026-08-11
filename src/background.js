@@ -101,6 +101,9 @@ async function openOrFocusWelcome() {
 }
 
 chrome.runtime.onInstalled.addListener(async (details) => {
+  // Earlier versions could persist modal HTML and playlist identifiers in
+  // this diagnostic ring. Purge it even when YouTube access is revoked.
+  await chrome.storage.local.remove("ytpfDiagnostics");
   if (details.reason === "install") {
     await openOrFocusWelcome();
     await markSeen(KEYS.installWelcomeShown);

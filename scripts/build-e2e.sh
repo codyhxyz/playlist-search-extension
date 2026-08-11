@@ -56,8 +56,9 @@ SRC_DIR="$SRC_DIR" OUT_DIR="$OUT_DIR" node -e '
   m.host_permissions = ["https://www.youtube.com/*"];
   m.content_scripts = [{
     matches: ["*://www.youtube.com/*"],
-    js: ["content.bundle.js"],
-    run_at: "document_idle",
+    js: ["vendor/minisearch.js", "content.bundle.js"],
+    css: ["styles.css"],
+    run_at: "document_start",
   }];
   // The signing key is for the production CWS listing; an unpacked test
   // build should not assert that identity.

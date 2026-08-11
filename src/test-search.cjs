@@ -82,6 +82,7 @@ class FakeElement {
     this.style = {};
     this.attributes = {};
     this._connected = false;
+    this._listeners = new Map();
   }
   get className() { return Array.from(this.classList._set).join(" "); }
   set className(v) {
@@ -120,10 +121,43 @@ class FakeElement {
   }
   setAttribute(k, v) { this.attributes[k] = String(v); }
   getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attributes, k) ? this.attributes[k] : null; }
+  removeAttribute(k) { delete this.attributes[k]; }
+  matches(selector) {
+    return String(selector).split(",").some((part) => {
+      const value = part.trim();
+      if (value.startsWith(".")) return this.classList.contains(value.slice(1));
+      return value.toUpperCase() === this.tagName;
+    });
+  }
+  closest(selector) {
+    let node = this;
+    while (node) {
+      if (node.matches?.(selector)) return node;
+      node = node.parentElement;
+    }
+    return null;
+  }
+  contains(node) {
+    for (let current = node; current; current = current.parentNode) {
+      if (current === this) return true;
+    }
+    return false;
+  }
+  getRootNode() { return this; }
   querySelector() { return null; }
   querySelectorAll() { return []; }
   getClientRects() { return [{}]; }
-  addEventListener() {}
+  addEventListener(type, listener) {
+    const listeners = this._listeners.get(type) || [];
+    listeners.push(listener);
+    this._listeners.set(type, listeners);
+  }
+  remove() {
+    if (!this.parentNode) return;
+    const index = this.parentNode.childNodes.indexOf(this);
+    if (index >= 0) this.parentNode.childNodes.splice(index, 1);
+    this.parentNode = null;
+  }
   get textContent() {
     return this.childNodes.map((c) => c.textContent == null ? "" : c.textContent).join("");
   }
@@ -152,6 +186,7 @@ function appendChildImpl(parent, child) {
   return child;
 }
 
+let fakeScripts = [];
 const fakeDocument = {
   createElement: (tag) => new FakeElement(tag),
   createTextNode: (text) => new FakeTextNode(text),
@@ -170,7 +205,8 @@ const fakeDocument = {
       nextNode() { i += 1; return collected[i] || null; },
     };
   },
-  getElementsByTagName: () => [],
+  getElementsByTagName: (tag) => tag === "script" ? fakeScripts : [],
+  querySelector: () => null,
   body: null,
   head: null,
   documentElement: null,
@@ -219,6 +255,7 @@ const sandbox = {
   MutationObserver: NoopMutationObserver,
   NodeFilter: { SHOW_TEXT, SHOW_ELEMENT: 1 },
   ShadowRoot: class ShadowRoot {},
+  Element: FakeElement,
   URL,
   URLSearchParams,
   performance: { now: () => Date.now() },
@@ -263,10 +300,8 @@ function buildIndex(domRows, apiPlaylists) {
   // is the first fallback path getItemText checks.
   const rows = domRows.map((r) => {
     const el = fakeDocument.createElement("div");
-    el.data = {
-      title: { simpleText: r.title },
-      playlistId: r.id,
-    };
+    el.data = { title: { simpleText: r.title } };
+    if (r.id) el.data.playlistId = r.id;
     return el;
   });
   return ytpf.createUnifiedIndex(rows, apiPlaylists);
@@ -288,6 +323,22 @@ function buildIndex(domRows, apiPlaylists) {
   assert(refs.includes("PL_xyz"), "API 'Favorites' with different ID must not be deduped");
   assert(!refs.includes("PL_abc"), "API playlist with same ID as DOM should be deduped");
   assert(refs.includes("PL_other"), "API 'Rock Favorites Mix' should appear");
+}
+
+// ID-less view-model rows consume one matching API occurrence, while a
+// genuinely distinct same-title playlist remains searchable.
+{
+  const idx = buildIndex(
+    [{ id: null, title: "Favorites" }],
+    [
+      { id: "PL_first", title: "Favorites" },
+      { id: "PL_second", title: "Favorites" },
+    ],
+  );
+  const refs = idx.search("favorites", ytpf.BM25_SEARCH_OPTIONS).map((r) => r.ref);
+  assert(refs.includes("0"), "ID-less native row should remain indexed");
+  assert(!refs.includes("PL_first"), "one matching API occurrence should reconcile to the native row");
+  assert(refs.includes("PL_second"), "a second same-title playlist should remain searchable");
 }
 
 // API-only "Favorites" appears when not in DOM at all
@@ -402,6 +453,9 @@ function buildIndex(domRows, apiPlaylists) {
     synthRows: [],
     rows: [],
     bm25: null,
+    apiPlaylists: null,
+    apiAccountKey: "account-a",
+    targetVideoId: "TARGETVID01",
   };
 
   const apiMatches = [
@@ -428,39 +482,88 @@ function buildIndex(domRows, apiPlaylists) {
 }
 
 // ---------------------------------------------------------------------------
-// Suite 4: diagnostic ring buffer (self-only regression reporter)
-// The ring is the load-bearing part of the "captured-on-failure" telemetry —
-// if it grows unbounded, chrome.storage.local fills up; if it mutates its
-// input, concurrent reads of prior state blow up. Keep it pure and bounded.
+// Suite 4: authoritative identity and rerender-safe synthetic saves
 // ---------------------------------------------------------------------------
 {
-  const cap = ytpf.DIAG_RING_SIZE;
-  assert(typeof cap === "number" && cap >= 5, "DIAG_RING_SIZE should be a sensible positive integer");
+  fakeWindow.location.pathname = "/watch";
+  fakeWindow.location.search = "?v=PAGEPAGE001";
+  const host = fakeDocument.createElement("div");
+  host.data = { videoId: "TARGETVID01" };
+  assert(ytpf.getCurrentVideoId(host) === "TARGETVID01",
+    "modal-owned video ID must outrank the page URL");
 
-  // empty start: appends cleanly, doesn't mutate undefined
-  const r1 = ytpf.appendToRing(undefined, { invariant: "a", ts: 1 }, cap);
-  assert(Array.isArray(r1) && r1.length === 1, "append to empty yields [entry]");
-  assert(r1[0].invariant === "a", "entry preserved");
+  fakeWindow.location.pathname = "/feed/subscriptions";
+  fakeWindow.location.search = "";
+  assert(ytpf.getCurrentVideoId(fakeDocument.createElement("div")) === "",
+    "non-watch pages must not guess a video from arbitrary links");
+}
 
-  // doesn't mutate the input array
-  const prior = [{ invariant: "x", ts: 0 }];
-  const r2 = ytpf.appendToRing(prior, { invariant: "y", ts: 1 }, cap);
-  assert(prior.length === 1 && prior[0].invariant === "x", "input array not mutated");
-  assert(r2.length === 2 && r2[1].invariant === "y", "new array has appended entry");
+{
+  fakeScripts = [{ textContent: '{"INNERTUBE_API_KEY":"key","INNERTUBE_CLIENT_VERSION":"1","SESSION_INDEX":"2","DELEGATED_SESSION_ID":"brand","DATASYNC_ID":"user-a"}' }];
+  const session = ytpf.getInnertubeConfig(true);
+  assert(session.authUser === "2", "active SESSION_INDEX should route InnerTube requests");
+  assert(session.pageId === "brand", "delegated channel should supply X-Goog-PageId");
+  assert(session.accountKey.includes("brand"), "cache identity should include delegated channel");
+  fakeScripts.push({ textContent: '{"SESSION_INDEX":"2","DELEGATED_SESSION_ID":null}' });
+  const primarySession = ytpf.getInnertubeConfig(true);
+  assert(primarySession.pageId === null, "a later primary-account config should clear delegated channel state");
+  assert(!primarySession.accountKey.includes("brand"), "primary and delegated caches must have different identities");
+  fakeScripts = [{ textContent: '{"SESSION_INDEX":"0"}' }];
+  assert(ytpf.getInnertubeConfig(true).accountKey === null,
+    "API search should fail safe when no stable account identifier exists");
+  fakeScripts = [];
+}
 
-  // caps at DIAG_RING_SIZE, oldest dropped first
-  let ring = [];
-  for (let i = 0; i < cap + 5; i += 1) {
-    ring = ytpf.appendToRing(ring, { invariant: "e", ts: i }, cap);
-  }
-  assert(ring.length === cap, `ring caps at ${cap}, got ${ring.length}`);
-  assert(ring[0].ts === 5, "oldest entries dropped (FIFO)");
-  assert(ring[ring.length - 1].ts === cap + 4, "newest entry at tail");
+{
+  let calls = 0;
+  const pending = new Promise(() => {});
+  const first = ytpf.beginSynthSave("account-b", "TARGETVID02", "PL_pending", () => {
+    calls += 1;
+    return pending;
+  });
+  const second = ytpf.beginSynthSave("account-b", "TARGETVID02", "PL_pending", () => {
+    calls += 1;
+    return pending;
+  });
+  assert(first === second, "concurrent synthetic saves should join one operation");
+  assert(calls === 1, "concurrent synthetic saves should issue one request");
 
-  // non-array ring defends against corrupt storage values
-  const r3 = ytpf.appendToRing("garbage", { invariant: "z", ts: 9 }, cap);
-  assert(Array.isArray(r3) && r3.length === 1 && r3[0].invariant === "z",
-    "non-array prior value is treated as empty");
+  const parent = fakeDocument.createElement("div");
+  parent._connected = true;
+  const ctrl = {
+    surface: "modal",
+    parent,
+    host: fakeDocument.createElement("div"),
+    synthRows: [],
+    rows: [],
+    bm25: null,
+    apiPlaylists: null,
+    apiAccountKey: "account-b",
+    targetVideoId: "TARGETVID02",
+  };
+  const match = [{ source: "api", playlist: { id: "PL_pending", title: "Pending" }, terms: ["pending"], score: 1 }];
+  ytpf.renderSynthRows(ctrl, match, "pending");
+  const firstButton = ctrl.synthRows[0].children[0];
+  assert(firstButton.disabled === true, "rendered pending save should be disabled");
+  ytpf.renderSynthRows(ctrl, match, "pending");
+  const replacementButton = ctrl.synthRows[0].children[0];
+  assert(replacementButton !== firstButton, "filter pass should recreate the synthetic row");
+  assert(replacementButton.disabled === true, "replacement row should preserve pending state");
+  first.status = "done";
+  ytpf.renderSynthRows(ctrl, match, "pending");
+  assert(ctrl.synthRows[0].children[0].classList.contains("ytpf-synth-done"),
+    "replacement row should preserve completed state");
+}
+
+{
+  const row = fakeDocument.createElement("yt-list-item-view-model");
+  const button = fakeDocument.createElement("button");
+  const ctrl = { rows: [row] };
+  const found = ytpf.nativeModalRowForEvent(
+    { target: button, composedPath: () => [button, row] },
+    ctrl,
+  );
+  assert(found === row, "composed click path should resolve the tracked native row");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.6.18 - 2026-08-11
+- Fixed repeated Save-modal opens, same-element reuse, detached-host reuse, nested modal ownership, and modal discovery inside open shadow roots.
+- Made the modal's video ID authoritative. InnerTube requests now follow the active Google account and Brand channel, and playlist caches are isolated by account.
+- Reconciled modern ID-less playlist rows without duplicate synthetic results. Synthetic saves now share one request per account, video, and playlist and retain pending or completed state across rerenders.
+- Kept the Save dialog open without swallowing YouTube's native playlist toggle.
+- Removed persistent and page-readable diagnostics, purged legacy diagnostic records, and updated the privacy policy.
+- Added deterministic modal lifecycle, identity, account-routing, row-replacement, and save-deduplication checks. Fixed the live E2E build and assertions so unsupported compact pickers cannot report a false pass.
+- Hardened publishing so the upload ZIP is rebuilt from current source and checked byte-for-byte before submission.
+
 ## 1.6.17 - 2026-06-18
 - Fixed `/feed/playlists` filtering on YouTube's direct-lockup layout. The old row-wrapper reflow workaround is now applied only when the playlist grid actually has direct `ytd-rich-grid-row` children; direct `yt-lockup-view-model` grids keep YouTube's native layout, preventing filtered results from collapsing into tiny squashed cards.
 - Added a feed-page regression probe that types into the filter and asserts direct-lockup grids are not force-regridded.

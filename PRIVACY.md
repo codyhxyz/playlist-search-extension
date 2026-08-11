@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Last updated:** May 15, 2026
+**Last updated:** August 10, 2026
 
 ## Overview
 
@@ -10,7 +10,7 @@ YouTube Playlist Search is a Chrome extension that adds an in-page search bar to
 
 This extension does **not** collect, store, transmit, or sell personal data to the extension developer or any third party. No analytics, tracking, or remote logging is performed. The extension developer does not operate a backend server and never receives any of your data.
 
-No personally identifying information is ever read, stored, or transmitted. Your username, email, and profile photo are ignored by the extension.
+Your username, email, and profile photo are ignored. The extension reads only the playlist content and YouTube session value described below; neither is sent to the developer or any third party.
 
 ## External Services
 
@@ -28,7 +28,7 @@ The extension reads the following "website content" from the YouTube pages you v
 
 - Playlist titles and IDs (from the page DOM and from InnerTube API responses)
 
-This data is indexed locally in your browser using MiniSearch so you can type-ahead search your playlists. The index lives only in the tab's memory — the extension does not use `chrome.storage`, `localStorage`, cookies, or any other persistent storage. A short (6-hour) in-memory cache of your playlist list may be kept while the tab is open; it is cleared when the tab closes.
+This data is indexed locally in your browser using MiniSearch so you can type-ahead search your playlists. Playlist titles, IDs, search text, URLs, and modal HTML stay in the tab's memory and are not written to `chrome.storage`, `localStorage`, cookies, page DOM diagnostics, or any other persistent storage. Account-scoped playlist caches are refreshed after six hours when next used and are cleared when the tab closes.
 
 All search, ranking, and filtering is performed locally in your browser.
 
@@ -37,14 +37,15 @@ All search, ranking, and filtering is performed locally in your browser.
 The extension declares two Chrome API permissions in `manifest.json`:
 
 - `scripting` — to dynamically register the content script once you grant the YouTube host permission.
-- `storage` — used in three narrow ways, none of which write personal data:
-  - **Onboarding flags** (`chrome.storage.local`): whether you've seen the welcome page; whether host permission is currently granted.
-  - **User settings** (`chrome.storage.sync`): a small `ytpfSettings` object — currently a single boolean (`keepDialogOpen`) controlling whether the Save dialog stays open after you tick a playlist. Synced across your Chrome profile by Chrome itself; the extension never reads or transmits sync contents elsewhere.
-  - **In-browser diagnostic ring** (`chrome.storage.local`): a short capped buffer of structured events (selector counts, mount-point probes, parser sample shapes) the extension records when it detects a layout it doesn't recognize, so issue reports can include concrete data. The ring is read-only from the extension's side once written, lives only on your machine, and is never transmitted anywhere.
+- `storage` — used for non-personal operational state only:
+  - **Onboarding flags** (`chrome.storage.local`): whether you've seen the welcome page and whether host permission is currently granted.
+  - **Registration errors** (`chrome.storage.local`): an error message and timestamp when Chrome cannot register the packaged content script. This contains no playlist, search, page, or authentication data.
+
+Runtime diagnostics are written only to the local DevTools console. They are not persisted, copied into the YouTube page DOM, or transmitted.
 
 Site access is `https://www.youtube.com/*` only, and is requested as an **optional host permission** that you grant explicitly via the welcome page's "Grant access" button. The extension does not run on any other site, subdomain, or scheme.
 
-A small service worker (`background.js`) exists for two purposes only: (1) registering and unregistering the content script when you grant or revoke the YouTube host permission, and (2) opening the welcome page on first install. It does not handle, transmit, or persist any user data. There is no popup.
+A small service worker (`background.js`) registers or unregisters the content script, opens the welcome page on first install, and stores the non-personal operational state listed above. It does not handle, transmit, or persist playlist, search, page, or authentication data. There is no popup.
 
 ## Third-Party Code
 

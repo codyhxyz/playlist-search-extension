@@ -261,6 +261,139 @@ try {
     check(filterProbe.rowReflowClass === false, "direct lockup grid does not get row-reflow class while filtering");
     check(filterProbe.display !== "grid", `direct lockup grid was not force-regridded (display: ${filterProbe.display})`);
 
+    // Deterministic modal lifecycle regression: the old implementation
+    // disconnected its only observer after the first modal closed, so a second
+    // Save click in the same tab could never mount again.
+    const lifecycleRaw = (await ab("eval", `(async () => {
+      const host = document.createElement("ytd-add-to-playlist-renderer");
+      host.data = { videoId: "jNQXAC9IVRw" };
+      const list = document.createElement("div");
+      list.id = "playlists";
+      let nativeToggleCount = 0;
+      for (const [id, title] of [["PL_A", "Alpha"], ["PL_B", "Beta"]]) {
+        const row = document.createElement("ytd-playlist-add-to-option-renderer");
+        row.data = { playlistId: id, title: { simpleText: title } };
+        row.textContent = title;
+        row.setAttribute("aria-pressed", "false");
+        row.addEventListener("click", () => {
+          nativeToggleCount += 1;
+          row.setAttribute("aria-pressed", row.getAttribute("aria-pressed") === "true" ? "false" : "true");
+        });
+        list.appendChild(row);
+      }
+      host.appendChild(list);
+      document.body.appendChild(host);
+      await new Promise((r) => setTimeout(r, 450));
+      const firstInput = host.querySelector(".ytpf-inline-modal input");
+      if (!firstInput) return JSON.stringify({ firstMounted: false });
+
+      let outerCloseCount = 0;
+      const outerClose = () => { outerCloseCount += 1; };
+      document.body.addEventListener("click", outerClose);
+      list.firstElementChild.click();
+      document.body.removeEventListener("click", outerClose);
+      const nativeClickSafe = nativeToggleCount === 1 &&
+        outerCloseCount === 0 &&
+        list.firstElementChild.getAttribute("aria-pressed") === "true" &&
+        !!host.querySelector(".ytpf-inline-modal");
+
+      firstInput.value = "alpha";
+      firstInput.dispatchEvent(new Event("input", { bubbles: true }));
+      host.setAttribute("aria-hidden", "true");
+      await new Promise((r) => setTimeout(r, 450));
+      const closedCleanly = !host.querySelector(".ytpf-inline-modal") &&
+        !host.querySelector(".ytpf-hidden");
+
+      host.removeAttribute("aria-hidden");
+      await new Promise((r) => setTimeout(r, 450));
+      const secondInput = host.querySelector(".ytpf-inline-modal input");
+      const attributeReopenFresh = !!secondInput && secondInput !== firstInput && secondInput.value === "";
+
+      host.remove();
+      await new Promise((r) => setTimeout(r, 300));
+      document.body.appendChild(host);
+      await new Promise((r) => setTimeout(r, 450));
+      const thirdInput = host.querySelector(".ytpf-inline-modal input");
+      const gamma = document.createElement("ytd-playlist-add-to-option-renderer");
+      gamma.data = { playlistId: "PL_G", title: { simpleText: "Gamma" } };
+      gamma.textContent = "Gamma";
+      const delta = document.createElement("ytd-playlist-add-to-option-renderer");
+      delta.data = { playlistId: "PL_D", title: { simpleText: "Delta" } };
+      delta.textContent = "Delta";
+      list.replaceChildren(gamma, delta);
+      thirdInput.value = "gamma";
+      thirdInput.dispatchEvent(new Event("input", { bubbles: true }));
+      const equalReplacementRecovered = !gamma.classList.contains("ytpf-hidden") &&
+        delta.classList.contains("ytpf-hidden");
+      thirdInput.value = "";
+      thirdInput.dispatchEvent(new Event("input", { bubbles: true }));
+
+      const outer = document.createElement("tp-yt-paper-dialog");
+      const inner = document.createElement("yt-contextual-sheet-layout");
+      inner.className = "iron-overlay-opened";
+      const modernList = document.createElement("yt-list-view-model");
+      const modernRow = document.createElement("toggleable-list-item-view-model");
+      const modernItem = document.createElement("yt-list-item-view-model");
+      const modernTitle = document.createElement("span");
+      modernTitle.className = "ytListItemViewModelTitle";
+      modernTitle.textContent = "Modern";
+      modernItem.append(modernTitle, document.createElement("yt-collection-thumbnail-view-model"));
+      modernRow.appendChild(modernItem);
+      modernList.appendChild(modernRow);
+      inner.appendChild(modernList);
+      outer.appendChild(inner);
+      document.body.appendChild(outer);
+      await new Promise((r) => setTimeout(r, 450));
+      const nestedInput = inner.querySelector(".ytpf-inline-modal input");
+      await new Promise((r) => setTimeout(r, 350));
+      const nestedHostOwnership = outer.querySelectorAll(".ytpf-inline-modal").length === 1 &&
+        !!nestedInput && inner.querySelector(".ytpf-inline-modal input") === nestedInput;
+      outer.remove();
+
+      const shadowShell = document.createElement("div");
+      const shadow = shadowShell.attachShadow({ mode: "open" });
+      const shadowHost = document.createElement("ytd-add-to-playlist-renderer");
+      shadowHost.data = { videoId: "jNQXAC9IVRw" };
+      const shadowList = document.createElement("div");
+      shadowList.id = "playlists";
+      for (const [id, title] of [["PL_SA", "Shadow Alpha"], ["PL_SB", "Shadow Beta"]]) {
+        const row = document.createElement("ytd-playlist-add-to-option-renderer");
+        row.data = { playlistId: id, title: { simpleText: title } };
+        row.textContent = title;
+        shadowList.appendChild(row);
+      }
+      shadowHost.appendChild(shadowList);
+      shadow.appendChild(shadowHost);
+      document.body.appendChild(shadowShell);
+      await new Promise((r) => setTimeout(r, 450));
+      const shadowModalMounted = !!shadow.querySelector(".ytpf-inline-modal input") &&
+        !!shadow.querySelector("#ytpf-inline-style");
+      shadowShell.remove();
+
+      return JSON.stringify({
+        firstMounted: true,
+        nativeClickSafe,
+        closedCleanly,
+        attributeReopenFresh,
+        detachedReopenFresh: !!thirdInput && thirdInput !== secondInput,
+        equalReplacementRecovered,
+        barCount: host.querySelectorAll(".ytpf-inline-modal").length,
+        nestedHostOwnership,
+        shadowModalMounted,
+      });
+    })()`)).trim();
+    const lifecycleStr = lifecycleRaw.startsWith('"') ? JSON.parse(lifecycleRaw) : lifecycleRaw;
+    const lifecycle = JSON.parse(lifecycleStr);
+    check(lifecycle.firstMounted, "modal mounts on first Save open");
+    check(lifecycle.nativeClickSafe, "native row toggles once before the outer close is blocked");
+    check(lifecycle.closedCleanly, "attribute close tears down and restores filtered rows");
+    check(lifecycle.attributeReopenFresh, "same-host attribute reopen gets a fresh controller");
+    check(lifecycle.detachedReopenFresh, "detached host reopen works after the last controller closed");
+    check(lifecycle.equalReplacementRecovered, "equal-cardinality row replacement is filtered immediately");
+    check(lifecycle.barCount === 1, `reused modal has exactly one bar (got ${lifecycle.barCount})`);
+    check(lifecycle.nestedHostOwnership, "nested modern modal gets one controller on its nearest host");
+    check(lifecycle.shadowModalMounted, "modal added inside an open shadow root mounts and receives scoped styles");
+
     console.log(`feed-page-mount: ${passed.length} passed, ${failed.length} failed`);
     passed.forEach((m) => console.log("  ok   " + m));
     failed.forEach((m) => console.log("  FAIL " + m));

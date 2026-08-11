@@ -46,18 +46,21 @@ SAVE_CLICK_ROUTE="$(ab_eval "(() => {
 })()")"
 echo "[$SPEC_NAME] save-click route: $SAVE_CLICK_ROUTE  (baseline DOM size: $BASELINE_COUNT)"
 
-# If we went the overflow route, the menu items render asynchronously —
-# wait, then find and click the Save menu item.
-agent-browser --session "$SESSION" wait 1000 >/dev/null
-ab_eval '(() => {
-  const items = Array.from(document.querySelectorAll("tp-yt-paper-item, ytd-menu-service-item-renderer, [role=\"menuitem\"]"));
-  const save = items.find(el => /^Save\b/i.test((el.innerText || "").trim()));
-  if (save) save.click();
-  return !!save;
-})()' >/dev/null
+# Only the overflow route needs a second click. Clicking a stale hidden Save
+# menu item after the direct button already opened the modal made this spec
+# create the same inconsistent behavior it was meant to catch.
+if [[ "$SAVE_CLICK_ROUTE" == '"overflow"' ]]; then
+  agent-browser --session "$SESSION" wait 1000 >/dev/null
+  ab_assert_true "overflow Save item clicked" '(() => {
+    const items = Array.from(document.querySelectorAll("tp-yt-paper-item, ytd-menu-service-item-renderer, [role=\"menuitem\"]"));
+    const save = items.find(el => el.offsetParent && /^Save\b/i.test((el.innerText || "").trim()));
+    if (save) save.click();
+    return !!save;
+  })()'
+fi
 
 # Wait for SOME save-to-playlist UI to render. YouTube uses two shapes:
-#   - Full modal: tp-yt-paper-dialog with yt-collection-thumbnail-view-model rows.
+#   - Full modal: legacy paper dialog or modern contextual sheet with playlist rows.
 #     Rendered when the account has many playlists (typical real users).
 #   - Compact picker: small popover anchored to the Save button.
 #     Rendered for sparse accounts (≤3 playlists). The extension currently
@@ -66,8 +69,9 @@ ab_eval '(() => {
 #
 # Detect which shape we got and run the relevant assertions.
 ab_wait_for "save UI rendered (full modal or DOM-size jump from compact picker)" "(() => {
-  const fullModal = document.querySelector('$SEL_SAVE_DIALOG');
-  if (fullModal && fullModal.querySelector('$SEL_DIALOG_PLAYLIST_ROW')) return true;
+  const fullModal = Array.from(document.querySelectorAll('$SEL_SAVE_DIALOG'))
+    .find((modal) => modal.querySelector('$SEL_DIALOG_PLAYLIST_ROW'));
+  if (fullModal) return true;
   // Compact picker renders in a shadow-DOM-heavy container that defeats
   // text-based probes. A reliable structure-agnostic signal: the total
   // element count jumps by >100 when the picker mounts.
@@ -78,20 +82,18 @@ ab_wait_for "save UI rendered (full modal or DOM-size jump from compact picker)"
 # extension targets only the full modal (typical user account); the compact
 # picker is what sparse test accounts see and is intentionally not in scope.
 COMPACT_PICKER="$(ab_eval "(() => {
-  const fullModal = document.querySelector('$SEL_SAVE_DIALOG');
-  return !(fullModal && fullModal.querySelector('$SEL_DIALOG_PLAYLIST_ROW'));
+  const fullModal = Array.from(document.querySelectorAll('$SEL_SAVE_DIALOG'))
+    .find((modal) => modal.querySelector('$SEL_DIALOG_PLAYLIST_ROW'));
+  return !fullModal;
 })()")"
 if [[ "$COMPACT_PICKER" == "true" ]]; then
-  echo "[$SPEC_NAME] NOTE: compact 'Save to…' picker rendered (account has too few playlists for the full modal)."
-  echo "[$SPEC_NAME] NOTE: skipping injection / filter / lock-open assertions — extension scopes to the full modal."
-  echo "[$SPEC_NAME] PASS (with compact-picker skip)"
-  exit 0
+  ab_fail "compact picker rendered; this account does not exercise the supported full modal"
 fi
 
 # Our extension's modal bar must have mounted in the dialog.
 ab_wait_for "modal bar mounted" "!!document.querySelector('$SEL_MODAL_INLINE_INPUT')" 8000
 
-# Mount-in-correct-modal assertion: the .ytpf-modal-inline must live inside
+# Mount-in-correct-modal assertion: the .ytpf-inline-modal must live inside
 # the same dialog that contains the playlist rows (not in a sibling sheet
 # like the bulk "Add all to…" overlay — the 1.6.11 bug).
 ab_assert_true "modal bar lives in the save-video dialog" "(() => {
@@ -99,6 +101,13 @@ ab_assert_true "modal bar lives in the save-video dialog" "(() => {
   if (!bar) return false;
   const dialog = bar.closest('$SEL_SAVE_DIALOG');
   return !!(dialog && dialog.querySelector('$SEL_DIALOG_PLAYLIST_ROW'));
+})()"
+
+# Opening Save is explicit search intent: once the bar mounts, its input must
+# own focus so the user can type immediately without a second click.
+ab_assert_true "modal search input receives focus on open" "(() => {
+  const input = document.querySelector('$SEL_MODAL_INLINE_INPUT');
+  return !!input && document.activeElement === input;
 })()"
 
 # Behavior assertion: typing narrows visible playlist rows in the modal.
@@ -119,24 +128,27 @@ ab_assert_true "typing narrows modal rows" "(async () => {
   return after < before;
 })()"
 
-# Lock-open assertion: synthesizing a click on a native playlist row must
-# NOT close the dialog. The dialog must still be present (and visible) 600ms
-# after the click — that's longer than YouTube's close animation.
-ab_assert_true "row click does not close the dialog" "(async () => {
+# A passing keep-open check must also prove YouTube's native toggle ran. Merely
+# keeping the dialog visible can mean the extension swallowed the save click.
+ab_assert_true "row toggles once and dialog stays open" "(async () => {
   const row = document.querySelector('$SEL_DIALOG_PLAYLIST_ROW');
   if (!row) return false;
-  // Click an inner clickable child (the checkbox/label). Polymer modals
-  // bind close handlers to the row container, so we want the click bubble
-  // to be where the user actually clicks.
-  const target = row.querySelector('button, [role=\"checkbox\"], a, label') || row;
+  const target = row.querySelector('button[aria-pressed], [role=\"checkbox\"], input[type=\"checkbox\"], button, a, label') || row;
+  const state = () => {
+    for (const el of [target, row, ...row.querySelectorAll('[aria-pressed], [aria-checked], input[type=\"checkbox\"]')]) {
+      if (el.hasAttribute?.('aria-pressed')) return `pressed:${el.getAttribute('aria-pressed')}`;
+      if (el.hasAttribute?.('aria-checked')) return `checked:${el.getAttribute('aria-checked')}`;
+      if ('checked' in el) return `native:${Boolean(el.checked)}`;
+    }
+    return null;
+  };
+  const before = state();
+  if (before === null) return false;
   target.click();
   await new Promise(r => setTimeout(r, 600));
-  const dialog = document.querySelector('$SEL_SAVE_DIALOG');
-  if (!dialog) return false;
-  if (dialog.getAttribute('aria-hidden') === 'true') return false;
-  if (dialog.hasAttribute('hidden')) return false;
-  // Modal bar should still be present too.
-  return !!document.querySelector('$SEL_MODAL_INLINE_INPUT');
+  const dialog = row.closest('$SEL_SAVE_DIALOG') || document.querySelector('$SEL_SAVE_DIALOG');
+  if (!dialog || dialog.getAttribute('aria-hidden') === 'true' || dialog.hasAttribute('hidden')) return false;
+  return state() !== before && !!dialog.querySelector('$SEL_MODAL_INLINE_INPUT');
 })()"
 
 echo "[$SPEC_NAME] PASS"

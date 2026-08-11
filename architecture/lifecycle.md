@@ -13,7 +13,7 @@ function start() {
     return;
   }
   _bodyObserver = new MutationObserver(...);
-  _bodyObserver.observe(document.body, { childList: true, subtree: true });
+  observeMutationRoot(document.body);  // child/text/lifecycle attributes
   refresh();
   window.addEventListener("yt-navigate-finish", _onNavigateFinish);
   window.addEventListener("yt-page-data-updated", _onPageDataUpdated);
@@ -29,7 +29,7 @@ There are three sources of "something changed, look again":
 
 | Signal | Why | Handler |
 |---|---|---|
-| `MutationObserver` on `document.body` | The modal opens, closes, or changes. New rows arrive. | `scheduleRefresh` (debounced 120ms) |
+| Shared `MutationObserver` on `document.body` and discovered open shadow roots | The modal opens, closes, changes visibility, or replaces/recycles rows. | `enqueueReconcile` (debounced 120ms) |
 | `yt-navigate-finish` event | User navigated between pages in YouTube's SPA. The feed page may have appeared or disappeared. | `refresh()` after 250ms |
 | `yt-page-data-updated` event | YouTube reloaded page data (e.g., after filter changes on the feed page). | `scheduleRefresh` |
 
@@ -39,43 +39,13 @@ Why both an observer and YouTube's own events? The observer is the source of tru
 
 `shouldRefreshFromMutations(mutations)` gates `scheduleRefresh` so we don't re-run on every typing event or video player tick. It returns true only if a mutation looks like it could involve a modal host, a playlist row, or the feed grid. This combined with the 120ms debounce keeps CPU usage negligible.
 
-Focusing our own search input also **suppresses** mutations for 300ms (`suppressMutations(300)` called from the `focus` listener in `attachHost`, content.js:1585). This prevents the observer from reacting to our own UI insertion and stealing focus back.
+Focusing our own search input delays mutation reconciliation for 300ms. Mutations are never discarded: one trailing reconciliation runs when the delay expires. This prevents our own paint from stealing focus without losing YouTube lifecycle changes.
 
 ## The `refresh()` cycle
 
-`refresh()` (content.js:1668) is the reconciliation pass:
+`refresh()` is the reconciliation pass. It first tears down modal sessions invalidated by close/open attribute transitions. It then discovers visible modal candidates and assigns each row to its nearest composed modal host, preventing nested `tp-yt-paper-dialog` and `yt-contextual-sheet-layout` elements from receiving duplicate controllers. Finally, it reconciles the feed page and tears down disconnected, hidden, repurposed, or replaced hosts.
 
-```js
-function refresh() {
-  const activeHosts = new Set();
-
-  // 1. Any visible modals?
-  queryAllDeep(MODAL_HOST_SELECTOR).filter(isVisible).forEach((host) => {
-    const rows = collectRows(host);
-    if (!rows.length) return;
-    activeHosts.add(host);
-    upsertHost(host, rows, "modal");
-  });
-
-  // 2. Feed page surface?
-  const pageSurface = collectFeedPageSurface();
-  if (pageSurface) {
-    activeHosts.add(pageSurface.host);
-    upsertHost(pageSurface.host, pageSurface.rows, "page");
-  }
-
-  // 3. Tear down any hosts we were tracking that are no longer active
-  for (const host of [...controllerHosts]) {
-    if (!activeHosts.has(host) || !host.isConnected) {
-      const ctrl = controllers.get(host);
-      if (ctrl && ctrl.root.contains(document.activeElement)) continue;  // user is typing — don't kill it
-      teardownHost(host);
-    }
-  }
-}
-```
-
-Three phases: find modals, find the feed page, and tear down whatever we had before that's no longer there. The focus check in phase 3 prevents a flaky mutation from destroying the UI mid-keystroke.
+A modal teardown is the session reset. Reopening the same DOM element creates a fresh controller, empty query, fresh row fingerprints, and a new API token.
 
 ## `upsertHost` — idempotent attach
 
@@ -88,11 +58,11 @@ Three phases: find modals, find the feed page, and tear down whatever we had bef
 
 This means a refresh that fires many times in a row is cheap: once the UI is mounted and rows are stable, `upsertHost` does almost nothing.
 
-When rows change, unhidden rows get re-shown and un-highlighted so YouTube sees its DOM in the expected state before we re-apply the filter.
+Row equality includes element identity and a content fingerprint. Equal-cardinality replacement and same-element title/ID recycling therefore rebuild the index instead of reusing stale row data.
 
 ## Per-host controller
 
-Each attached surface gets a `ctrl` object (content.js:1562) held in a `WeakMap<host, ctrl>`:
+Each attached surface gets a `ctrl` object held in the `controllers` Map:
 
 ```js
 {
@@ -100,6 +70,8 @@ Each attached surface gets a `ctrl` object (content.js:1562) held in a `WeakMap<
   surface,              // "modal" | "page"
   rows,                 // Current row elements (Array)
   bm25,                 // MiniSearch index (rebuilt when rows or API data change)
+  apiPlaylists, apiAccountKey, apiPendingAccountKey, // account-scoped API snapshot
+  targetVideoId, rowFingerprints, // modal identity and recycled-row detection
   root, input, clear, meta,  // UI elements
   parent,               // Parent of rows, used for row reordering
   sortResults,          // true in modal (reorder), false on page
@@ -109,20 +81,20 @@ Each attached surface gets a `ctrl` object (content.js:1562) held in a `WeakMap<
 }
 ```
 
-A WeakMap was chosen so detached hosts get garbage collected automatically. We also maintain a parallel `controllerHosts: Set<host>` for iteration (WeakMaps aren't iterable). `teardownHost` keeps both in sync.
+Controllers live in one iterable `Map<Element, Ctrl>`. `teardownHost` is the only disposal path; there is no parallel host set to drift out of sync.
 
 ## Modal bootstrapping
 
 When a modal surface is attached:
 
 1. `attachHost` builds the UI with *just* DOM rows in the index (no API data yet).
-2. 160ms later, `setTimeout(() => bootstrapModalApi(ctrl), 160)` runs.
-3. `bootstrapModalApi` (content.js:1366) calls `loadAllPlaylists()` — returning the session cache if fresh, or fetching via InnerTube.
-4. When playlists arrive, it rebuilds the BM25 index with the merged set and re-runs `applyFilter(ctrl)`.
+2. `bootstrapModalApi(ctrl)` snapshots the active account/channel identity and calls `loadAllPlaylists(session)`.
+3. The load joins only an in-flight request for that same account identity.
+4. When playlists arrive, the response is applied only if the controller, request token, and current account still match. It then rebuilds the BM25 index and re-runs `applyFilter(ctrl)`.
 
 The user can start typing immediately against the DOM-only index. When the API data lands, results seamlessly expand to include the full library.
 
-The 160ms delay gives the modal time to finish its own opening animation. Focusing our input immediately on open would fight YouTube's own focus management.
+Autofocus waits two animation frames, then verifies that the same visible controller still owns the connected input before focusing it.
 
 ## Teardown
 
@@ -137,11 +109,11 @@ It:
 1. Increments `apiToken` — any pending API response for this controller will be discarded when it arrives.
 2. Removes synthetic rows.
 3. Un-hides every row it had hidden.
-4. Restores any highlights it had applied (from `labelHtmlCache`).
+4. Restores highlights from `labelState` only when the label still belongs to the same playlist.
 5. Removes the `MODAL_EXPANDED_CLASS` if this was a modal.
 6. Removes its UI from the DOM.
 7. Deletes the controller entry.
-8. If no controllers remain, disconnects the mutation observer and removes the SPA event listeners — the extension goes fully idle until navigation.
+8. Leaves global observers and SPA listeners active for the lifetime of the content script. Disconnecting them after the first close caused later Save clicks in the same tab to be missed.
 
 Step 1 is important: if a user opens a modal, starts a fetch, and closes it before the fetch completes, the response should land in a void, not try to update a dead controller.
 
@@ -150,17 +122,17 @@ Step 1 is important: if a user opens a modal, starts a fetch, and closes it befo
 ```
 document_start
   ↓
-start() → MutationObserver watches document.body
+start() → MutationObserver watches document.body + discovered shadow roots
   ↓
 [user opens Save modal]
   ↓
-observer fires → scheduleRefresh (120ms debounce)
+observer fires → enqueueReconcile (120ms debounce)
   ↓
 refresh() → modal host detected → upsertHost() → attachHost()
   ↓
 [UI visible, DOM-only index]
   ↓
-setTimeout 160ms → bootstrapModalApi() → innertubeLoadPlaylists()
+bootstrapModalApi() → account-scoped innertubeLoadPlaylists()
   ↓
 [index rebuilt with API data, applyFilter re-runs]
   ↓
@@ -170,7 +142,7 @@ setTimeout 160ms → bootstrapModalApi() → innertubeLoadPlaylists()
   ↓
 observer fires → refresh() → host gone → teardownHost()
   ↓
-[controllers empty → observer and listeners disconnected]
+[controller removed; global observer remains active]
   ↓
-[idle until next mutation or navigation]
+[next Save open is discovered, even in the same tab]
 ```
