@@ -21,8 +21,14 @@ echo "[e2e] step 2/4: closing any prior $SESSION session"
 agent-browser --session "$SESSION" close >/dev/null 2>&1 || true
 
 echo "[e2e] step 3/4: launching isolated Chromium profile with extension loaded"
-agent-browser --session "$SESSION" --profile "$PROFILE" --extension "$EXT_DIR" \
-  open "https://www.youtube.com/" >/dev/null
+# The close above tears the daemon down asynchronously; an immediate open can
+# race the dying socket ("Failed to connect: No such file or directory").
+# One short-fuse retry absorbs it.
+launch() {
+  agent-browser --session "$SESSION" --profile "$PROFILE" --extension "$EXT_DIR" \
+    open "https://www.youtube.com/" >/dev/null
+}
+launch || { echo "[e2e] launch raced daemon teardown, retrying"; sleep 2; launch; }
 agent-browser --session "$SESSION" wait 2000 >/dev/null
 
 echo "[e2e] step 4/4: running specs"

@@ -11,11 +11,6 @@
  *   - getRowPlaylistId — when YouTube rolled out view-model rows (no
  *     Polymer .data), this was the function that started returning null
  *     for half the rows. The synth-save path now bypasses DOM IDs entirely.
- *   - isSaveVideoModal — added in 1.6.11 (commit cd0ad74) after the search
- *     bar started incorrectly injecting into the "Add all to…" sub-dialog
- *     on playlist pages. The :has() selector guards the new view-model
- *     variant; this JS guard catches the old Polymer variant whose data
- *     happens to be loaded but carries no `videoId`.
  */
 
 /**
@@ -63,27 +58,4 @@ export function extractTitleFromPolymerData(data) {
     (typeof data.label === "string" ? data.label : null) ||
     null
   );
-}
-
-/**
- * Belt-and-suspenders guard against the "Add all to…" bulk sub-dialog
- * incorrectly matching MODAL_HOST_SELECTOR. The :has() guard in selectors.js
- * handles the new view-model variant; this catches the old Polymer variant
- * by checking the host's Polymer data for a videoId (present in single-video
- * saves, absent in bulk-add flows).
- *
- * Returns true (keep) for hosts that don't look like the old Polymer renderer
- * at all — the :has() guard already filtered the view-model side.
- *
- * @param {{matches:(s:string)=>boolean, data?:object, __data?:object}} host
- */
-export function isSaveVideoModal(host) {
-  if (!host.matches("ytd-add-to-playlist-renderer, yt-add-to-playlist-renderer")) {
-    return true;
-  }
-  const d = host.data || host.__data;
-  // Only reject when data is loaded AND explicitly shows no videoId.
-  // If data hasn't hydrated yet (d === undefined) we allow through.
-  if (d !== undefined && "videoId" in d && !d.videoId) return false;
-  return true;
 }

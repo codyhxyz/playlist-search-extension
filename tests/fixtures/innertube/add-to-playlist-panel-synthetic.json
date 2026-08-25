@@ -1,0 +1,11 @@
+{
+  "_provenance": "SYNTHETIC fixture for parseAddToPlaylist (the Save-to-playlist panel payload). Shape = long-lived addToPlaylistRenderer family: playlists[] items carrying playlistId, title blob, videoCount, optional per-video membership flag. Replace with a real capture from scripts/capture-innertube.mjs modal <watch-url> once available — the parser is the ONLY place this shape is encoded.",
+  "addToPlaylistRenderer": {
+    "playlists": [
+      { "playlistId": "PLAAAA000000000000000001", "title": { "simpleText": "Test Playlist 1" }, "videoCount": "12", "selected": true },
+      { "playlistId": "PLAAAA000000000000000002", "title": { "runs": [{ "text": "Test Playlist 2" }] }, "videoCount": "3" },
+      { "playlistId": "WL", "title": { "simpleText": "Watch later" }, "videoCount": "" },
+      { "notAPlaylist": true }
+    ]
+  }
+}

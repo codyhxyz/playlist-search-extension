@@ -8,7 +8,7 @@ The extension attaches to exactly two places:
 
 | Surface | Where | Behavior |
 |---|---|---|
-| `"modal"` | The "Save to playlist" dialog | Fetches full library, reorders rows by BM25 score, renders synthetic rows for API-only hits, input is focused automatically |
+| Save sheet | Watch/Shorts action-bar Save button | Owned shadow-DOM sheet (#ytpf-save-sheet-host); zero YouTube DOM coupling since v1.7. See content.js "Owned save sheet". |
 | `"page"` | `/feed/playlists` or `/feed/library` | Filters existing rows only, preserves YouTube's ordering, shows a `"n of m"` match counter |
 
 Both use the same `createInlineFilterUi(surface)` (content.js:975) builder. Styling differs (height, padding, sticky positioning) but the HTML shape is identical:

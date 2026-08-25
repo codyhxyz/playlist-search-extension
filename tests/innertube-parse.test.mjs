@@ -25,6 +25,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  parseAddToPlaylist,
   parsePlaylistRenderers,
   rendererTitle,
 } from "../src/lib/innertube-parse.js";
@@ -349,4 +350,25 @@ test("canary callback throwing does not break the parser", () => {
     throw new Error("simulated diagnostic sink failure");
   });
   assert.equal(playlists.length, 0); // parser still returns cleanly
+});
+
+// ── parseAddToPlaylist (Save-to-playlist panel payload) ────────────────────
+
+test("parseAddToPlaylist extracts panel items with membership state", () => {
+  const data = load("add-to-playlist-panel-synthetic.json");
+  const items = parseAddToPlaylist(data);
+  assert.equal(items.length, 3);
+  assert.deepEqual(
+    items.map((i) => [i.id, i.title, i.itemCount, i.containsVideo]),
+    [
+      ["PLAAAA000000000000000001", "Test Playlist 1", 12, true],
+      ["PLAAAA000000000000000002", "Test Playlist 2", 3, false],
+      ["WL", "Watch later", 0, false],
+    ],
+  );
+});
+
+test("parseAddToPlaylist returns [] on unrecognized payloads (caller falls back to library)", () => {
+  assert.deepEqual(parseAddToPlaylist({}), []);
+  assert.deepEqual(parseAddToPlaylist(null), []);
 });

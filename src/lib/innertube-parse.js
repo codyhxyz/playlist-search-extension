@@ -211,3 +211,44 @@ function summarizeShape(obj, depth = 0) {
   }
   return out;
 }
+
+/**
+ * Parse the Save-to-playlist panel payload (the response behind YouTube's
+ * own addToPlaylistServiceEndpoint) into sheet rows WITH per-video membership
+ * state. This is the ONE place that shape knowledge lives; when YouTube
+ * migrates it, update this function + its fixture only.
+ *
+ * Handles the long-lived addToPlaylistRenderer family: a playlists[] /
+ * contents[] array of items carrying playlistId, a title blob, optional
+ * videoCount text, and an optional boolean marking whether the target video
+ * is already in the playlist (`selected`; absent ⇒ false).
+ */
+export function parseAddToPlaylist(data) {
+  const containers = [
+    data?.addToPlaylistRenderer?.playlists,
+    data?.addToPlaylistRenderer?.contents,
+    data?.playlists,
+    data?.contents,
+  ];
+  const items = containers.find(Array.isArray) || [];
+  const out = [];
+  for (const item of items) {
+    const pl = item?.playlistAddToOptionRenderer || item;
+    const id = pl?.playlistId;
+    if (!id) continue;
+    const title =
+      pl?.title?.simpleText ||
+      pl?.title?.runs?.[0]?.text ||
+      (typeof pl?.title === "string" ? pl.title : "") ||
+      "Untitled";
+    const itemCount =
+      parseInt(pl?.videoCount?.simpleText || pl?.videoCount || "0", 10) || 0;
+    out.push({
+      id,
+      title,
+      itemCount,
+      containsVideo: pl?.selected === true,
+    });
+  }
+  return out;
+}

@@ -9,7 +9,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   getRowPlaylistId,
-  isSaveVideoModal,
   extractTitleFromPolymerData,
 } from "../src/lib/dom-parse.js";
 
@@ -47,50 +46,6 @@ test("getRowPlaylistId returns null for view-model rows (no Polymer data)", () =
   // calls rather than relying on DOM-derived IDs.
   assert.equal(getRowPlaylistId({}), null);
   assert.equal(getRowPlaylistId({ data: {} }), null);
-});
-
-// ── isSaveVideoModal ───────────────────────────────────────────────────────
-
-function mockHost({ matchSelector = false, data = undefined } = {}) {
-  return {
-    matches(sel) {
-      return matchSelector === true || matchSelector === sel;
-    },
-    data,
-  };
-}
-
-test("isSaveVideoModal: non-Polymer hosts pass through (view-model handled by :has)", () => {
-  const host = mockHost({ matchSelector: false }); // not the old Polymer renderer
-  assert.equal(isSaveVideoModal(host), true);
-});
-
-test("isSaveVideoModal: old Polymer host with videoId is allowed", () => {
-  const host = mockHost({ matchSelector: true, data: { videoId: "abc123" } });
-  assert.equal(isSaveVideoModal(host), true);
-});
-
-test("isSaveVideoModal: old Polymer host with empty videoId is rejected (1.6.11 bug)", () => {
-  // This is the exact case that motivated commit cd0ad74: the "Add all to…"
-  // bulk sub-dialog has data.videoId === "" (or absent value present-as-key),
-  // and was incorrectly receiving the search bar.
-  const host = mockHost({ matchSelector: true, data: { videoId: "" } });
-  assert.equal(isSaveVideoModal(host), false);
-});
-
-test("isSaveVideoModal: Polymer host whose data hasn't hydrated yet is allowed", () => {
-  // If the renderer mounts but .data is still undefined, we can't tell yet —
-  // allow through and let a later refresh tick re-evaluate. Rejecting here
-  // would cause race-condition flakiness on slow connections.
-  const host = mockHost({ matchSelector: true, data: undefined });
-  assert.equal(isSaveVideoModal(host), true);
-});
-
-test("isSaveVideoModal: Polymer host whose data has no videoId key is allowed", () => {
-  // Different from videoId === "" — if the key is absent entirely, this is
-  // probably some other Polymer state we haven't classified; don't reject.
-  const host = mockHost({ matchSelector: true, data: { somethingElse: 1 } });
-  assert.equal(isSaveVideoModal(host), true);
 });
 
 // ── extractTitleFromPolymerData ────────────────────────────────────────────

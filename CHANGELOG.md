@@ -1,3 +1,11 @@
+## Unreleased
+
+- **Rebuilt Save-to-playlist as a fully owned surface.** The extension no longer injects a search bar into YouTube's "Save to playlist" modal. That DOM migrated repeatedly (1.6.6–1.6.18) and each migration broke the feature silently. Clicking the action-bar Save button now opens our own shadow-DOM sheet — search input, playlist rows with add/remove toggles, optimistic updates via InnerTube `browse/edit_playlist` (`ACTION_ADD_VIDEO` / `ACTION_REMOVE_VIDEO`). The only remaining YouTube coupling is one intercepted button click.
+- Deleted the entire modal-DOM-injection architecture: `MODAL_HOST_SELECTOR` discovery, modal row collection, synthetic API rows, lifecycle-session invalidation observer, keep-dialog-open click guard, recycled-row fingerprinting, modal style blocks (~1,100 lines).
+- Added `parseAddToPlaylist` (src/lib/innertube-parse.js): single home for the save-panel payload shape, fixture-tested. Sheet rows currently render unchecked (library snapshot); wiring the panel request that carries per-video membership state is pending its first real capture.
+- youtubei.js evaluated for the InnerTube layer and not adopted: it covers session/config extraction, but in an isolated-world content script it cannot see `window.ytcfg`, so we would keep our own config scrape anyway — three endpoints don't justify shipping ~1MB of client for the same calls.
+- E2E `save-modal` spec rewritten to the owned-sheet contract; feed-page suite green.
+
 # Changelog
 
 ## 1.6.18 - 2026-08-11

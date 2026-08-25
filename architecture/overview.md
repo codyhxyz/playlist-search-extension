@@ -1,5 +1,7 @@
 # Architecture Overview
 
+> **v2 rebuild factory:** Ground-up rewrite is specified in [`../private/v2-rebuild-factory.md`](../private/v2-rebuild-factory.md). That document is the permanent, executable plan (architecture briefing + workhorse phases). Prefer it over this folder when implementing v2.
+
 > **Doc status (as of v1.6.12):** Partially outdated. The "single content script, no service worker, no permissions" framing predates v1.6.0, which added a service worker (`src/background.js`), an onboarding welcome page (`src/welcome.html` + `src/welcome.js`), and the `scripting` + `storage` Chrome API permissions. The host permission for `youtube.com` is now an *optional* permission granted via the welcome page, not a declared one. Inline corrections have been applied below; the ASCII diagram still depicts only the content-script subsystem and should be read as one of three execution contexts (SW, welcome page, content script), not the whole extension.
 
 This folder documents how the extension is built and why it's built that way. If you're trying to understand the code, start here.
