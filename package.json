@@ -8,7 +8,7 @@
     "build:watch": "node esbuild.config.mjs --watch",
     "typecheck": "tsc -p tsconfig.json",
     "pretest": "npm run build",
-    "test": "node --test tests/intent.test.mjs tests/innertube.test.mjs && node tests/test-sheet-render.mjs",
+    "test": "node --test tests/intent.test.mjs tests/innertube.test.mjs && node tests/test-bundle-boots.mjs && node tests/test-sheet-render.mjs",
     "test:fast": "node --test tests/intent.test.mjs tests/innertube.test.mjs"
   },
   "devDependencies": {

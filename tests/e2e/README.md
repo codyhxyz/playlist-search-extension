@@ -9,10 +9,13 @@ The fixture and unit suites stay — they're fast and need no auth. E2E is the s
 | Spec | Catches |
 |---|---|
 | `sanity.sh` | cookies expired, test profile not signed in |
+| `intent-chain.sh` | **our own plumbing**, isolated from YouTube's UI — the MAIN-world hook not installing, the relay to the worker breaking, the `panelId` gate letting a generic `get_panel` through, or the videoId failing to decode out of a percent-encoded `params` protobuf (the exact bug that killed the home feed). Needs no signed-in session, so it stays green when cookies expire |
 | `save-sheet.sh` | the sheet failing to open **on any one surface** — it drives the watch page and the home feed separately and reports them separately; also: the sheet not taking focus, YouTube's own dialog stacking behind ours, typing not narrowing |
 | `innertube-contract.sh` | YouTube changing the endpoints out from under us — the library endpoint moving, the membership renderer being renamed, the singular-key trap changing, brand-channel delegation ceasing to matter |
 
-All three run sequentially, sharing one signed-in agent-browser session named `ytpf-e2e`.
+All four run sequentially, sharing one agent-browser session named `ytpf-e2e`.
+
+They are ordered to localise a failure. `intent-chain.sh` tests our side without touching YouTube's UI; `save-sheet.sh` then clicks YouTube's real buttons. If the first passes and the second fails, YouTube moved something. If the first fails, we broke something. That distinction used to take an afternoon to establish.
 
 ### Why `save-sheet.sh` drives two surfaces
 

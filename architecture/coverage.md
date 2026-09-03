@@ -32,7 +32,7 @@ Status: ✅ verified live · ⚠️ known broken/missing · ❓ never tested · 
 | B1 | Brand-channel account | ✅ | Needs `context.user.onBehalfOfUser`; without it you get 2 playlists, not 256 |
 | B2 | Personal account, no delegation | ✅ | Cody's personal account genuinely has 0 playlists |
 | B3 | **Switching accounts mid-session** | ✅ | *(2.0.0)* Fixed. `resetConfigCache()` is called from the SPA-navigation handler in `content.js`, so the cached delegation dies with the page it belonged to. Previously the session kept acting as whichever channel it started on |
-| B4 | Signed out | ❓ | Should fail closed with an honest message; untested |
+| B4 | Signed out | ✅ | *(2.0.0)* Verified in a fresh profile: the sheet opens, then reports `Couldn't load your playlists: no SAPISID cookie — signed out?`. Fails closed with an honest message, exactly as intended, and does not fall back to reading the page |
 | B5 | Multiple Google sessions (`authuser=1`) | ❓ | `SESSION_INDEX` never handled |
 
 ## C. Data / scale states

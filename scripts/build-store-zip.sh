@@ -27,25 +27,28 @@ DIST_DIR="$ROOT_DIR/dist"
 VERSION="$(node -e "const m=require('$SRC_DIR/manifest.json'); process.stdout.write(m.version)")"
 OUT="$DIST_DIR/youtube-playlist-filter-$VERSION.zip"
 
-echo "[build] Gate 1/6: esbuild bundle (src/content.js + src/lib/*.js → src/content.bundle.js)"
+echo "[build] Gate 1/7: esbuild bundle (src/content.js + src/lib/*.js → src/content.bundle.js)"
 (cd "$ROOT_DIR" && npm run --silent build)
 
-echo "[build] Gate 2/6: node --check on every shipped script"
+echo "[build] Gate 2/7: node --check on every shipped script"
 for f in content.bundle.js background.js intent-hook.js onboarding-state.js welcome.js \
          lib/intent.js lib/innertube.js lib/sheet.js; do
   node --check "$SRC_DIR/$f"
 done
 
-echo "[build] Gate 3/6: typecheck (tsc --noEmit --checkJs)"
+echo "[build] Gate 3/7: typecheck (tsc --noEmit --checkJs)"
 (cd "$ROOT_DIR" && npm run --silent typecheck)
 
-echo "[build] Gate 4/6: unit tests (intent resolution + InnerTube parsers)"
+echo "[build] Gate 4/7: unit tests (intent resolution + InnerTube parsers)"
 node --test "$ROOT_DIR/tests/intent.test.mjs" "$ROOT_DIR/tests/innertube.test.mjs"
 
-echo "[build] Gate 5/6: save-sheet UI contract (real engine)"
+echo "[build] Gate 5/7: the shipped bundle boots (vm smoke test)"
+node "$ROOT_DIR/tests/test-bundle-boots.mjs"
+
+echo "[build] Gate 6/7: save-sheet UI contract (real engine)"
 node "$ROOT_DIR/tests/test-sheet-render.mjs"
 
-echo "[build] Gate 6/6: CWS structural validator + published privacy page in sync"
+echo "[build] Gate 7/7: CWS structural validator + published privacy page in sync"
 node "$ROOT_DIR/scripts/validate-cws.mjs"
 # The CWS listing and the welcome page both link to the published policy. It
 # drifted out of sync with PRIVACY.md once already, silently dropping a whole

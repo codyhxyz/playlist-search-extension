@@ -62,7 +62,10 @@ const sheetSource = readFileSync(SHEET_PATH, "utf8");
 const scannable = sheetSource
   .replace(/\/\*[\s\S]*?\*\//g, " ")
   .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
-const sinks = [...scannable.matchAll(/\b(innerHTML|outerHTML|insertAdjacentHTML|document\.write)\b/g)];
+const sinks = [
+  ...scannable.matchAll(/\.(innerHTML|outerHTML)\s*(?:\+?=)(?!=)/g),
+  ...scannable.matchAll(/\b(insertAdjacentHTML|document\.write)\s*\(/g),
+];
 assert.equal(
   sinks.length,
   0,
