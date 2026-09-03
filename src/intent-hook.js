@@ -26,6 +26,14 @@
 
 (() => {
   if (window.__plsIntentHook) return;
+
+  // `e.message` on a non-object throw (`throw null`, or a cross-realm value)
+  // raises a TypeError *inside the catch* — which would propagate straight out
+  // of our patched window.fetch and break youtube.com's own request. This file
+  // promises it can never do that; the promise needs this to be true.
+  const why = (e) => {
+    try { return (e && e.message) || String(e); } catch { return 'unknown'; }
+  };
   window.__plsIntentHook = true;
 
   // Path-anchored, not substring-anchored: `get_panel` is a generic endpoint and we
@@ -68,7 +76,7 @@
       const body = JSON.parse(await decode(buf));
       if (body && typeof body === 'object') post(url, body);
     } catch (e) {
-      console.warn('[pls][hook] could not read a watched request body', e.message);
+      console.warn('[pls][hook] could not read a watched request body', why(e));
     }
   }
 
@@ -107,7 +115,7 @@
       }
     } catch (e) {
       // Never let our observation break the host app.
-      console.warn('[pls][hook] observer threw, passing the request through', e.message);
+      console.warn('[pls][hook] observer threw, passing the request through', why(e));
     }
     return origFetch.apply(this, arguments);
   };

@@ -60,9 +60,9 @@ echo "$RESULT" | grep -q '"opened":true' || ab_fail \
 
 # The videoId is the real proof: it can only be on screen if the worker walked the
 # percent-encoded protobuf and pulled field 111.1 out of it.
-ab_assert_a11y "the decoded videoId reached the sheet" "$VIDEO_ID"
-ab_assert_a11y "the sheet exposes a search field" '(combobox|textbox|searchbox)'
-ab_assert_a11y "the sheet exposes a listbox" 'listbox'
+ab_assert_sheet_a11y "the decoded videoId reached the sheet" "$VIDEO_ID"
+ab_assert_sheet_a11y "the sheet exposes a search field" '(combobox|textbox|searchbox)'
+ab_assert_sheet_a11y "the sheet exposes a listbox" 'listbox'
 
 # The generic-endpoint gate. `get_panel` is shared with unrelated panels (the "Ask"
 # panel uses it with no panelId), and firing on the URL alone is exactly how the 1.x

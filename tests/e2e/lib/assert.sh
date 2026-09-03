@@ -76,6 +76,52 @@ ab_snapshot() {
   agent-browser --session "$SESSION" snapshot 2>/dev/null
 }
 
+# Print ONLY the subtree of our own dialog.
+#
+# This exists because the unscoped version was a false-passing test. On a watch
+# page YouTube's own accessibility tree already contains a `combobox` (the header
+# search box) and the videoId (in every thumbnail href), so an assertion like
+# "the sheet exposes a search field" or "the decoded videoId reached the sheet"
+# was satisfied whether or not our sheet rendered anything at all. A gate that
+# passes when the product is broken is worse than no gate: it converts an outage
+# into a signed-off release.
+#
+# Our sheet is the only `dialog` in the tree (YouTube's pickers are not exposed
+# as one), so we take from that line to the next line at the same indent.
+ab_sheet_tree() {
+  ab_snapshot | awk '
+    /^[[:space:]]*-?[[:space:]]*dialog/ { depth = match($0, /[^[:space:]-]/); inside = 1; print; next }
+    inside {
+      if (match($0, /[^[:space:]-]/) <= depth && $0 !~ /^[[:space:]]*$/) { inside = 0; next }
+      print
+    }
+  '
+}
+
+# Assert our dialog's subtree matches. Fails loudly when the dialog is absent
+# rather than quietly matching YouTube's own chrome.
+ab_assert_sheet_a11y() {
+  local label="$1" pattern="$2"
+  local tree; tree="$(ab_sheet_tree)"
+  if [[ -z "$tree" ]]; then
+    echo "[$SPEC_NAME]   full a11y tree:" >&2
+    ab_snapshot | head -30 >&2
+    ab_fail "$label (no dialog in the accessibility tree at all — the sheet did not render)"
+  fi
+  if echo "$tree" | grep -qE "$pattern"; then
+    echo "[$SPEC_NAME] PASS: $label"
+  else
+    echo "[$SPEC_NAME]   sheet subtree was:" >&2
+    echo "$tree" | head -25 >&2
+    ab_fail "$label (no line in the sheet matched /$pattern/)"
+  fi
+}
+
+# Count matching lines INSIDE the sheet.
+ab_sheet_a11y_count() {
+  ab_sheet_tree | grep -cE "$1" || true
+}
+
 # Assert the a11y tree matches an extended regex.
 ab_assert_a11y() {
   local label="$1" pattern="$2"
@@ -92,7 +138,9 @@ ab_assert_a11y() {
 # Assert a count of matching a11y lines meets a minimum.
 ab_assert_a11y_min() {
   local label="$1" pattern="$2" min="$3"
-  local n; n="$(ab_snapshot | grep -cE "$pattern" || true)"
+  # Scoped to the sheet — see ab_sheet_tree. Counting `option` lines across the
+  # whole page would count YouTube's own listboxes.
+  local n; n="$(ab_sheet_a11y_count "$pattern")"
   if [[ "$n" -ge "$min" ]]; then
     echo "[$SPEC_NAME] PASS: $label ($n >= $min)"
   else
@@ -105,7 +153,7 @@ ab_wait_a11y() {
   local label="$1" pattern="$2" timeout_ms="${3:-15000}"
   local elapsed=0
   while [[ "$elapsed" -lt "$timeout_ms" ]]; do
-    ab_snapshot | grep -qE "$pattern" && { echo "[$SPEC_NAME] READY: $label (${elapsed}ms)"; return 0; }
+    ab_sheet_tree | grep -qE "$pattern" && { echo "[$SPEC_NAME] READY: $label (${elapsed}ms)"; return 0; }
     sleep 0.5
     elapsed=$((elapsed + 500))
   done
@@ -118,3 +166,45 @@ ab_sheet_open_js='(() => {
   const a = document.activeElement;
   return !!a && a.parentElement === document.documentElement && a.tagName.includes("-");
 })()'
+
+# ── Soft assertions ─────────────────────────────────────────────────────────
+# ab_fail exits, which is right for a precondition but wrong when a spec wants
+# to test several independent things and report on all of them. `check || true`
+# does NOT make a hard assertion soft — the exit happens inside the callee,
+# before the `||` is ever consulted. save-sheet.sh needs per-surface reporting
+# (testing the watch page and then generalising to the feed is the exact mistake
+# that shipped a broken home feed), so it uses these instead: they return
+# non-zero and let the caller decide.
+
+ab_soft_true() {
+  local label="$1" js="$2"
+  local result; result="$(ab_eval "$js")"
+  if [[ "$result" == "true" ]]; then
+    echo "[$SPEC_NAME] PASS: $label"
+    return 0
+  fi
+  echo "[$SPEC_NAME] FAIL: $label (got: $result)" >&2
+  return 1
+}
+
+ab_soft_sheet_a11y() {
+  local label="$1" pattern="$2"
+  local tree; tree="$(ab_sheet_tree)"
+  if [[ -n "$tree" ]] && echo "$tree" | grep -qE "$pattern"; then
+    echo "[$SPEC_NAME] PASS: $label"
+    return 0
+  fi
+  echo "[$SPEC_NAME] FAIL: $label (no line in the sheet matched /$pattern/)" >&2
+  return 1
+}
+
+ab_soft_sheet_a11y_min() {
+  local label="$1" pattern="$2" min="$3"
+  local n; n="$(ab_sheet_a11y_count "$pattern")"
+  if [[ "$n" -ge "$min" ]]; then
+    echo "[$SPEC_NAME] PASS: $label ($n >= $min)"
+    return 0
+  fi
+  echo "[$SPEC_NAME] FAIL: $label (found $n, wanted >= $min)" >&2
+  return 1
+}

@@ -193,7 +193,13 @@ async function plsHandleIntent(videoId, source) {
     );
   } catch (e) {
     console.error('[pls] load failed — failing closed, no DOM fallback', e);
-    sheet.setStatus('Couldn’t load your playlists: ' + e.message);
+    if (sheet.dead) return;
+    // setData BEFORE setStatus. Without it the sheet is still in its loading
+    // state, so it shows shimmering skeletons under a footer that already says
+    // the load failed — two contradictory claims at once, and the list never
+    // resolves. An empty result is the honest render for "we have nothing".
+    sheet.setData([]);
+    sheet.setStatus('Couldn’t load your playlists: ' + (e?.message ?? String(e)));
   }
 }
 

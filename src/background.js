@@ -196,7 +196,14 @@ async function dispatchIntent({ tabId, source, path, body = {}, linkUrl, srcUrl,
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // — welcome page —
   if (msg?.type === 'permissionGranted') {
-    reconcileContentScripts().then(() => sendResponse({ ok: true }));
+    // Always answer. reconcileContentScripts() rethrows on a registration
+    // failure, and an un-caught rejection here leaves the welcome page's
+    // sendMessage hanging on a closed port with no error and no reply — the
+    // user clicks "Grant access" and the page just sits there.
+    reconcileContentScripts().then(
+      () => sendResponse({ ok: true }),
+      (err) => sendResponse({ ok: false, error: err?.message ?? String(err) }),
+    );
     return true;
   }
   if (msg?.type === 'getPermissionState') {
@@ -286,6 +293,14 @@ chrome.commands?.onCommand.addListener(async (command) => {
   if (command !== 'open-save-sheet') return;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab) return;
+  // The accelerator is global, so it fires on tabs with no video — and on tabs
+  // that aren't YouTube at all. That is not a coverage gap, and routing it into
+  // dispatchIntent would log one, poisoning the single signal reserved for real
+  // holes. Same reasoning as onActionClicked().
+  if (!videoIdFromUrl(tab.url)) {
+    console.log('[pls][sw] hotkey pressed with no video in the URL — nothing to save here');
+    return;
+  }
   void dispatchIntent({ tabId: tab.id, source: 'hotkey', tabUrl: tab.url });
 });
 
@@ -300,16 +315,16 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     await openOrFocusWelcome();
     await markSeen(KEYS.installWelcomeShown);
   }
-  await reconcileContentScripts();
+  await reconcileContentScripts().catch(() => {});
 });
 
 chrome.runtime.onStartup.addListener(() => {
   installMenu();
-  void reconcileContentScripts();
+  void reconcileContentScripts().catch(() => {});
 });
 
 chrome.permissions.onAdded.addListener((permissions) => {
-  if (permissions?.origins?.includes(YOUTUBE_ORIGIN)) void reconcileContentScripts();
+  if (permissions?.origins?.includes(YOUTUBE_ORIGIN)) void reconcileContentScripts().catch(() => {});
 });
 
 chrome.permissions.onRemoved.addListener((permissions) => {
@@ -324,6 +339,6 @@ chrome.tabs.onRemoved.addListener((id) => {
   for (const key of recent.keys()) if (key.startsWith(id + ':')) recent.delete(key);
 });
 
-void reconcileContentScripts();
+void reconcileContentScripts().catch(() => {});
 
 console.log(`[pls][sw] ${VERSION} — listeners registered (hook + toolbar + context menu + hotkey)`);

@@ -499,6 +499,12 @@ export function createSheet({ videoId, onPick, onClose }) {
   let nodes = [];                // row elements, parallel to `shown`
   let active = 0;
   let lastQ = null;
+  // The status line is an aria-live region, so what it currently asserts matters
+  // beyond the pixels. `restingStatus` is the last thing the caller set — the
+  // library summary — and `failureShown` records that a save error has since
+  // overwritten it, so a successful retry can put the truth back.
+  let restingStatus = '';
+  let failureShown = false;
 
   const patienceTimer = setTimeout(() => { patience = true; render(); }, PLS_LOAD_PATIENCE);
 
@@ -672,6 +678,13 @@ export function createSheet({ videoId, onPick, onClose }) {
       if (dead) return;
       state.set(p.id, 'added');
       render();
+      // Clear any earlier failure. The status line is an aria-live region, so
+      // leaving it asserting a save failed after the retry succeeded tells a
+      // screen-reader user the opposite of what happened.
+      if (failureShown) {
+        failureShown = false;
+        setStatus(restingStatus);
+      }
       const i = shown.findIndex((x) => x.id === p.id);
       if (i > -1) nodes[i].classList.add('flash');
     } catch (e) {
@@ -681,6 +694,7 @@ export function createSheet({ videoId, onPick, onClose }) {
       render();
       // Names the problem and the recovery, short enough to survive the clamp;
       // the title attribute carries the whole sentence either way.
+      failureShown = true;
       setStatus(`Couldn’t save to “${p.title}”. Select it again to retry.`);
     }
   }
@@ -690,12 +704,21 @@ export function createSheet({ videoId, onPick, onClose }) {
   closeBtn.addEventListener('click', () => dlg.close());
   dlg.addEventListener('keydown', (e) => {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
+    // An IME owns the arrows and Enter while a candidate window is open: those
+    // keys are picking a character, not a playlist. Acting on them would both
+    // break composition for every CJK user AND commit a save to whatever row
+    // the cursor happened to be on — and this build has no remove path, so that
+    // save cannot be undone from here. keyCode 229 is the pre-`isComposing`
+    // spelling, kept for engines that still report it that way.
+    if (e.isComposing || e.keyCode === 229) return;
+    // Home/End belong to the text caret while focus is in the query field —
+    // the ARIA combobox pattern reserves them for exactly that — and Shift+
+    // anything is a selection gesture, not navigation.
+    if (e.shiftKey) return;
     if (e.key === 'ArrowDown') move(1);
     else if (e.key === 'ArrowUp') move(-1);
     else if (e.key === 'PageDown') move(8);
     else if (e.key === 'PageUp') move(-8);
-    else if (e.key === 'Home') move(-shown.length);
-    else if (e.key === 'End') move(shown.length);
     else if (e.key === 'Enter') { if (shown[active]) pick(shown[active]); }
     else return;
     e.preventDefault();
@@ -715,7 +738,14 @@ export function createSheet({ videoId, onPick, onClose }) {
   input.focus();
 
   return {
-    setStatus,
+    // The caller's status is the resting truth — the line a transient save
+    // failure temporarily overwrites, and the one a successful retry restores.
+    setStatus: (t) => {
+      if (dead) return;
+      restingStatus = t == null ? '' : String(t);
+      failureShown = false;
+      setStatus(restingStatus);
+    },
     setData: (rows) => {
       data = rows;
       loaded = true;

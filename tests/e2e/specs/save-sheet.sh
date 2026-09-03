@@ -37,18 +37,28 @@ reset_page() {
 assert_sheet_opened() {
   local surface="$1"
 
-  if ! ab_snapshot | grep -qE '^\s*-?\s*(listbox|combobox)'; then
+  if [[ -z "$(ab_sheet_tree)" ]]; then
     echo "[$SPEC_NAME] FAIL: $surface — no sheet appeared" >&2
     echo "[$SPEC_NAME]   screenshot: $(ab_snap "$surface-nosheet")" >&2
     FAILED_SURFACES+=("$surface")
     return 1
   fi
 
-  ab_assert_true "$surface: sheet took focus into its own surface" "$ab_sheet_open_js"
-  ab_assert_a11y "$surface: a search field is exposed" '(combobox|textbox|searchbox)'
-  ab_assert_a11y_min "$surface: playlists are listed as options" '^\s*-?\s*option' 3
-  ab_assert_true "$surface: YouTube's own save dialog is not stacked behind ours" \
-    "document.querySelectorAll('$SEL_NATIVE_SAVE_DIALOG').length === 0"
+  # Soft on purpose. A hard assertion exits the whole script, which would mean a
+  # watch-page failure silently skips the home feed — the one surface this spec
+  # exists to stop us from inferring.
+  local ok=0
+  ab_soft_true "$surface: sheet took focus into its own surface" "$ab_sheet_open_js" || ok=1
+  ab_soft_sheet_a11y "$surface: a search field is exposed" '(combobox|textbox|searchbox)' || ok=1
+  ab_soft_sheet_a11y_min "$surface: playlists are listed as options" '^\s*-?\s*option' 3 || ok=1
+  ab_soft_true "$surface: YouTube's own save dialog is not stacked behind ours" \
+    "document.querySelectorAll('$SEL_NATIVE_SAVE_DIALOG').length === 0" || ok=1
+
+  if [[ "$ok" -ne 0 ]]; then
+    echo "[$SPEC_NAME]   screenshot: $(ab_snap "$surface-partial")" >&2
+    FAILED_SURFACES+=("$surface")
+    return 1
+  fi
   return 0
 }
 
@@ -95,7 +105,7 @@ assert_sheet_opened "watch" || true
 
 # Typing must narrow the list. Driven through the a11y tree so the closed root
 # stays closed: we type into the exposed search field and count the options.
-BEFORE="$(ab_snapshot | grep -cE '^\s*-?\s*option' || true)"
+BEFORE="$(ab_sheet_a11y_count '^\s*-?\s*option')"
 agent-browser --session "$SESSION" eval '(() => {
   const host = document.activeElement;
   host.dispatchEvent(new KeyboardEvent("keydown", { key: "z", bubbles: true }));
@@ -103,7 +113,7 @@ agent-browser --session "$SESSION" eval '(() => {
 # Real keystrokes, so the input handler runs exactly as it does for a person.
 agent-browser --session "$SESSION" keyboard type "zzzqqq" >/dev/null 2>&1 || true
 agent-browser --session "$SESSION" wait 600 >/dev/null
-AFTER="$(ab_snapshot | grep -cE '^\s*-?\s*option' || true)"
+AFTER="$(ab_sheet_a11y_count '^\s*-?\s*option')"
 if [[ "$AFTER" -lt "$BEFORE" ]]; then
   echo "[$SPEC_NAME] PASS: watch: typing narrows the list ($BEFORE -> $AFTER)"
 else

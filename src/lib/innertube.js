@@ -116,17 +116,28 @@ export function resetConfigCache() {
 }
 
 async function plsAuth() {
-  const sapisid =
-    document.cookie.match(/(?:^|;\s*)SAPISID=([^;]+)/)?.[1] ??
-    document.cookie.match(/(?:^|;\s*)__Secure-3PAPISID=([^;]+)/)?.[1];
-  if (!sapisid) throw new Error('no SAPISID cookie — signed out?');
+  // Google uses a DIFFERENT scheme label per cookie: SAPISID -> SAPISIDHASH,
+  // __Secure-1PAPISID -> SAPISID1PHASH, __Secure-3PAPISID -> SAPISID3PHASH.
+  // Hashing the 3P cookie and still labelling it SAPISIDHASH gets a 401 on every
+  // call — the fallback would fail in exactly the situation it exists to rescue.
+  const candidates = [
+    [/(?:^|;\s*)SAPISID=([^;]+)/, 'SAPISIDHASH'],
+    [/(?:^|;\s*)__Secure-1PAPISID=([^;]+)/, 'SAPISID1PHASH'],
+    [/(?:^|;\s*)__Secure-3PAPISID=([^;]+)/, 'SAPISID3PHASH'],
+  ];
+  let value = null, scheme = null;
+  for (const [re, label] of candidates) {
+    const hit = document.cookie.match(re)?.[1];
+    if (hit) { value = hit; scheme = label; break; }
+  }
+  if (!value) throw new Error('no SAPISID cookie — signed out?');
   const ts = Math.floor(Date.now() / 1000);
   const digest = await crypto.subtle.digest(
     'SHA-1',
-    new TextEncoder().encode(`${ts} ${sapisid} ${PLS_ORIGIN}`)
+    new TextEncoder().encode(`${ts} ${value} ${PLS_ORIGIN}`)
   );
   const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
-  return `SAPISIDHASH ${ts}_${hex}`;
+  return `${scheme} ${ts}_${hex}`;
 }
 
 async function plsPost(path, body) {
