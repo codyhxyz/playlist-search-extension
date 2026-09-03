@@ -43,9 +43,9 @@ const SENSITIVE_PERMS = new Set([
 const DECLARATIVE_PERMS = new Set(["sidePanel"]);
 
 // Files/dirs under src/ that ship to the store via build-store-zip.sh.
-// test-search.js and any future test-*.js files stay out; vendor/ is 3rd
-// party and shouldn't be scanned for style/pattern violations.
-const SKIP_ENTRIES = new Set(["vendor", "welcome-assets", "icons"]);
+// test-*.js files stay out. As of 2.0.0 there is no vendor/ — the extension
+// carries no third-party code at all, which is most of its review story.
+const SKIP_ENTRIES = new Set(["welcome-assets", "icons"]);
 const TEST_FILE_RE = /^test-.*\.(m?js|cjs)$/;
 const SCAN_EXT_RE = /\.(js|mjs|html)$/;
 
@@ -403,8 +403,49 @@ function manifestReferencesExist({ manifest }) {
   return out;
 }
 
+// The service worker is `"type": "module"` and resolves its imports at runtime
+// from files in the package — they are NOT bundled. A missing or misspelled
+// specifier means Chrome fails to start the worker and the extension is
+// silently, completely dead: no console to check, because there's no worker.
+// content.bundle.js is excluded (esbuild already resolved its graph) and so is
+// anything under lib/ that only the bundle imports.
+function moduleImportsExist({ manifest, sources }) {
+  const out = [];
+  const entry = manifest.background?.service_worker;
+  if (!entry || manifest.background?.type !== "module") return out;
+
+  const seen = new Set();
+  const queue = [entry];
+  while (queue.length > 0) {
+    const rel = queue.shift();
+    if (seen.has(rel)) continue;
+    seen.add(rel);
+    const source = sources.find((s) => s.relPath === join("src", rel).replace(/\\/g, "/"));
+    if (!source) continue;
+    const re = /\bfrom\s+["'](\.[^"']+)["']/g;
+    for (const match of source.content.matchAll(re)) {
+      const spec = match[1];
+      const target = join(dirname(rel), spec).replace(/\\/g, "/");
+      if (!existsSync(join(SRC, target))) {
+        out.push({
+          rule: "module-imports-exist",
+          severity: "error",
+          message: `${rel} imports \`${spec}\`, but src/${target} does not exist`,
+          why: "A module service worker resolves imports at runtime. A missing one means the worker never starts and the extension is silently dead.",
+          fix: `Create src/${target}, or fix the specifier.`,
+          locations: [`${source.relPath}:${lineOf(source.content, match.index ?? 0)}`],
+        });
+        continue;
+      }
+      queue.push(target);
+    }
+  }
+  return out;
+}
+
 const RULES = [
   hostPermissionsBreadth,
+  moduleImportsExist,
   contentScriptsMatchesBreadth,
   unusedPermission,
   sensitivePermissionDeclared,

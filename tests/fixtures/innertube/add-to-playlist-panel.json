@@ -1,0 +1,49 @@
+{
+  "_provenance": "Structure transcribed from a LIVE capture on 2026-08-28 (see architecture/data.md §get_add_to_playlist): POST /youtubei/v1/playlist/get_add_to_playlist {videoIds:[id]} against a 256-playlist brand account, 230 KB, ~180 ms, 200 rows. Ids and titles are replaced; the shape, key names and enum values are verbatim. This REPLACES add-to-playlist-panel-synthetic.json, which encoded a guessed `selected: true` flag on a bare playlists[] array — a shape the live capture disproved. The renderer is `playlistAddToOptionRenderer` and membership is the `containsSelectedVideos` enum, never a boolean. Rows are nested two levels deeper than the old guess, which is exactly why parsing must walk rather than index.",
+  "responseContext": { "visitorData": "SCRUBBED" },
+  "contents": [
+    {
+      "addToPlaylistRenderer": {
+        "playlists": [
+          {
+            "playlistAddToOptionRenderer": {
+              "playlistId": "WL",
+              "title": { "simpleText": "Watch later" },
+              "privacy": "PRIVATE",
+              "containsSelectedVideos": "NONE",
+              "addToPlaylistServiceEndpoint": {
+                "playlistEditEndpoint": {
+                  "playlistId": "WL",
+                  "actions": [{ "addedVideoId": "jNQXAC9IVRw", "action": "ACTION_ADD_VIDEO" }]
+                }
+              },
+              "removeFromPlaylistServiceEndpoint": {
+                "playlistEditEndpoint": {
+                  "playlistId": "WL",
+                  "actions": [{ "removedVideoId": "jNQXAC9IVRw", "action": "ACTION_REMOVE_VIDEO_BY_VIDEO_ID" }]
+                }
+              }
+            }
+          },
+          {
+            "playlistAddToOptionRenderer": {
+              "playlistId": "PLexampleContains001",
+              "title": { "simpleText": "Deep Focus Instrumentals" },
+              "privacy": "PRIVATE",
+              "containsSelectedVideos": "ALL"
+            }
+          },
+          {
+            "playlistAddToOptionRenderer": {
+              "playlistId": "PLexampleOmitted002",
+              "title": { "simpleText": "Ocean sounds" },
+              "privacy": "PUBLIC",
+              "containsSelectedVideos": "NONE"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "_note": "The live response carries 200 such rows and NO continuation token. That 200 is a hard server cap — the same 200 ids come back for every videoId — so any playlist absent from this list is UNKNOWN, not absent-from. YouTube's own Save popover is built from the same 200 and is equally blind past it."
+}

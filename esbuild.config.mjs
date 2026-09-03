@@ -30,7 +30,9 @@ const config = {
   entryPoints: [path.join(SRC, "content.js")],
   bundle: true,
   format: "iife",
-  target: ["chrome114"],
+  // Matches minimum_chrome_version in src/manifest.json. The sheet's CSS uses
+  // modern colour/motion features; keep these two numbers in step.
+  target: ["chrome123"],
   platform: "browser",
   outfile: path.join(SRC, "content.bundle.js"),
   legalComments: "none",

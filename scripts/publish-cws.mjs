@@ -43,15 +43,19 @@ function validateZipAgainstSource(zipPath) {
   const list = spawnSync("unzip", ["-Z1", zipPath], { encoding: "utf8" });
   if (list.status !== 0) throw new Error(`cannot list zip: ${zipPath}`);
   const allowedTopLevel = new Set([
-    "manifest.json", "background.js", "content.bundle.js", "styles.css",
-    "onboarding-state.js", "welcome.html", "welcome.js",
+    "manifest.json", "background.js", "onboarding-state.js", "intent-hook.js",
+    "content.bundle.js", "welcome.html", "welcome.js",
   ]);
+  // Files the extension cannot run without, that aren't top-level. lib/intent.js
+  // is imported by the module service worker at runtime, so a zip missing it
+  // installs cleanly and then does nothing at all.
+  const requiredNested = ["lib/intent.js", "icons/icon128.png"];
   const files = list.stdout.split("\n").filter((name) => name && !name.endsWith("/"));
   for (const file of files) {
     if (
       !allowedTopLevel.has(file) &&
       !file.startsWith("icons/") &&
-      !file.startsWith("vendor/") &&
+      !file.startsWith("lib/") &&
       !file.startsWith("welcome-assets/")
     ) {
       throw new Error(`unexpected file in upload zip: ${file}`);
@@ -63,7 +67,7 @@ function validateZipAgainstSource(zipPath) {
       throw new Error(`upload zip does not match tested source: ${file}`);
     }
   }
-  for (const required of allowedTopLevel) {
+  for (const required of [...allowedTopLevel, ...requiredNested]) {
     if (!files.includes(required)) throw new Error(`upload zip is missing ${required}`);
   }
 }

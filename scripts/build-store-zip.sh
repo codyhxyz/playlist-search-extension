@@ -10,11 +10,16 @@ set -euo pipefail
 # defined) because nothing exercised content.js end-to-end before zipping —
 # that's what these gates are here to prevent.
 #
-# Post-InnerTube migration (commit 6ef48ac): no OAuth client credentials,
-# no .oauth.local.json. Post-1.6.13: src/content.js is now an ES module
-# entry that imports from src/lib/*.js; esbuild bundles them into
-# src/content.bundle.js, which is the file Chrome actually injects.
-# Background script + welcome page + vendored MiniSearch ship alongside.
+# 2.0.0 layout: the extension is the save sheet and nothing else.
+#   background.js       module service worker; imports onboarding-state.js
+#                       and lib/intent.js at runtime, so BOTH must ship
+#                       unbundled alongside it
+#   intent-hook.js      MAIN-world content script, no imports, ships as-is
+#   content.bundle.js   esbuild output of content.js + lib/{innertube,sheet}.js
+#   welcome.html/.js    onboarding + the optional-host-permission grant
+# No styles.css and no vendor/: the sheet is a closed shadow root that styles
+# itself via adoptedStyleSheets, and its search is a substring filter over our
+# own array, so the vendored BM25 index went with the /feed/playlists surface.
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SRC_DIR="$ROOT_DIR/src"
@@ -25,21 +30,23 @@ OUT="$DIST_DIR/youtube-playlist-filter-$VERSION.zip"
 echo "[build] Gate 1/6: esbuild bundle (src/content.js + src/lib/*.js → src/content.bundle.js)"
 (cd "$ROOT_DIR" && npm run --silent build)
 
-echo "[build] Gate 2/6: node --check src/content.bundle.js (what Chrome injects)"
-node --check "$SRC_DIR/content.bundle.js"
+echo "[build] Gate 2/6: node --check on every shipped script"
+for f in content.bundle.js background.js intent-hook.js onboarding-state.js welcome.js \
+         lib/intent.js lib/innertube.js lib/sheet.js; do
+  node --check "$SRC_DIR/$f"
+done
 
 echo "[build] Gate 3/6: typecheck (tsc --noEmit --checkJs)"
 (cd "$ROOT_DIR" && npm run --silent typecheck)
 
-echo "[build] Gate 4/6: unit tests (fixture-driven parsers + /feed anchor budget)"
-node --test "$ROOT_DIR/tests/innertube-parse.test.mjs" "$ROOT_DIR/tests/selectors-anchor-budget.test.mjs"
+echo "[build] Gate 4/6: unit tests (intent resolution + InnerTube parsers)"
+node --test "$ROOT_DIR/tests/intent.test.mjs" "$ROOT_DIR/tests/innertube.test.mjs"
 
-echo "[build] Gate 5/6: integration test (bundled content.js in vm sandbox)"
-node "$SRC_DIR/test-search.cjs"
+echo "[build] Gate 5/6: save-sheet UI contract (real engine)"
+node "$ROOT_DIR/tests/test-sheet-render.mjs"
 
-echo "[build] Gate 6/6: CWS structural validator + fixture mount harness"
+echo "[build] Gate 6/6: CWS structural validator"
 node "$ROOT_DIR/scripts/validate-cws.mjs"
-node "$ROOT_DIR/tests/test-feed-page-mount.mjs"
 
 # NOTE: the full e2e suite (signed-in YouTube via agent-browser) runs as the
 # pre-upload gate inside scripts/publish-cws.mjs, NOT here. Build = fast gates;
@@ -54,27 +61,33 @@ trap 'rm -rf "$STAGE_DIR"' EXIT
 cp -R \
   "$SRC_DIR/manifest.json" \
   "$SRC_DIR/background.js" \
-  "$SRC_DIR/content.bundle.js" \
-  "$SRC_DIR/styles.css" \
   "$SRC_DIR/onboarding-state.js" \
+  "$SRC_DIR/intent-hook.js" \
+  "$SRC_DIR/content.bundle.js" \
   "$SRC_DIR/welcome.html" \
   "$SRC_DIR/welcome.js" \
   "$SRC_DIR/icons" \
-  "$SRC_DIR/vendor" \
   "$SRC_DIR/welcome-assets" \
   "$STAGE_DIR/"
+
+# lib/ ships too, but ONLY the module the service worker imports at runtime.
+# lib/innertube.js and lib/sheet.js are already inlined into content.bundle.js;
+# shipping them again would put two copies of the same code in front of a
+# reviewer for no benefit.
+mkdir -p "$STAGE_DIR/lib"
+cp "$SRC_DIR/lib/intent.js" "$STAGE_DIR/lib/intent.js"
 
 cd "$STAGE_DIR"
 zip -r "$OUT" \
   manifest.json \
   background.js \
-  content.bundle.js \
-  styles.css \
   onboarding-state.js \
+  intent-hook.js \
+  content.bundle.js \
   welcome.html \
   welcome.js \
   icons \
-  vendor \
+  lib \
   welcome-assets \
   -x "*.DS_Store"
 

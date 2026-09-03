@@ -15,14 +15,11 @@ cd "$ROOT_DIR"
 echo "[run-all] build: production content bundle"
 npm run --silent build
 
-echo "[run-all] unit: InnerTube parser + /feed anchor budget"
-node --test tests/innertube-parse.test.mjs tests/selectors-anchor-budget.test.mjs
+echo "[run-all] unit: intent resolution + InnerTube parsers"
+node --test tests/intent.test.mjs tests/innertube.test.mjs
 
-echo "[run-all] integration: bundled content.js in a vm sandbox"
-node src/test-search.cjs
-
-echo "[run-all] fixture: tests/test-feed-page-mount.mjs"
-node tests/test-feed-page-mount.mjs
+echo "[run-all] contract: save-sheet UI in a real engine"
+node tests/test-sheet-render.mjs
 
 echo "[run-all] e2e: tests/e2e/run.sh"
 bash tests/e2e/run.sh

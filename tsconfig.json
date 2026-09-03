@@ -14,10 +14,5 @@
     "resolveJsonModule": false
   },
   "include": ["src/**/*.js", "src/**/*.d.ts"],
-  "exclude": [
-    "src/vendor/**",
-    "src/test-search.js",
-    "src/test-search.cjs",
-    "src/content.bundle.js"
-  ]
+  "exclude": ["src/content.bundle.js"]
 }

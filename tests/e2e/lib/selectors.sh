@@ -1,31 +1,27 @@
 #!/usr/bin/env bash
 # Centralized selectors for e2e specs.
 #
-# YouTube's DOM changes constantly; every spec sources this file so a single
-# selector update unblocks all of them. Specs should assert on BEHAVIOR (bar
-# exists, filter narrows results) more than exact selectors — but where a
-# selector is unavoidable, reach for the constant from this file.
+# As of 2.0.0 this file is nearly empty, and that is the headline result of the
+# rebuild rather than an oversight. The extension reads no data from YouTube's DOM
+# and writes no node into it, so there is almost nothing left to select. What
+# remains is: the affordances a *user* clicks (which the specs must drive, exactly
+# as a person would), and the native dialog we assert is NOT showing.
+#
+# Assert on behaviour, not markup. YouTube's class names churn weekly; roles and
+# visible labels do not.
 
-# Our extension's mounted nodes — these are stable because we own them.
-# Since v1.7 there is exactly ONE mount shape on /feed/playlists: the search
-# chip inside YouTube's native filter-chip row. The historic full-width
-# `.ytpf-inline-page` fallback bar is gone on purpose (see CHANGELOG /
-# selectors.js "NO FALLBACK MOUNTS"), so specs assert its ABSENCE.
-SEL_CHIP=".ytpf-inline.ytpf-chip"
-SEL_LEGACY_FALLBACK_BAR=".ytpf-inline-page"
-# Our owned, shadow-DOM results panel on /feed/playlists.
-SEL_FEED_PANEL="#ytpf-feed-results-host"
-# Owned save sheet (v1.7+): our shadow-DOM host, zero YouTube DOM coupling.
-SEL_SHEET_HOST="#ytpf-save-sheet-host"
+# ── Ours ────────────────────────────────────────────────────────────────────
+# The sheet lives in a CLOSED shadow root, so page-world JS cannot look inside it
+# — by design. Specs therefore assert through two doors that do not require
+# reaching in:
+#   1. `document.activeElement` — focus inside a closed root reports as the HOST,
+#      so "the sheet opened and took focus" is observable from the page.
+#   2. the accessibility tree (`agent-browser snapshot`), which DOES pierce closed
+#      roots. That also means we assert what a screen-reader user actually gets.
+SEL_SHEET_HOST="pls-save-sheet"
 
-# YouTube DOM — the COMPLETE coupling surface for /feed/playlists is these
-# two anchors. They mirror FEED_DOM_ANCHORS in src/lib/selectors.js; if you
-# find yourself adding a third here, the extension has regrown a dependency
-# the anchor-budget test is supposed to prevent.
-SEL_FEED_MOUNT_ANCHOR="chip-bar-view-model [role='tablist']"
-SEL_FEED_GRID_ANCHOR="ytd-rich-grid-renderer > #contents"
-
-SEL_SAVE_BUTTON='button[aria-label*="Save"]'
-# YouTube's native modal — asserted ABSENT after interception (regression:
-# if this selector matches, our interceptor failed to own the click).
-SEL_SAVE_DIALOG="ytd-add-to-playlist-renderer, yt-contextual-sheet-layout, tp-yt-paper-dialog:has(toggleable-list-item-view-model)"
+# ── YouTube's, and only where a user would click ────────────────────────────
+SEL_WATCH_PAGE="ytd-watch-flexy"
+# The native Save dialog. Asserted ABSENT once ours is up: if this is on screen
+# we have stacked two pickers, which is the failure the Escape dismissal covers.
+SEL_NATIVE_SAVE_DIALOG="ytd-add-to-playlist-renderer, yt-contextual-sheet-layout, tp-yt-paper-dialog:has(toggleable-list-item-view-model)"

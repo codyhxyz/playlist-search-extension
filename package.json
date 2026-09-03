@@ -2,14 +2,14 @@
   "name": "playlist-search-extension",
   "private": true,
   "type": "module",
-  "description": "Build + typecheck + test tooling for the YouTube Playlist Search Chrome extension. Esbuild bundles src/content.js + src/lib/*.js into src/content.bundle.js (the file Chrome injects); tsc --checkJs gates ctrl-shape drift; node:test runs the fixture-driven parser suite. The extension itself still ships as plain JS via the bundle.",
+  "description": "Build + typecheck + test tooling for the YouTube Playlist Search Chrome extension. Esbuild bundles src/content.js + src/lib/*.js into src/content.bundle.js (the file Chrome injects); tsc --checkJs gates drift; node:test runs the fixture-driven intent + InnerTube suites; tests/test-sheet-render.mjs pins the save-sheet UI contract in a real engine.",
   "scripts": {
     "build": "node esbuild.config.mjs",
     "build:watch": "node esbuild.config.mjs --watch",
     "typecheck": "tsc -p tsconfig.json",
     "pretest": "npm run build",
-    "test": "node --test tests/innertube-parse.test.mjs tests/selectors-anchor-budget.test.mjs && node src/test-search.cjs && node tests/test-feed-page-mount.mjs",
-    "test:fast": "node --test tests/innertube-parse.test.mjs tests/selectors-anchor-budget.test.mjs"
+    "test": "node --test tests/intent.test.mjs tests/innertube.test.mjs && node tests/test-sheet-render.mjs",
+    "test:fast": "node --test tests/intent.test.mjs tests/innertube.test.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.24.0",

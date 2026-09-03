@@ -32,7 +32,7 @@ launch || { echo "[e2e] launch raced daemon teardown, retrying"; sleep 2; launch
 agent-browser --session "$SESSION" wait 2000 >/dev/null
 
 echo "[e2e] step 4/4: running specs"
-SPECS=(sanity feed-playlists save-modal innertube-fetch)
+SPECS=(sanity save-sheet innertube-contract)
 FAILED=()
 for spec in "${SPECS[@]}"; do
   echo
