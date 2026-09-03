@@ -2,34 +2,44 @@
 
 All search logic lives in `src/content.js`. The extension uses [MiniSearch](https://github.com/lucaong/minisearch) (vendored in `src/vendor/minisearch.js`) for BM25 ranking.
 
-## The unified index
+Both search surfaces rank the same data: the playlist library fetched from
+InnerTube. Nothing is indexed from YouTube's rendered DOM.
 
-The central idea: **one search index covers both DOM playlists and API-fetched playlists.** A user typing in the modal should get the best-ranked result across their full library, not a split ranking between "what YouTube rendered" and "what we fetched."
+## One index over the InnerTube library
 
-`createUnifiedIndex(rows, apiPlaylists)` (content.js:403) builds it:
+Since v1.7 there is a single source of playlists: the InnerTube library
+snapshot (`loadAllPlaylists`). Both surfaces — the owned save sheet and the
+owned `/feed/playlists` result list — render from it, so the index has one
+kind of document and nothing to reconcile.
 
+`createPlaylistIndex(playlists)` builds it:
+
+```js
+docs = playlists.map((pl, i) => ({
+  id:   `pl:${i}`,
+  text: normalizeText(pl.title),
+  ref:  String(i),          // index back into feed.playlists
+}));
 ```
-docs = [
-  ...rows.map(i => ({ id: "dom:${i}", text, source: "dom", ref: i })),
-  ...apiPlaylists
-       .filter(pl => !domIds.has(pl.id))
-       .filter(pl => !consumeAnonymousNativeTitle(pl.title))
-       .map(pl => ({ id: "api:${pl.id}", text, source: "api", ref: pl.id }))
-]
-```
 
-Each doc is tagged with its source (`"dom"` or `"api"`) and a `ref` back to the original row element or playlist ID. When a search result comes back, `searchUnified` (content.js:454) uses that ref to either:
+`searchPlaylists(query)` searches it and maps each hit's `ref` back to the
+playlist object, returning `{ playlist, score, terms }`. Queries shorter than
+two characters skip BM25 (tokenization is useless there) and fall back to a
+substring scan ranked by match position.
 
-- `source === "dom"` — show the existing DOM row (and reorder it in the modal)
-- `source === "api"` — render a **synthetic row** the user can click to save the video to a playlist YouTube didn't load
+### What this replaced, and why
 
-## Deduplication
+Through 1.6.18 this was a *unified* index: DOM rows scraped out of YouTube's
+rendered markup, merged with API-fetched playlists, tagged `source: "dom"` or
+`source: "api"`, with deduplication by playlist ID plus a title-consumption
+heuristic for the modern view-model rows that expose no ID at all. Hits on
+`"dom"` docs re-ordered YouTube's own rows; hits on `"api"` docs rendered
+synthetic rows.
 
-Rows with playlist IDs deduplicate by ID. Distinct IDs remain searchable when titles match.
-
-Modern view-model rows do not expose IDs. Each ID-less native title consumes one equal API title in stable order. This prevents a native row from also appearing as a blind synthetic add action. Extra equal-title API playlists remain searchable.
-
-`src/test-search.cjs` covers both rules.
+All of that existed to paper over a decision we no longer make — reading
+playlists out of YouTube's DOM. With both surfaces rendering their own list
+from one snapshot, the dedup rules, the anonymous-title reconciliation, and
+the `source` tag all became answers to a question nobody asks any more.
 
 ## BM25 options
 
@@ -82,4 +92,4 @@ The highlight respects shadow DOM: `getLabelElement` descends through single-chi
 
 ## Why no `<script>` for MiniSearch?
 
-MiniSearch is loaded via `manifest.json`'s `content_scripts.js` array *before* `content.js`. That puts `MiniSearch` on the content script's isolated world globals. We check `typeof MiniSearch !== "function"` at the top of `createUnifiedIndex` and fall back to substring search if for some reason it didn't load.
+MiniSearch is loaded via `manifest.json`'s `content_scripts.js` array *before* `content.js`. That puts `MiniSearch` on the content script's isolated world globals. We check `typeof MiniSearch !== "function"` at the top of `createPlaylistIndex` and fall back to substring search if for some reason it didn't load.

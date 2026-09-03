@@ -1,17 +1,24 @@
 /**
- * Regression tests for the YouTube Playlist Search content script.
- * Run: node src/test-search.js
+ * Regression tests for the YouTube Playlist Search content script, run
+ * against the BUILT bundle inside a vm sandbox.
+ * Run: node src/test-search.cjs   (after `npm run build`)
  *
  * Coverage:
- *   1. createUnifiedIndex dedup — API "Favorites" is NOT dropped when
- *      a DOM row shares the same normalized title (only dedup by ID).
- *   2. Reference integrity — every callable reachable by typing in the
- *      modal resolves at runtime. Catches bugs like the one that shipped
- *      in dist/1.5.4: `buildHighlightHtml is not defined`, which slipped
- *      in because nothing ever loaded + exercised content.js end-to-end.
+ *   1. createPlaylistIndex — BM25 over the InnerTube library snapshot; every
+ *      playlist stays findable, including same-titled ones with distinct IDs.
+ *   2. Anchor budget, asserted against the bundle — /feed/playlists must
+ *      couple to exactly two YouTube DOM anchors, each a single selector and
+ *      neither leaning on a build-generated class. The source-level twin is
+ *      tests/selectors-anchor-budget.test.mjs; this one catches a bundle
+ *      built from a stale tree.
  *   3. Highlight builders — getHighlightRanges and buildHighlightFragment
  *      produce the expected ranges / <mark> structure for the "my favorites"
  *      shape of query (the case you've "fixed a million times before").
+ *   4. Identity + account routing — video-id resolution and the InnerTube
+ *      session/account key scrape.
+ *
+ * Loading the bundle at all is itself the reference-integrity check that
+ * caught `buildHighlightHtml is not defined` in dist/1.5.4.
  */
 
 const fs = require("node:fs");
@@ -290,109 +297,80 @@ if (!ytpf) {
 }
 
 // ---------------------------------------------------------------------------
-// Suite 1: createUnifiedIndex dedup (the "Favorites" regression)
-// Runs the real implementation via the vm-exported helpers — no mock.
+// Suite 1: createPlaylistIndex — BM25 over the InnerTube library snapshot.
+//
+// Pre-1.7 this suite indexed YouTube's rendered DOM rows and asserted that
+// API playlists weren't deduped away by same-titled rows. That whole problem
+// class is gone: there is exactly one source of playlists now (InnerTube), so
+// there is nothing to reconcile and nothing to dedup. What remains worth
+// pinning is that same-titled playlists with different IDs all stay findable.
 // ---------------------------------------------------------------------------
 
-function buildIndex(domRows, apiPlaylists) {
-  // The real createUnifiedIndex takes DOM row elements; here we fabricate
-  // minimal row-shaped objects with a `data.title.simpleText` field, which
-  // is the first fallback path getItemText checks.
-  const rows = domRows.map((r) => {
-    const el = fakeDocument.createElement("div");
-    el.data = { title: { simpleText: r.title } };
-    if (r.id) el.data.playlistId = r.id;
-    return el;
+function refsFor(playlists, query) {
+  const index = ytpf.createPlaylistIndex(playlists);
+  return index.search(query, ytpf.BM25_SEARCH_OPTIONS).map((r) => r.ref);
+}
+
+// Every playlist is indexed by its position, including same-title duplicates.
+{
+  const playlists = [
+    { id: "PL_abc", title: "Favorites", itemCount: 3 },
+    { id: "PL_xyz", title: "Favorites", itemCount: 9 },
+    { id: "PL_other", title: "Rock Favorites Mix", itemCount: 1 },
+    { id: "PL_none", title: "Cooking Videos", itemCount: 4 },
+  ];
+  const refs = refsFor(playlists, "favorites");
+  assert(refs.includes("0"), "first 'Favorites' should appear in results");
+  assert(refs.includes("1"), "second 'Favorites' (different ID) must not be dropped");
+  assert(refs.includes("2"), "'Rock Favorites Mix' should appear");
+  assert(!refs.includes("3"), "'Cooking Videos' should not match 'favorites'");
+}
+
+// Multi-term query reaches every playlist that carries either term.
+{
+  const playlists = [
+    { id: "PL_a", title: "Favorites", itemCount: 0 },
+    { id: "PL_b", title: "My Favorites", itemCount: 0 },
+    { id: "PL_c", title: "Gardening", itemCount: 0 },
+  ];
+  const refs = refsFor(playlists, "my favorites");
+  assert(refs.includes("0"), "'Favorites' appears in a 'my favorites' query");
+  assert(refs.includes("1"), "'My Favorites' appears in a 'my favorites' query");
+  assert(!refs.includes("2"), "'Gardening' should not match 'my favorites'");
+}
+
+// Empty library indexes cleanly rather than throwing.
+{
+  const index = ytpf.createPlaylistIndex([]);
+  assert(index !== null, "empty library still produces an index");
+  assert(index.search("anything", ytpf.BM25_SEARCH_OPTIONS).length === 0,
+    "empty library returns no matches");
+}
+
+// ---------------------------------------------------------------------------
+// Suite 2: the /feed/playlists anchor budget, asserted against the BUNDLE.
+//
+// tests/selectors-anchor-budget.test.mjs asserts this against the source
+// module. This one asserts it against the artifact Chrome actually injects,
+// which is what catches a bundle built from a stale tree.
+// ---------------------------------------------------------------------------
+{
+  const anchors = ytpf.FEED_DOM_ANCHORS;
+  assert(Array.isArray(anchors), "bundle exposes FEED_DOM_ANCHORS");
+  assert(anchors.length === 2,
+    `/feed/playlists must couple to exactly 2 YouTube DOM anchors, bundle has ${anchors.length}`);
+  assert(anchors.map((a) => a.id).join(",") === "search-mount,grid",
+    "anchor ids should be [search-mount, grid]");
+  anchors.forEach((a) => {
+    assert(!a.selector.includes(","),
+      `anchor "${a.id}" is a selector list ("${a.selector}") — that is N anchors, not one`);
+    assert(!/\.yt[A-Z]/.test(a.selector),
+      `anchor "${a.id}" leans on a build-generated class ("${a.selector}") — use a role or tag`);
   });
-  return ytpf.createUnifiedIndex(rows, apiPlaylists);
-}
-
-// exact-match API playlist must NOT be dropped when DOM row shares the title
-{
-  const dom = [{ id: "PL_abc", title: "Favorites" }];
-  const api = [
-    { id: "PL_abc", title: "Favorites" },      // same ID -> dedup
-    { id: "PL_xyz", title: "Favorites" },      // different ID, same title -> keep
-    { id: "PL_other", title: "Rock Favorites Mix" },
-  ];
-
-  const idx = buildIndex(dom, api);
-  const refs = idx.search("favorites", ytpf.BM25_SEARCH_OPTIONS).map((r) => r.ref);
-
-  assert(refs.includes("0"), "DOM 'Favorites' row should appear in results");
-  assert(refs.includes("PL_xyz"), "API 'Favorites' with different ID must not be deduped");
-  assert(!refs.includes("PL_abc"), "API playlist with same ID as DOM should be deduped");
-  assert(refs.includes("PL_other"), "API 'Rock Favorites Mix' should appear");
-}
-
-// ID-less view-model rows consume one matching API occurrence, while a
-// genuinely distinct same-title playlist remains searchable.
-{
-  const idx = buildIndex(
-    [{ id: null, title: "Favorites" }],
-    [
-      { id: "PL_first", title: "Favorites" },
-      { id: "PL_second", title: "Favorites" },
-    ],
-  );
-  const refs = idx.search("favorites", ytpf.BM25_SEARCH_OPTIONS).map((r) => r.ref);
-  assert(refs.includes("0"), "ID-less native row should remain indexed");
-  assert(!refs.includes("PL_first"), "one matching API occurrence should reconcile to the native row");
-  assert(refs.includes("PL_second"), "a second same-title playlist should remain searchable");
-}
-
-// API-only "Favorites" appears when not in DOM at all
-{
-  const dom = [{ id: "PL_111", title: "Cooking Videos" }];
-  const api = [{ id: "PL_222", title: "Favorites" }];
-  const idx = buildIndex(dom, api);
-  const results = idx.search("favorites", ytpf.BM25_SEARCH_OPTIONS);
-  assert(results.some((r) => r.ref === "PL_222"), "API-only 'Favorites' must appear in results");
-  assert(!results.some((r) => r.ref === "0"), "'Cooking Videos' should not match 'favorites'");
-}
-
-// "my favorites" query returns both a DOM "Favorites" and an API "My Favorites"
-{
-  const dom = [{ id: "PL_a", title: "Favorites" }];
-  const api = [
-    { id: "PL_b", title: "My Favorites" },
-    { id: "PL_c", title: "Favorites" },       // second "Favorites" by ID
-  ];
-  const idx = buildIndex(dom, api);
-  const refs = idx.search("my favorites", ytpf.BM25_SEARCH_OPTIONS).map((r) => r.ref);
-  assert(refs.includes("0"), "DOM 'Favorites' appears in 'my favorites' query");
-  assert(refs.includes("PL_b"), "API 'My Favorites' appears in 'my favorites' query");
-  assert(refs.includes("PL_c"), "second API 'Favorites' appears in 'my favorites' query");
 }
 
 // ---------------------------------------------------------------------------
-// Suite 1.5: MODAL_HOST_SELECTOR must not silently broaden.
-// Generic dialog components (tp-yt-paper-dialog, yt-contextual-sheet-layout)
-// are used across YouTube for many non-playlist surfaces — most visibly the
-// video upload Visibility step. They may only appear in MODAL_HOST_SELECTOR
-// when guarded by :has(toggleable-list-item-view-model) (the playlist-row
-// marker for the post-rollout view-model save modal). A bare reference would
-// re-introduce the regression that commit d652799 fixed.
-// ---------------------------------------------------------------------------
-{
-  const sel = ytpf.MODAL_HOST_SELECTOR;
-  assert(typeof sel === "string" && sel.length > 0, "MODAL_HOST_SELECTOR should be a non-empty string");
-  assert(sel.includes("ytd-add-to-playlist-renderer"), "MODAL_HOST_SELECTOR must still match ytd-add-to-playlist-renderer");
-
-  const requiresHasGuard = (tag) => {
-    const re = new RegExp(`${tag}(?!:has\\()`, "g");
-    const matches = sel.match(re) || [];
-    assert(
-      matches.length === 0,
-      `MODAL_HOST_SELECTOR must only reference ${tag} when guarded by :has(toggleable-list-item-view-model) — bare match catches non-playlist surfaces (e.g. upload Visibility)`,
-    );
-  };
-  requiresHasGuard("tp-yt-paper-dialog");
-  requiresHasGuard("yt-contextual-sheet-layout");
-}
-
-// ---------------------------------------------------------------------------
-// Suite 2: highlight builders
+// Suite 3: highlight builders
 // ---------------------------------------------------------------------------
 
 // getHighlightRanges on the canonical "my favorites" case
@@ -437,64 +415,22 @@ function buildIndex(domRows, apiPlaylists) {
 }
 
 // ---------------------------------------------------------------------------
-// Suite 3: reference integrity via renderSynthRows
-// Would have caught "buildHighlightHtml is not defined" before it shipped.
-// ---------------------------------------------------------------------------
-{
-  const parent = fakeDocument.createElement("div");
-  parent._connected = true;
-  const host = fakeDocument.createElement("div");
-  host._connected = true;
-
-  const ctrl = {
-    surface: "modal",
-    parent,
-    host,
-    synthRows: [],
-    rows: [],
-    bm25: null,
-    apiPlaylists: null,
-    apiAccountKey: "account-a",
-    targetVideoId: "TARGETVID01",
-  };
-
-  const apiMatches = [
-    { source: "api", playlist: { id: "PL_a", title: "My Favorites" }, terms: ["my", "favorites"], score: 2.5 },
-    { source: "api", playlist: { id: "PL_b", title: "Jazz Favorites" }, terms: ["favorites"], score: 0.9 },
-    { source: "api", playlist: { id: "PL_c", title: "Cooking" }, terms: [], score: 0.3 },
-  ];
-
-  let threw = null;
-  try {
-    ytpf.renderSynthRows(ctrl, apiMatches, "my favorites");
-  } catch (err) {
-    threw = err;
-  }
-  assert(!threw, `renderSynthRows threw: ${threw && threw.message}`);
-  assert(ctrl.synthRows.length === 3, `expected 3 synth rows, got ${ctrl.synthRows.length}`);
-  assert(parent.children.length === 3, "synth rows were appended to parent");
-
-  // Sanity: the row with highlighting should contain a <mark>
-  const firstRow = ctrl.synthRows[0];
-  const titleSpan = firstRow && firstRow.childNodes.find((c) => c.tagName === "SPAN");
-  const marksInTitle = (titleSpan?.childNodes || []).filter((c) => c.tagName === "MARK");
-  assert(marksInTitle.length >= 1, "synth row for 'My Favorites' should contain at least one <mark>");
-}
-
-// ---------------------------------------------------------------------------
-// Suite 4: authoritative identity and rerender-safe synthetic saves
+// Suite 4: authoritative identity + account routing
 // ---------------------------------------------------------------------------
 {
   fakeWindow.location.pathname = "/watch";
   fakeWindow.location.search = "?v=PAGEPAGE001";
-  const host = fakeDocument.createElement("div");
-  host.data = { videoId: "TARGETVID01" };
-  assert(ytpf.getCurrentVideoId(host) === "TARGETVID01",
-    "modal-owned video ID must outrank the page URL");
+  assert(ytpf.getCurrentVideoId() === "PAGEPAGE001",
+    "the watch URL is the authoritative video id");
+
+  fakeWindow.location.pathname = "/shorts/SHORTVID001";
+  fakeWindow.location.search = "";
+  assert(ytpf.getCurrentVideoId() === "SHORTVID001",
+    "shorts paths carry the video id in the path");
 
   fakeWindow.location.pathname = "/feed/subscriptions";
   fakeWindow.location.search = "";
-  assert(ytpf.getCurrentVideoId(fakeDocument.createElement("div")) === "",
+  assert(ytpf.getCurrentVideoId() === "",
     "non-watch pages must not guess a video from arbitrary links");
 }
 
@@ -512,58 +448,6 @@ function buildIndex(domRows, apiPlaylists) {
   assert(ytpf.getInnertubeConfig(true).accountKey === null,
     "API search should fail safe when no stable account identifier exists");
   fakeScripts = [];
-}
-
-{
-  let calls = 0;
-  const pending = new Promise(() => {});
-  const first = ytpf.beginSynthSave("account-b", "TARGETVID02", "PL_pending", () => {
-    calls += 1;
-    return pending;
-  });
-  const second = ytpf.beginSynthSave("account-b", "TARGETVID02", "PL_pending", () => {
-    calls += 1;
-    return pending;
-  });
-  assert(first === second, "concurrent synthetic saves should join one operation");
-  assert(calls === 1, "concurrent synthetic saves should issue one request");
-
-  const parent = fakeDocument.createElement("div");
-  parent._connected = true;
-  const ctrl = {
-    surface: "modal",
-    parent,
-    host: fakeDocument.createElement("div"),
-    synthRows: [],
-    rows: [],
-    bm25: null,
-    apiPlaylists: null,
-    apiAccountKey: "account-b",
-    targetVideoId: "TARGETVID02",
-  };
-  const match = [{ source: "api", playlist: { id: "PL_pending", title: "Pending" }, terms: ["pending"], score: 1 }];
-  ytpf.renderSynthRows(ctrl, match, "pending");
-  const firstButton = ctrl.synthRows[0].children[0];
-  assert(firstButton.disabled === true, "rendered pending save should be disabled");
-  ytpf.renderSynthRows(ctrl, match, "pending");
-  const replacementButton = ctrl.synthRows[0].children[0];
-  assert(replacementButton !== firstButton, "filter pass should recreate the synthetic row");
-  assert(replacementButton.disabled === true, "replacement row should preserve pending state");
-  first.status = "done";
-  ytpf.renderSynthRows(ctrl, match, "pending");
-  assert(ctrl.synthRows[0].children[0].classList.contains("ytpf-synth-done"),
-    "replacement row should preserve completed state");
-}
-
-{
-  const row = fakeDocument.createElement("yt-list-item-view-model");
-  const button = fakeDocument.createElement("button");
-  const ctrl = { rows: [row] };
-  const found = ytpf.nativeModalRowForEvent(
-    { target: button, composedPath: () => [button, row] },
-    ctrl,
-  );
-  assert(found === row, "composed click path should resolve the tracked native row");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

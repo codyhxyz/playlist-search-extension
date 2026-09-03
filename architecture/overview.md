@@ -13,7 +13,9 @@ YouTube's "Save to playlist" dialog has no search and caps at ~200 playlists. Th
 1. Injects a search bar into that dialog.
 2. Fetches the user's full playlist library via YouTube's internal API (bypassing the 200 cap).
 3. Ranks results using BM25 and highlights matches as the user types.
-4. Also works on `/feed/playlists` for filtering the playlist library page.
+4. On `/feed/playlists`, a search chip in YouTube's native chip bar renders our own
+   result list from the same InnerTube library snapshot, hiding YouTube's grid while
+   results are showing. We do not read, filter, or restyle their playlist cards.
 
 ## High-level shape
 
@@ -32,8 +34,8 @@ The interesting work happens in a **content script** injected at `document_start
 │   │         │           └──────┬───────┘   └────────────┘  │    │
 │   │         ▼                  ▼                           │    │
 │   │  ┌──────────────────────────────────┐                  │    │
-│   │  │  UI injection (modal / feed)     │                  │    │
-│   │  │  + synthetic rows for API hits   │                  │    │
+│   │  │  Owned UI (shadow DOM)           │                  │    │
+│   │  │  save sheet · feed result list   │                  │    │
 │   │  └──────────────────────────────────┘                  │    │
 │   └────────────────────────────────────────────────────────┘    │
 │                                                                 │
@@ -47,7 +49,8 @@ The interesting work happens in a **content script** injected at `document_start
 | **All real work in the content script** | The service worker exists only to flip dynamic content-script registration when host permission changes and to open the welcome tab on install — nothing user-data-handling runs in it. Cookies give us same-origin auth to YouTube from the content script, so no OAuth token management is needed in either context. |
 | **InnerTube API, not YouTube Data API v3** | InnerTube has no quota limits and returns the full playlist library in one paginated call. Data API v3 required OAuth + a Google Cloud project and capped at partial results. |
 | **SAPISID cookie auth** | If the user is logged into YouTube in this tab, we already have everything we need to call InnerTube. No sign-in flow, no token refresh, no `chrome.identity`. |
-| **Single unified BM25 index** | DOM rows (visible in the modal) and API-fetched playlists (beyond the 200 cap) share one ranking so the top result is always the best match, regardless of source. |
+| **One BM25 index over the InnerTube snapshot** | Both surfaces rank the same library snapshot. Pre-v1.7 the index merged YouTube's rendered DOM rows with API playlists and had to reconcile the two; since both surfaces render their own UI there is a single source and nothing to dedup. |
+| **Two DOM anchors on `/feed/playlists`, enforced by a test** | One mount point (the native chip bar) and one container to hide (their grid). Anything more means we started reading their markup again — see `tests/selectors-anchor-budget.test.mjs`. |
 | **Vendor MiniSearch instead of rolling our own** | BM25 + prefix + fuzzy scoring is non-trivial. MiniSearch is ~60KB, runs entirely locally, and matches what users expect from a search box. |
 | **No build step** | Plain JS loaded directly. The only "dependency" is MiniSearch, vendored as a single file. Makes loading unpacked trivial. |
 
@@ -57,7 +60,11 @@ The interesting work happens in a **content script** injected at `document_start
 src/
 ├── manifest.json          Manifest v3. Permissions: scripting + storage. Optional host: youtube.com.
 ├── background.js          Service worker. Dynamic content-script registration; opens welcome page on install.
-├── content.js             All feature logic (~1700 lines, single IIFE)
+├── content.js             All feature logic (single IIFE; ES-module entry, bundled by esbuild)
+├── content.bundle.js      Built artifact Chrome actually injects (gitignored)
+├── lib/
+│   ├── selectors.js       The COMPLETE YouTube DOM coupling surface (2 /feed anchors)
+│   └── innertube-parse.js Pure InnerTube response parsers + shape canary
 ├── onboarding-state.js    Globals shared by SW + welcome page + content script (chrome.storage helpers)
 ├── welcome.html           First-run onboarding page (chrome.permissions.request flow)
 ├── welcome.js             Welcome page controller
@@ -66,7 +73,7 @@ src/
 ├── vendor/
 │   ├── minisearch.js      BM25 ranking library (UMD build)
 │   └── README.md          Vendor provenance
-├── test-search.js         Node-based regression test for ID-based dedup
+├── test-search.cjs        vm-sandbox regression test over the built bundle
 └── icons/                 16/48/128 px extension icons
 ```
 
@@ -76,7 +83,7 @@ Each document in this folder covers one subsystem:
 
 - **[search.md](search.md)** — How BM25 ranks DOM and API playlists through one index, and how query highlighting works.
 - **[innertube-api.md](innertube-api.md)** — How we fetch playlists and save videos using YouTube's internal API with SAPISID auth.
-- **[ui-injection.md](ui-injection.md)** — How the search bar gets into YouTube's DOM across multiple component variants and shadow roots.
+- **[ui-injection.md](ui-injection.md)** — How our UI attaches to YouTube: two owned shadow-DOM surfaces plus the two enumerated DOM anchors on `/feed/playlists`.
 - **[lifecycle.md](lifecycle.md)** — Startup, mutation observation, per-host controllers, and teardown.
 
 ## Key constants worth knowing
@@ -84,6 +91,8 @@ Each document in this folder covers one subsystem:
 Defined at the top of `src/content.js`:
 
 - `PLAYLIST_CACHE_TTL_MS` — 6 hours. How long the in-memory API playlist cache lives.
-- `MODAL_API_RESULTS_LIMIT` — 24. Max synthetic rows rendered in the modal for API-only matches.
+- `SHEET_MAX_ROWS` — 100. Max rows rendered in the owned save sheet.
+- `FEED_MAX_RESULTS` — 120. Max result cards rendered on `/feed/playlists`.
+- `FEED_DOM_ANCHOR_BUDGET` (src/lib/selectors.js) — 2. Hard, tested cap on the number of YouTube DOM anchors the feed surface may use.
 - `BM25_SEARCH_OPTIONS` — `prefix: true`, `fuzzy: 0.2`, weighted 0.75 prefix / 0.1 fuzzy.
 - `INNERTUBE_API_KEY_FALLBACK` / `INNERTUBE_CLIENT_VERSION_FALLBACK` — Used only if we can't extract them from the current page's scripts.

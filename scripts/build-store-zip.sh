@@ -31,8 +31,8 @@ node --check "$SRC_DIR/content.bundle.js"
 echo "[build] Gate 3/6: typecheck (tsc --noEmit --checkJs)"
 (cd "$ROOT_DIR" && npm run --silent typecheck)
 
-echo "[build] Gate 4/6: unit tests (fixture-driven parsers)"
-node --test "$ROOT_DIR/tests/innertube-parse.test.mjs" "$ROOT_DIR/tests/dom-parse.test.mjs"
+echo "[build] Gate 4/6: unit tests (fixture-driven parsers + /feed anchor budget)"
+node --test "$ROOT_DIR/tests/innertube-parse.test.mjs" "$ROOT_DIR/tests/selectors-anchor-budget.test.mjs"
 
 echo "[build] Gate 5/6: integration test (bundled content.js in vm sandbox)"
 node "$SRC_DIR/test-search.cjs"

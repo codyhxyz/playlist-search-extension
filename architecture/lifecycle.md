@@ -2,6 +2,19 @@
 
 How the extension starts up, stays in sync with YouTube's constantly-mutating DOM, and cleans up after itself.
 
+> **Doc status (as of v1.7):** the *reconciler* half of this document (startup,
+> the shared MutationObserver, the debounce/suppress rules, `enqueueReconcile`)
+> is current. The *controller* half is not: the `Ctrl` record, `attachHost` /
+> `upsertHost` / `teardownHost`, modal sessions, row fingerprints, and
+> synthetic rows all belonged to the DOM-injection architecture that b9b3ed9
+> (save sheet) and the `/feed/playlists` rebuild replaced. There is now one
+> singleton `feed` state object plus a standalone save sheet; see
+> `ui-injection.md` and the "Owned" sections of `src/content.js`.
+> Mutation relevance is also much narrower: a mutation matters only if it
+> could have created or destroyed one of the two enumerated feed anchors.
+> Churn *inside* YouTube's grid is no longer our problem, because we no longer
+> read it.
+
 ## Startup
 
 The content script is registered dynamically by the service worker (`background.js`) with `runAt: "document_start"`, so it's injected before YouTube's own scripts run on any youtube.com page where the user has granted the optional host permission. `content.js` is an IIFE that ends with a `start()` call.

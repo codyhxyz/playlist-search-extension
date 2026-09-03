@@ -43,9 +43,8 @@ src/
   content.js             — Source entry for the content script (uses ES module imports)
   content.bundle.js      — Built output (esbuild); the file Chrome actually injects. Gitignored.
   lib/
-    selectors.js         — Every YouTube CSS selector + the OLD/NEW renderer reference notes
+    selectors.js         — The COMPLETE YouTube DOM coupling surface: 2 anchors for /feed/playlists
     innertube-parse.js   — Pure parser for InnerTube responses + shape canary
-    dom-parse.js         — Pure Polymer .data extractors (getRowPlaylistId, isSaveVideoModal, …)
   styles.css             — CSS custom properties for theming (dark/light)
   vendor/
     minisearch.js        — Vendored BM25 ranking library (UMD)
@@ -54,9 +53,9 @@ src/
   icons/                 — Extension icons
 
 tests/
-  innertube-parse.test.mjs  — Fixture-driven unit tests for the InnerTube parser
-  dom-parse.test.mjs        — Object-stub unit tests for Polymer extractors
-  test-feed-page-mount.mjs  — Live-Chromium DOM harness (agent-browser, optional)
+  innertube-parse.test.mjs        — Fixture-driven unit tests for the InnerTube parser
+  selectors-anchor-budget.test.mjs — Fails the build if /feed/playlists grows a 3rd DOM anchor
+  test-feed-page-mount.mjs        — Live-Chromium DOM harness (agent-browser, optional)
   fixtures/
     innertube/           — Captured (or synthetic) InnerTube JSON responses + CAPTURE.md
     *.html               — Captured YouTube DOM snapshots
@@ -73,8 +72,10 @@ See [`architecture/overview.md`](architecture/overview.md) for a tour of the cod
 1. Create a branch off `main`
 2. Make your changes — if you edit anything under `src/lib/`, `npm run build:watch` will keep the bundle hot
 3. Run `npm test` — it rebuilds the bundle first and then exercises:
-   - the pure parsers (fixture-driven unit tests, fast)
-   - the bundled content script in a vm sandbox (39 regression assertions)
+   - the InnerTube parser (fixture-driven unit tests, fast)
+   - the `/feed/playlists` anchor budget (fails if the coupling surface grows)
+   - the bundled content script in a vm sandbox (38 regression assertions)
+   - the live-Chromium feed-surface contract, if `agent-browser` is installed
 4. Test manually in Chrome (reload the extension after each build)
 5. Open a PR with a clear description of what changed and why
 
@@ -101,45 +102,51 @@ signal the coupling surface is leaking — consider extending the extraction.
 
 ## Intervening in YouTube's DOM (principles)
 
-YouTube ships multiple playlist-grid layouts in parallel (row-wrapped
-`ytd-rich-grid-row` slots, direct `yt-lockup-view-model` grids, chip-bar
-hosts, and more arrive without notice). Several past regressions came from
-written framing that read like a universal rule of the surface but was
-really a workaround for **one** observed DOM shape. To keep that from
-happening again, follow these rules:
+YouTube's rendered DOM is not an API. Every regression this project has
+shipped — 1.6.6, 1.6.7, 1.6.8, 1.6.10, 1.6.15, 1.6.17 on `/feed/playlists`,
+and 1.6.6–1.6.18 on the Save modal — was the same bug: we parsed their
+markup, and they changed their markup. Both surfaces have since been rebuilt
+to render from InnerTube data we already hold. These rules keep them that way.
 
-1. **Native layout is the default.** Do not replace YouTube's grid with
-   our own CSS unless the *current* DOM shape proves it needs that exact
-   intervention. Hiding/showing/highlighting rows is the expected scope of
-   a filter; owning container layout is the exception, not the rule.
+1. **Own the surface; don't read theirs.** If the data is already in an
+   InnerTube response, render it yourself. Re-deriving it from their DOM
+   trades a stable JSON shape for an unstable HTML one and buys nothing.
 
-2. **Feature-detect the shape before overriding it.** Classify the host
-   (e.g. row-wrapped vs direct-lockup) and branch on that. Never branch
-   layout behavior on route/URL alone — `/feed/playlists` has shipped
-   multiple shapes concurrently.
+2. **Enumerate and budget the coupling.** Every YouTube selector lives in
+   `src/lib/selectors.js`, and `/feed/playlists` is budgeted to exactly two
+   anchors: one mount point, one container to hide.
+   `tests/selectors-anchor-budget.test.mjs` fails the build if that grows.
+   When you want a third, the fix is nearly always to derive it from one of
+   the two by DOM relationship, take it from InnerTube, or drop the need.
 
-3. **State classes ≠ layout-mode classes.** A class like `.ytpf-page-filtering`
-   means "a filter query is active." A separate class (e.g.
-   `.ytpf-page-filtering-rows`) means "apply the row-wrapper reflow hack."
-   Keep the two concerns separate so one can be true without forcing the
-   other.
+3. **Anchor on the accessibility tree first, tag names second, generated
+   classes never.** `chip-bar-view-model [role='tablist']` survives a CSS
+   rebuild; `.ytChipBarViewModelChipBarScrollContainer` does not. The budget
+   test enforces this too.
 
-4. **Every layout override needs two tests: a positive one (it applies on
-   the shape that needs it) and a negative one (it must NOT apply on every
-   other shape).** A mount+narrowing test passes even when the filtered
-   cards are tiny/broken — geometry must be asserted too.
+4. **No fallback mounts.** If an anchor doesn't resolve, render nothing and
+   record a diagnostic. A fallback that puts our UI somewhere unexpected is
+   worse than no UI: the user can't tell it apart from a YouTube bug, and we
+   never hear about it. Every anchor records a `recordDiagnostic` entry when
+   it resolves to nothing *or* to more than one node.
 
-5. **Don't generalize from one captured fixture.** A fixture is *one*
+5. **Touch their nodes reversibly, or not at all.** The one thing we still do
+   to YouTube's DOM on `/feed/playlists` is toggle `display` on a single
+   container. We capture its inline `style` before, and restore it
+   byte-for-byte after — the e2e spec asserts the attribute is identical.
+   We no longer hide, re-grid, or inject `<mark>` into their cards.
+
+6. **Don't generalize from one captured fixture.** A fixture is *one*
    observed shape, not "the /feed/playlists layout." Document fixtures as
-   shape coverage, not as a 1:1 representation of the surface, and keep
-   multiple shapes in fixtures when they diverge.
+   shape coverage. (This mattered enormously when we parsed their cards; it
+   matters less now, which is the point.)
 
-6. **Write comments about the *current shape*, not about "YouTube."**
-   Phrasing like "YouTube wraps lockups inside row slots" reads as a law
-   of the surface. Prefer "on the row-wrapped layout, lockups sit inside
-   row slots, so…" — so the next reader knows it's conditional.
+7. **Write comments about the *current shape*, not about "YouTube."**
+   Phrasing like "YouTube wraps lockups inside row slots" reads as a law of
+   the surface. Prefer "on the row-wrapped layout, lockups sit inside row
+   slots, so…" — so the next reader knows it's conditional.
 
-The short version: **native-first, shape-gated, minimally invasive.**
+The short version: **own it, enumerate what you can't own, fail loudly.**
 Treat YouTube's layout as hostile/variable infrastructure we nudge, not a
 stable component we restyle wholesale.
 

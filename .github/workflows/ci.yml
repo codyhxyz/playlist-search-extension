@@ -34,8 +34,8 @@ jobs:
       - name: Typecheck (JSDoc + tsc --checkJs)
         run: npm run typecheck
 
-      - name: Unit tests (fixture-driven parsers, fast)
-        run: node --test tests/innertube-parse.test.mjs tests/dom-parse.test.mjs
+      - name: Unit tests (fixture-driven parsers + /feed anchor budget)
+        run: node --test tests/innertube-parse.test.mjs tests/selectors-anchor-budget.test.mjs
 
       - name: Integration test (bundled content.js in vm sandbox)
         run: node src/test-search.cjs

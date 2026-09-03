@@ -1,126 +1,162 @@
 # UI Injection
 
-How a content script running in the youtube.com isolated world puts a search bar inside YouTube's own UI — without breaking YouTube's components, across multiple layout variants, through shadow roots, in both light and dark mode.
+How a content script running in the youtube.com isolated world adds search to
+YouTube — without parsing YouTube's markup, in both light and dark mode, and
+without breaking when they rebuild their components (which they do, often).
+
+## The rule
+
+**Own the surface; don't read theirs.** YouTube's rendered DOM is not an API.
+Every regression this extension has shipped came from treating it like one:
+1.6.6–1.6.18 on the Save modal, and 1.6.6 / 1.6.7 / 1.6.8 / 1.6.10 / 1.6.15 /
+1.6.17 on `/feed/playlists`. Both surfaces have since been rebuilt to render
+from the InnerTube library snapshot we already fetch.
+
+What survives is a small, enumerated, tested set of attachment points.
 
 ## Two surfaces
 
-The extension attaches to exactly two places:
-
-| Surface | Where | Behavior |
+| Surface | Attachment to YouTube | What we render |
 |---|---|---|
-| Save sheet | Watch/Shorts action-bar Save button | Owned shadow-DOM sheet (#ytpf-save-sheet-host); zero YouTube DOM coupling since v1.7. See content.js "Owned save sheet". |
-| `"page"` | `/feed/playlists` or `/feed/library` | Filters existing rows only, preserves YouTube's ordering, shows a `"n of m"` match counter |
+| Save sheet | One intercepted click: the action-bar button whose `aria-label` starts with "Save", on `ytd-watch-flexy` / `ytd-shorts`. No selector, no modal DOM. | Our own shadow-DOM sheet at `#ytpf-save-sheet-host`: search input, playlist rows, add/remove toggles via `browse/edit_playlist`. |
+| `/feed/playlists` | Exactly two DOM anchors (below). | A search chip in YouTube's chip bar (light DOM, so it looks native) + a shadow-DOM result list at `#ytpf-feed-results-host`. |
 
-Both use the same `createInlineFilterUi(surface)` (content.js:975) builder. Styling differs (height, padding, sticky positioning) but the HTML shape is identical:
+Neither surface reads a playlist title, ID, thumbnail, or count out of
+YouTube's DOM. Both render from `loadAllPlaylists()`.
 
-```html
-<section class="ytpf-inline ytpf-inline-modal|ytpf-inline-page">
-  <div class="ytpf-row">
-    <div class="ytpf-input-wrap">
-      <input class="ytpf-input" placeholder="Search playlists" />
-      <button class="ytpf-clear">×</button>
-    </div>
-  </div>
-  <span class="ytpf-meta" aria-live="polite"></span>  <!-- page only -->
-</section>
-```
+## The two anchors
 
-## Host detection
-
-YouTube ships many component variants depending on client version, A/B test bucket, and device. We match the playlist-specific renderers directly, then scope row discovery within that host:
-
-> **Layout-intervention principle:** native layout is the default. We hide,
-> show, and highlight rows freely; we only override YouTube's *container*
-> layout (e.g. flattening `#contents` into a grid) when the current DOM
-> shape proves it needs that exact fix — and the override is gated on a
-> shape check plus carries a negative test for shapes where it must not
-> fire. See `CONTRIBUTING.md` → "Intervening in YouTube's DOM". The 1.6.17
-> regression was a universal grid override that was correct for the
-> row-wrapped layout but squashed the direct-lockup layout.
+`src/lib/selectors.js` holds the complete YouTube DOM coupling surface for the
+feed page. It is exactly two entries, and
+`tests/selectors-anchor-budget.test.mjs` fails the build if it grows:
 
 ```js
-const MODAL_HOST_SELECTOR =
-  "ytd-add-to-playlist-renderer, yt-add-to-playlist-renderer, " +
-  "yt-contextual-sheet-layout:has(toggleable-list-item-view-model yt-collection-thumbnail-view-model), " +
-  "tp-yt-paper-dialog:has(toggleable-list-item-view-model yt-collection-thumbnail-view-model)";
-
-const MODAL_ROW_SELECTOR =
-  "toggleable-list-item-view-model, ytd-playlist-add-to-option-renderer, " +
-  "yt-playlist-add-to-option-renderer, yt-checkbox-list-entry-renderer, " +
-  "yt-list-item-view-model, yt-collection-item-view-model";
+FEED_SEARCH_MOUNT_SELECTOR = "chip-bar-view-model [role='tablist']";
+FEED_GRID_SELECTOR         = "ytd-rich-grid-renderer > #contents";
 ```
 
-Generic dialog elements are allowed only with the playlist-thumbnail structural guard. During reconciliation, each row belongs to its nearest composed matching host, so nested paper-dialog/contextual-sheet wrappers cannot create duplicate bars.
+```
+ytd-rich-grid-renderer
+  #header
+    chip-bar-view-model
+      [role='tablist']        ← ANCHOR 1: our search chip is appended here
+        …native chips… + our chip
+  #contents                   ← ANCHOR 2: hidden while our results show
+  #ytpf-feed-results-host     ← our shadow-DOM result list (inserted after it)
+```
+
+Why these two, and why in this form:
+
+- **Accessibility signals beat tag names; tag names beat generated classes.**
+  `[role='tablist']` is what the chip bar *is*; `.ytChipBarViewModelChipBarScrollContainer`
+  is what their build emitted this quarter. The `chip-bar-view-model` tag
+  scopes it so we can't wander into another tablist on the page — the mount
+  test asserts exactly that against a fixture containing decoy tablists.
+- **The grid anchor uses a direct-child combinator on purpose.**
+  `ytd-rich-grid-renderer #contents` (descendant) also matches the `#contents`
+  inside every `ytd-rich-grid-row`; hiding the wrong one would be silent.
+- **The results panel needs no anchor of its own.** It is inserted as
+  `grid.after(panel)`, derived from anchor 2 by DOM relationship.
+
+## No fallback mounts
+
+If an anchor doesn't resolve, we render **nothing** and record a diagnostic.
+
+Through 1.6.18 the feed bar fell back to a full-width `.ytpf-inline-page`
+mount when no chip bar was found. That fallback is deleted. A UI that appears
+somewhere unexpected is worse than a UI that doesn't appear: the user can't
+distinguish it from a YouTube bug, so it never gets reported, and the "safe"
+fallback is the thing that looks broken.
+
+`resolveFeedAnchor(id)` records:
+
+- `feed_anchor_unresolved:<id>` — nothing visible matched. Includes the
+  selector, its purpose, and how many nodes matched but were invisible.
+- `feed_anchor_ambiguous:<id>` — more than one visible match, meaning our
+  scoping assumption broke and "take the first" would be a coin flip.
+
+`refresh()` additionally schedules `feed_surface_missing` with a full probe of
+both anchors after `TIMINGS.MOUNT_CHECK_DELAY_MS`, so a slow second paint
+isn't reported as breakage. `window.__ytpfDiag()` returns the same probe on
+demand — anchor-by-anchor match/visible counts, what we have mounted, whether
+the grid is currently hidden, and the library status.
+
+## Hiding their grid reversibly
+
+The only thing we still do to a YouTube node is toggle `display` on anchor 2:
+
+```js
+feed.gridDisplay   = grid.style.display;           // "" when unset
+feed.gridStyleAttr = grid.getAttribute("style");   // null when absent
+grid.style.setProperty("display", "none", "important");
+```
+
+On restore we remove the property, reapply the captured value, and drop an
+empty `style=""` attribute if there wasn't one before. "Restore" means the
+attribute is byte-identical, not merely equivalent — the e2e spec and the
+Chromium fixture test both compare `getAttribute("style")` before and after.
+
+We reapply rather than overwrite the whole attribute so that anything YouTube
+wrote while we were hidden survives.
+
+Their grid is hidden **only once we have results to show in its place**: a
+failed or in-flight library fetch leaves their page exactly as it was, with
+our status line below it.
 
 ## Shadow DOM traversal
 
-YouTube uses web components heavily, and some of its layers render inside shadow roots. A plain `document.querySelectorAll` would miss those. `queryAllDeep(selector, root)` (content.js:331) walks the light DOM *and* every nested shadow root:
+YouTube uses web components heavily, and some layers render inside shadow
+roots. `queryAllDeep(selector, root)` walks the light DOM *and* every nested
+shadow root. Anchor resolution tries a plain `document.querySelectorAll` first
+and only falls back to the deep walk when that comes up empty — a full
+TreeWalker sweep twice per reconcile is not free on a page with thousands of
+nodes, and a future YouTube move into a shadow root should degrade to
+"slower", not "broken".
 
-```js
-function walk(nodeRoot) {
-  nodeRoot.querySelectorAll(selector).forEach(addResult);
-  const walker = document.createTreeWalker(nodeRoot, NodeFilter.SHOW_ELEMENT);
-  let node = walker.currentNode;
-  while (node) {
-    if (node.shadowRoot) walk(node.shadowRoot);
-    node = walker.nextNode();
-  }
-}
-```
+## Styling
 
-Every time we look for modal hosts or rows, we use `queryAllDeep`, not `document.querySelectorAll`.
+Two stylesheets, for two different jobs:
 
-## Scoped style injection
+1. **`src/styles.css`** (+ the identical `CHIP_STYLES` string in content.js,
+   injected by `ensureScopedStyles`) — styles our search chip only. The chip
+   lives in YouTube's light DOM because it has to look like a native
+   `chip-view-model`: 32px tall, 8px radius, `--yt-spec-badge-chip-background`
+   fill. `color-scheme: inherit` carries YouTube's scheme into the `<input>`
+   so the UA doesn't paint a white field on a dark page (1.6.14).
+2. **`FEED_PANEL_STYLES`** — lives inside the results panel's shadow root, so
+   YouTube's page styles can't reach in and ours can't leak out.
 
-The extension's CSS lives in two places:
+Both read YouTube's `--yt-spec-*` custom properties. Those inherit *through*
+the shadow boundary, so light/dark tracks the page for free; the
+`[data-ytpf-dark]` attribute on the panel host only selects the right
+*fallback* values for when those tokens are missing.
 
-1. **`src/styles.css`** — CSS custom properties that bridge YouTube's theme tokens (`--yt-spec-*`) into our own (`--ytpf-*`). Loaded via `manifest.json`'s `content_scripts.css`, so it's injected once per page into the light DOM.
-2. **`ALL_STYLES` string in content.js** — the actual layout rules (`.ytpf-inline`, `.ytpf-row`, synthetic row styling, etc.). Injected lazily by `ensureScopedStyles(rootNode)` (content.js:292) into whatever document *or shadow root* the UI is mounted in.
-
-This dual approach matters because a `<style>` in the outer document doesn't apply inside a shadow root — we have to re-inject it into each shadow root that contains our UI. `ensureScopedStyles` uses a fixed element ID (`ytpf-inline-style`) to dedup, so it's safe to call on every refresh.
-
-## Mount point selection
-
-`findMountPoint(rows, host, surface)` (called from `attachHost`) picks where to insert the search bar. The logic prefers:
-
-1. Just **after** the last element before the first row (so the bar sits above the list)
-2. Failing that, **before** the first row
-3. Failing that, append to the host as a last resort
-
-There's also a safety net after insertion (content.js:1605): if the UI renders but has zero client rects — meaning something's hiding it — we reinsert it as the host's first child. YouTube's layout can surprise us.
-
-## Preventing event bleed
-
-The modal is a native YouTube component that handles clicks, focus, and keydown on its own elements. Our search input lives inside that host, so any `click` or `keydown` on our UI could bubble up and be misinterpreted (e.g., as a modal-close gesture or as typing into a playlist title field).
-
-`guardModalUiInteractions(ui, "modal")` (content.js:1025) attaches `stopPropagation` handlers to our UI for `click`, `mousedown`, `mouseup`, `keydown`, `keyup`, `pointerdown`, `pointerup`, and `focusin`. The feed page doesn't need this — there's no modal to interrupt.
-
-Additionally, focusing our input suppresses our own mutation observer for 300ms (content.js:1585) so YouTube's internal DOM churn doesn't cause a refresh that would steal focus.
-
-## Synthetic rows
-
-When a search matches API playlists not present in the DOM, we render "synthetic rows" below the real ones (content.js:1262). Each synthetic row has a title (with highlight marks) and a "+" button. Clicking it calls `innertubeSaveVideo(playlistId, videoId)` and flips the button to a checkmark on success.
-
-Why synthetic? The YouTube modal's own rows are bound to YouTube's playlist data model. Fabricating one would break its internal state. Adding our own DOM elements next to them is safe — YouTube ignores them, and we clean them up on teardown (`clearSynthRows`).
-
-Capped at `MODAL_API_RESULTS_LIMIT = 24` to keep the modal manageable.
-
-## Theming
-
-Colors come from YouTube's own CSS custom properties, read via fallbacks in `src/styles.css`:
-
-```css
-:root {
-  --ytpf-bg:     var(--yt-spec-menu-background, #fff);
-  --ytpf-text:   var(--yt-spec-text-primary,    #0f0f0f);
-  --ytpf-muted:  var(--yt-spec-text-secondary,  #606060);
-  --ytpf-accent: var(--yt-spec-call-to-action,  #065fd4);
-  --ytpf-border: var(--yt-spec-10-percent-layer, rgba(0,0,0,.1));
-}
-```
-
-Dark mode "just works" because YouTube sets `--yt-spec-*` tokens to dark values when `html[dark]` is active. We never check a theme boolean; we just consume the current tokens.
+Notably absent: `.ytpf-hidden`, `.ytpf-page-filtering`,
+`.ytpf-page-filtering-rows`. We no longer hide rows or override YouTube's grid
+layout, so the shape-gated reflow hack from 1.6.10/1.6.17 has nothing left to
+gate.
 
 ## Highlight marks
 
-Matched terms use styled `<mark>` elements. `labelState` stores the original HTML and text for each label. `restoreHighlight` restores only a label that still has the same text, which prevents stale HTML after node recycling.
+Matched terms are wrapped in `<mark class="ytpf-mark">` by
+`buildHighlightFragment(text, ranges)`, which builds a `DocumentFragment` of
+text nodes and marks — no `innerHTML`, so no escaping to get wrong.
+
+This used to be the risky part: we rewrote the innards of YouTube's own label
+elements and had to remember the original HTML per node (`labelState`),
+fingerprint recycled rows, and restore on every filter pass. Now we highlight
+titles in cards we created a moment ago, so there is nothing to restore and
+nothing to recycle.
+
+## Accessibility notes
+
+- The chip carries `role="search"`. It sits inside a `[role='tablist']` and is
+  emphatically not a tab; declaring a landmark keeps assistive tech from
+  announcing it as one.
+- The chip's row is a `<label>` wrapping the input, so clicking the icon or
+  padding proxies focus via native label semantics — no `for=`, no handler.
+- The result count is an `aria-live="polite"` region; the loading/error line
+  is `role="status"`.
+- Result cards are real `<a href="/playlist?list=…">` links inside a `<ul>`,
+  so they open in a new tab, are keyboard reachable, and expose a URL on
+  hover.

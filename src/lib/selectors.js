@@ -1,98 +1,114 @@
 /**
  * Every CSS selector and URL pattern that targets YouTube's DOM lives here.
  *
- * This is the single highest-churn surface in the extension — see the
- * 1.6.6–1.6.12 entries in CHANGELOG.md for the kind of regressions that keep
- * recurring. Keeping the selectors in one place gives us:
+ * ── The rule this file exists to enforce ────────────────────────────────
  *
- *   1. A grep target. When YouTube ships a new renderer variant, the diff
- *      against this file *is* the impact assessment.
- *   2. A test surface. tests/innertube-parse.test.mjs + the agent-browser
- *      harness can import these directly and assert against fixture DOM /
- *      JSON without spinning up the whole content script.
- *   3. A documentation surface. The maintenance comments below are the only
- *      record of *why* each variant is in the OR list — kept here so they
- *      survive the next selector tweak.
+ * Own the surface; don't read theirs. YouTube's rendered DOM is not an API.
+ * Every historical regression in this extension (CHANGELOG 1.6.6, 1.6.7,
+ * 1.6.8, 1.6.10, 1.6.15, 1.6.17) was the same bug wearing a different hat:
+ * we were parsing their markup, and they changed their markup.
  *
- * ── Save-to-playlist surface (since v1.7) ───────────────────────────────
+ * Two architectural moves removed almost all of that coupling:
  *
- * The extension no longer injects into YouTube's "Save to playlist" modal.
- * That DOM migrated repeatedly (see CHANGELOG 1.6.6–1.6.18) and every
- * migration broke the modal surface silently. The save sheet is now a fully
- * owned shadow-DOM UI backed by InnerTube; the only YouTube coupling is the
- * action-bar Save button, intercepted by aria-label in content.js. All
- * MODAL_* / CHECKBOX selectors were deleted with that architecture.
+ *   1. Save-to-playlist (v1.7, commit b9b3ed9) — we no longer inject into
+ *      YouTube's "Save to playlist" modal. Our own shadow-DOM sheet renders
+ *      from InnerTube. The only coupling left is the action-bar Save button,
+ *      intercepted by `aria-label` in content.js (an accessibility signal,
+ *      not a selector — so it isn't in this file).
+ *
+ *   2. `/feed/playlists` (this file's current shape) — we no longer read,
+ *      index, filter, hide, or reflow YouTube's playlist cards. We already
+ *      fetch the complete playlist library from InnerTube; rendering our own
+ *      result list from data we already hold is strictly less fragile than
+ *      re-deriving it from their DOM. Deleted with that move:
+ *
+ *        PLAYLISTS_GRID_SELECTOR, PLAYLISTS_CONTENTS_SELECTOR,
+ *        PLAYLISTS_OUTER_ROW_SELECTOR, PLAYLIST_RENDERER_SELECTOR,
+ *        PLAYLIST_LINK_SELECTOR, PAGE_RELEVANT_SELECTOR,
+ *        ITEM_TEXT_SELECTOR, CHIP_ROW_SELECTORS, CHIP_ROW_WRAPPER_CLASS
+ *
+ * ── The budget ──────────────────────────────────────────────────────────
+ *
+ * `/feed/playlists` gets exactly TWO DOM anchors: one place to mount our
+ * search UI, one container to hide while our results are showing. That
+ * budget is a hard, tested constraint — see the guard in
+ * `tests/selectors-anchor-budget.test.mjs`, which fails the build if
+ * `FEED_DOM_ANCHORS` grows. If you are about to add a third, the honest
+ * move is almost always to derive it from one of these two by DOM
+ * relationship, or to stop needing it.
+ *
+ * ── Anchoring rules ─────────────────────────────────────────────────────
+ *
+ *   1. Accessibility-tree / semantic signals beat tag names; tag names beat
+ *      generated CSS class names. Never anchor on a `.ytChipBarViewModel*`
+ *      -style build-generated class if a role or a custom-element tag will do.
+ *   2. NO FALLBACK MOUNTS. If an anchor doesn't resolve, we render nothing
+ *      and record a diagnostic. Appearing in an unexpected place is a worse
+ *      failure than not appearing.
+ *   3. Every anchor records a diagnostic when it resolves to nothing (or to
+ *      something ambiguous), so breakage is loud instead of silent.
  */
-
-
-
-export const PLAYLISTS_GRID_SELECTOR =
-  "ytd-rich-grid-renderer, ytd-grid-renderer, ytd-item-section-renderer";
-
-export const PLAYLISTS_CONTENTS_SELECTOR = ":scope > #contents, :scope > #items";
-
-export const PLAYLISTS_OUTER_ROW_SELECTOR =
-  "ytd-rich-item-renderer, ytd-rich-grid-media, yt-lockup-view-model";
-
-export const PLAYLIST_RENDERER_SELECTOR =
-  "ytd-grid-playlist-renderer, ytd-playlist-renderer, ytd-compact-playlist-renderer, yt-lockup-view-model, yt-collection-item-view-model";
 
 export const PLAYLISTS_FEED_PATH_RE = /^\/feed\/(playlists|library)\/?(\?.*)?$/;
 
 /**
- * Native filter-chip-bar on /feed/playlists ("Recently added · Playlists ·
- * Music · Owned"). When present, we prepend our search input as a sibling
- * chip so it reads as part of YouTube's UI instead of getting its own
- * full-width row below. Ordered most-specific → least so the first match
- * wins; the absent-chip-row case falls back to the grid-spanning bar
- * (the historic `.ytpf-inline-page` mount).
+ * ANCHOR 1 of 2 — where our search UI mounts.
  *
- * As of 2026-05 YouTube has migrated this surface from the legacy Polymer
- * `ytd-feed-filter-chip-bar-renderer` → the new `chip-bar-view-model` web
- * component. We probe view-model first, then Polymer for back-compat with
- * any mid-rollout user still on the old chip bar. The view-model layout:
+ * YouTube's native filter-chip row on /feed/playlists ("Recently added ·
+ * Playlists · Music · Owned"). We append our search chip as its last child so
+ * it reads as one of YouTube's own controls and costs zero vertical space.
  *
  *   ytd-rich-grid-renderer
- *     #header  ← chip bar lives here
- *       chip-bar-view-model.ytChipBarViewModelHost
- *         div.ytChipBarViewModelChipBarScrollContainer[role='tablist']
- *           div.ytChipBarViewModelChipWrapper   (one per native chip)
- *             chip-view-model.ytChipViewModelHost
- *     #contents
- *       … playlist lockups …  ← grid mount target for the fallback bar
+ *     #header
+ *       chip-bar-view-model                    ← custom-element tag
+ *         div[role='tablist']                  ← accessibility signal
+ *           …native chips…  + our chip
+ *     #contents                                ← ANCHOR 2
  *
- * Mount strategy: prepend a `<div class="ytChipBarViewModelChipWrapper">`
- * to the scroll container so our chip inherits the native chip-spacing
- * margins. The LCA with the grid is `ytd-rich-grid-renderer`, which is
- * also where the existing `.ytpf-inline-page` mount lives.
+ * Anchored on `[role='tablist']` (an accessibility-tree signal that survives
+ * CSS-class churn) scoped by the `chip-bar-view-model` custom-element tag so
+ * we can never wander into some other tablist on the page. The pre-1.7
+ * version of this anchor was a four-entry OR list built on the generated
+ * class `.ytChipBarViewModelChipBarScrollContainer` plus two legacy Polymer
+ * variants; all of that is gone.
  */
-export const CHIP_ROW_SELECTORS = [
-  // Post-2026 view-model (current production rollout)
-  "chip-bar-view-model .ytChipBarViewModelChipBarScrollContainer",
-  "chip-bar-view-model [role='tablist']",
-  // Legacy Polymer chip-bar (kept for mid-rollout fallback; remove once
-  // the view-model rollout is universal and a release cycle has passed)
-  "ytd-feed-filter-chip-bar-renderer #chips",
-  "yt-chip-cloud-renderer #chips",
-];
+export const FEED_SEARCH_MOUNT_SELECTOR = "chip-bar-view-model [role='tablist']";
 
 /**
- * Wrapper class for our chip when mounted in the view-model chip bar.
- * Adding this class around our `<input>` makes the chip inherit native
- * chip spacing for free — the chip-bar style sheet keys off this class.
- * Empty for legacy chip bar (those use `#chips` flex gap, no wrapper).
+ * ANCHOR 2 of 2 — the container we hide while our own results are showing.
+ *
+ * `ytd-rich-grid-renderer > #contents` is YouTube's rendered playlist grid.
+ * We never read it, never index it, never touch a single card inside it; we
+ * only toggle its visibility, and restore its exact inline `display` when the
+ * query is cleared.
+ *
+ * Direct-child (`>`) on purpose: `ytd-rich-grid-row` also carries an
+ * `#contents`, so a descendant combinator would resolve to N+1 elements and
+ * we could hide the wrong one.
  */
-export const CHIP_ROW_WRAPPER_CLASS = "ytChipBarViewModelChipWrapper";
+export const FEED_GRID_SELECTOR = "ytd-rich-grid-renderer > #contents";
 
-// YouTube migrated playlist URLs in 2026 from /playlist?list=PL... to
-// /show/VL{PL...}?sbp=...; keep both for back-compat. Also accept watch
-// URLs that carry &list= (e.g., the lockup's primary "play next" link).
-export const PLAYLIST_LINK_SELECTOR =
-  "a[href*='/playlist?list='], a[href*='youtube.com/playlist?list='], a[href*='/show/VL'], a[href*='youtube.com/show/VL'], a[href*='/watch?'][href*='list=']";
+/**
+ * The complete, enumerated YouTube-DOM coupling surface for /feed/playlists.
+ * content.js resolves anchors exclusively through this list, and the anchor
+ * budget test asserts against it. Adding an entry is a deliberate,
+ * test-visible act.
+ *
+ * @typedef {{ id: string, selector: string, purpose: string }} FeedAnchor
+ * @type {ReadonlyArray<FeedAnchor>}
+ */
+export const FEED_DOM_ANCHORS = Object.freeze([
+  Object.freeze({
+    id: "search-mount",
+    selector: FEED_SEARCH_MOUNT_SELECTOR,
+    purpose: "mount point for our search chip",
+  }),
+  Object.freeze({
+    id: "grid",
+    selector: FEED_GRID_SELECTOR,
+    purpose: "YouTube's playlist grid; hidden while our results are showing",
+  }),
+]);
 
-
-
-export const PAGE_RELEVANT_SELECTOR = `${PLAYLISTS_GRID_SELECTOR}, ${PLAYLISTS_OUTER_ROW_SELECTOR}, ${PLAYLIST_RENDERER_SELECTOR}`;
-
-export const ITEM_TEXT_SELECTOR =
-  "#label, #video-title, .playlist-title, yt-formatted-string[id='label'], yt-formatted-string, span#label, a#video-title, .ytListItemViewModelTitle, .yt-lockup-metadata-view-model-wiz__title, [class*='LockupMetadataViewModelTitle']";
+/** Hard cap. See tests/selectors-anchor-budget.test.mjs. */
+export const FEED_DOM_ANCHOR_BUDGET = 2;

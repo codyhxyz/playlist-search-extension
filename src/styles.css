@@ -1,120 +1,47 @@
+/*
+ * Light-DOM styles for the ONE piece of our UI that lives in YouTube's DOM:
+ * the search chip on /feed/playlists.
+ *
+ * Everything else we render is in a shadow root — the results panel on
+ * /feed/playlists and the save sheet on watch/shorts — and carries its own
+ * stylesheet. Nothing here styles a YouTube element; the extension no longer
+ * hides, reflows, or highlights YouTube's playlist cards, so the historic
+ * `.ytpf-hidden` / `.ytpf-inline-page` / `.ytpf-page-filtering*` rules are
+ * gone with the code that set them.
+ *
+ * The chip has to look native, so it reads YouTube's own `--yt-spec-*`
+ * tokens. `color-scheme: inherit` carries YouTube's scheme into the <input>
+ * so the UA doesn't paint a white field on a dark page (1.6.14).
+ */
+
 .ytpf-inline {
-  --ytpf-bg: var(--yt-spec-menu-background, transparent);
-  --ytpf-border: var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.14));
   --ytpf-text: var(--yt-spec-text-primary, currentColor);
   --ytpf-muted: var(--yt-spec-text-secondary, currentColor);
-  --ytpf-accent: var(--yt-spec-call-to-action, var(--yt-spec-brand-button-background, #065fd4));
+  --ytpf-border: var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.14));
 
-  /* Inherit YouTube's color-scheme so descendant <input> form controls render
-     dark on html[dark] (avoids UA-painted light input on a dark modal). */
   color-scheme: inherit;
-
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  margin: 0;
-  padding: 10px 16px 8px;
-  border-bottom: 1px solid var(--ytpf-border);
-  background: var(--ytpf-bg);
-}
-
-.ytpf-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.ytpf-input {
-  flex: 1;
-  min-width: 0;
-  height: 36px;
-  border: 1px solid var(--ytpf-border);
-  border-radius: 10px;
-  padding: 0 12px;
-  background: transparent;
-  color: var(--ytpf-text);
-  font-family: inherit;
-  font-size: 14px;
-}
-
-.ytpf-input::placeholder {
-  color: var(--ytpf-muted);
-}
-
-.ytpf-input:focus {
-  outline: 2px solid color-mix(in srgb, var(--ytpf-accent) 28%, transparent);
-  outline-offset: 1px;
-  border-color: var(--ytpf-accent);
 }
 
 .ytpf-inline.ytpf-theme-dark {
-  --ytpf-bg: var(--yt-spec-menu-background, var(--yt-spec-raised-background, #212121));
-  --ytpf-border: var(--yt-spec-10-percent-layer, rgba(255, 255, 255, 0.16));
   --ytpf-text: var(--yt-spec-text-primary, #f1f1f1);
   --ytpf-muted: var(--yt-spec-text-secondary, #aaa);
+  --ytpf-border: var(--yt-spec-10-percent-layer, rgba(255, 255, 255, 0.16));
+
   color-scheme: dark;
 }
 
-.ytpf-theme-dark .ytpf-input {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.ytpf-theme-dark .ytpf-clear:hover {
-  background: var(--yt-spec-10-percent-layer, rgba(255, 255, 255, 0.12));
-}
-
-.ytpf-clear {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  height: 36px;
-  border: 1px solid var(--ytpf-border);
-  border-radius: 10px;
-  padding: 0 12px;
-  background: transparent;
-  color: var(--ytpf-muted);
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.ytpf-clear-visible {
-  display: inline-flex;
-}
-
-.ytpf-clear:hover {
-  color: var(--ytpf-text);
-}
-
-.ytpf-meta {
-  margin: 6px 2px 0;
-  color: var(--ytpf-muted);
-  font-family: inherit;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.ytpf-hidden {
-  display: none !important;
-}
-
-/* Chip variant — mounted into YouTube's native filter-chip row on
-   /feed/playlists. Sized + colored to match a `chip-view-model` chip 1:1
-   (32px tall, 8px radius, --yt-spec-badge-chip-background fill). Overrides
-   the .ytpf-inline base rules (sticky, padding, border) that are sized for
-   the full-width bar variant. */
+/* Sized to a `chip-view-model` chip 1:1: 32px tall, 8px radius,
+   --yt-spec-badge-chip-background fill. The left margin is ours rather than
+   borrowed from YouTube's generated chip-wrapper class — one less
+   build-generated identifier to break on. */
 .ytpf-inline.ytpf-chip {
-  position: static;
-  top: auto;
-  z-index: auto;
-  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin: 0 0 0 12px;
   padding: 0;
   border: none;
-  border-bottom: none;
   background: transparent;
-  display: inline-flex;
-  align-items: center;
   box-sizing: border-box;
 }
 
@@ -128,10 +55,11 @@
   background: var(--yt-spec-badge-chip-background, var(--ytpf-border));
   width: clamp(220px, 24vw, 320px);
   box-sizing: border-box;
+  cursor: text;
 }
 
 .ytpf-chip.ytpf-theme-dark .ytpf-row {
-  background: var(--yt-spec-badge-chip-background, rgba(255, 255, 255, 0.10));
+  background: var(--yt-spec-badge-chip-background, rgba(255, 255, 255, 0.1));
 }
 
 .ytpf-chip .ytpf-row:hover {
@@ -150,33 +78,58 @@
   color: var(--ytpf-text);
 }
 
-.ytpf-chip .ytpf-input {
+.ytpf-chip .ytpf-input-wrap {
+  position: relative;
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.ytpf-chip .ytpf-input {
+  width: 100%;
   height: 24px;
   border: none;
   border-radius: 0;
   padding: 0;
   background: transparent;
+  color: var(--ytpf-text);
   font-family: "YouTube Sans", Roboto, Arial, sans-serif;
   font-weight: 500;
   font-size: 14px;
+  box-sizing: border-box;
+}
+
+.ytpf-chip .ytpf-input::placeholder {
+  color: var(--ytpf-muted);
 }
 
 .ytpf-chip .ytpf-input:focus {
   outline: none;
-  border-color: transparent;
 }
 
-.ytpf-chip .ytpf-meta { display: none; }
+.ytpf-chip .ytpf-clear {
+  display: none;
+  flex: 0 0 18px;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  padding: 0;
+  background: transparent;
+  color: var(--ytpf-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
 
-@media (max-width: 700px) {
-  .ytpf-inline {
-    padding: 8px 12px 6px;
-  }
+.ytpf-chip .ytpf-clear-visible {
+  display: inline-flex;
+}
 
-  .ytpf-input,
-  .ytpf-clear {
-    height: 34px;
-  }
+.ytpf-chip .ytpf-clear:hover {
+  background: var(--ytpf-border);
+  color: var(--ytpf-text);
 }
