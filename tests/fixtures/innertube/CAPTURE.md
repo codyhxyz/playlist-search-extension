@@ -45,7 +45,7 @@ Each command opens an agent-browser tab, navigates / clicks / scrolls as
 needed, pulls the InnerTube JSON, scrubs session tokens, writes a
 `real-*.json` fixture, and prints a parse summary so you can sanity-check
 counts and IDs before committing. The corresponding skipped tests in
-`tests/innertube-parse.test.mjs` un-skip automatically once the fixture
+`tests/innertube.test.mjs` un-skip automatically once the fixture
 file exists.
 
 ## Manual fallback (DevTools)
@@ -72,7 +72,7 @@ file exists.
    and titles with `Test Playlist N` without changing the test value.
    `_provenance` at the top should record the capture date + the YouTube
    surface you grabbed it from.
-7. Add a corresponding test in `tests/innertube-parse.test.mjs` that loads
+7. Add a corresponding test in `tests/innertube.test.mjs` that loads
    the file and asserts the **expected** playlist count, the first ID, and
    the continuation token (if present). Run `npm test` to verify it parses
    correctly today — then leave it in place as the regression net for

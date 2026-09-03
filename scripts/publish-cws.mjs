@@ -55,8 +55,7 @@ function validateZipAgainstSource(zipPath) {
     if (
       !allowedTopLevel.has(file) &&
       !file.startsWith("icons/") &&
-      !file.startsWith("lib/") &&
-      !file.startsWith("welcome-assets/")
+      !file.startsWith("lib/")
     ) {
       throw new Error(`unexpected file in upload zip: ${file}`);
     }

@@ -58,19 +58,6 @@
         text-align: center;
         margin-bottom: 24px;
       }
-      .demo {
-        margin: 0 0 28px;
-        border-radius: 12px;
-        overflow: hidden;
-        border: 1px solid var(--border);
-        background: #000;
-        line-height: 0;
-      }
-      .demo video {
-        display: block;
-        width: 100%;
-        height: auto;
-      }
       h1 {
         font-size: 28px;
         font-weight: 600;
@@ -271,21 +258,10 @@
       <header>
         <h1>YouTube Playlist Search</h1>
         <p class="lede">
-          Search every playlist you've ever made — right inside YouTube's Save
-          dialog and your playlists library.
+          When you save a video, get a searchable list of every playlist you
+          own — including the ones YouTube's own picker can't reach.
         </p>
       </header>
-
-      <figure class="demo" aria-label="Filter bar demo inside YouTube's Save to playlist dialog">
-        <video
-          src="welcome-assets/demo.webm"
-          autoplay
-          muted
-          loop
-          playsinline
-          preload="auto"
-        ></video>
-      </figure>
 
       <section class="step" id="step-grant" data-state="active">
         <div class="step-marker">
@@ -300,10 +276,11 @@
         <div class="step-body">
           <h2 class="step-title">Grant access to youtube.com</h2>
           <p class="step-desc" id="grant-desc">
-            So the extension can <strong>inject a search box</strong> into the
-            Save dialog and your playlists page. It runs only on youtube.com,
-            and <strong>only talks to YouTube on your behalf</strong> — never to
-            the developer or any third party.
+            So the extension can see when you click Save and load your playlists
+            from YouTube. It runs <strong>only on youtube.com</strong>, adds
+            nothing to YouTube's own page, and
+            <strong>talks only to YouTube, as you</strong> — never to the
+            developer or any third party.
           </p>
           <button id="grant" type="button">Grant access to YouTube</button>
           <div id="status" class="status" aria-live="polite"></div>
@@ -323,10 +300,9 @@
         <div class="step-body">
           <h2 class="step-title">Save a video to see it in action</h2>
           <p class="step-desc">
-            Open any video on YouTube and click <strong>Save</strong> under the
-            player. The Save dialog will now have a search box at the top —
-            type to instantly filter <em>all</em> your playlists, even the ones
-            YouTube normally hides past its 200-playlist cap.
+            Open any video on YouTube and click <strong>Save</strong>. Instead of
+            YouTube's picker you'll get a search field — start typing and the
+            list narrows to what you meant. Nothing to scroll.
           </p>
           <button id="open" type="button" disabled>
             Open YouTube
@@ -338,18 +314,31 @@
         <h2>Where you'll see it</h2>
         <ul>
           <li>
-            The <strong>Save to playlist</strong> dialog on any YouTube video
+            <strong>Save</strong> on a video page, or
+            <strong>⋮ &rarr; Save to playlist</strong> anywhere else — the home
+            feed, search results, a channel, your subscriptions or history
           </li>
           <li>
-            Your playlists library at <code>youtube.com/feed/playlists</code>
+            The <strong>toolbar icon</strong>, for anything with no Save button
+            of its own — Shorts, for instance
+          </li>
+          <li>
+            <strong>Right-click</strong> any video link &rarr; Save to playlist
+          </li>
+          <li>
+            <code>Alt</code>+<code>S</code> on a video page
           </li>
         </ul>
       </section>
 
       <aside class="tip">
-        <strong>Tip:</strong>
-        Search works for <em>any</em> playlist you own — even ones beyond
-        YouTube's 200-playlist limit that the Save dialog can't load on its own.
+        <strong>Why it has all of them:</strong>
+        YouTube's own Save picker loads at most 200 playlists, and there is no
+        way to ask it for more. This reads your library from a different
+        endpoint that isn't capped, so every playlist you own is searchable.
+        One honest caveat: past that same 200, YouTube won't tell
+        <em>anyone</em> which playlists already contain a video — so those rows
+        are shown unmarked rather than guessed at.
       </aside>
 
       <footer>
@@ -377,7 +366,6 @@
         >
       </footer>
     </main>
-    <script src="onboarding-state.js"></script>
-    <script src="welcome.js"></script>
+    <script type="module" src="welcome.js"></script>
   </body>
 </html>

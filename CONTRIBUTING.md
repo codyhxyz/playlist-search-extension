@@ -38,32 +38,41 @@ Thanks for your interest in YouTube Playlist Search! Here's how to get started.
 
 ```
 src/
-  manifest.json          — Manifest v3, scripting + storage perms, optional youtube.com host
-  background.js          — Service worker: dynamic content-script registration, welcome page opener
-  content.js             — Source entry for the content script (uses ES module imports)
-  content.bundle.js      — Built output (esbuild); the file Chrome actually injects. Gitignored.
+  manifest.json          — Manifest v3. scripting + storage + contextMenus, optional youtube.com host
+  background.js          — Module service worker: content-script registration, intent resolution,
+                           the zero-DOM entry points (toolbar / context menu / hotkey), onboarding
+  onboarding-state.js    — Shared by the worker and the welcome page (ES module)
+  intent-hook.js         — MAIN world, document_start. Observes two YouTube API paths and forwards
+                           four fields. NO imports, no chrome.* — it runs in the page's world
+  content.js             — ISOLATED world entry: relays the hook, owns the session, opens the sheet
+  content.bundle.js      — Built output (esbuild); the file Chrome actually injects. Gitignored
   lib/
-    selectors.js         — The COMPLETE YouTube DOM coupling surface: 2 anchors for /feed/playlists
-    innertube-parse.js   — Pure parser for InnerTube responses + shape canary
-  styles.css             — CSS custom properties for theming (dark/light)
-  vendor/
-    minisearch.js        — Vendored BM25 ranking library (UMD)
-    package.json         — Pins this directory to CommonJS for test-search.cjs's require()
-  test-search.cjs        — Integration test: runs content.bundle.js in a vm sandbox with DOM stubs
+    intent.js            — Pure intent decisions: protobuf walk, base64, the panelId gate.
+                           Imported by the WORKER at runtime, so it ships unbundled
+    innertube.js         — InnerTube client. Parsing exported separately from the calls
+    sheet.js             — The UI. Closed shadow root, knows nothing about YouTube
+  welcome.html/.js       — First-run page; where the youtube.com host permission is granted
   icons/                 — Extension icons
 
 tests/
-  innertube-parse.test.mjs        — Fixture-driven unit tests for the InnerTube parser
-  selectors-anchor-budget.test.mjs — Fails the build if /feed/playlists grows a 3rd DOM anchor
-  test-feed-page-mount.mjs        — Live-Chromium DOM harness (agent-browser, optional)
-  fixtures/
-    innertube/           — Captured (or synthetic) InnerTube JSON responses + CAPTURE.md
-    *.html               — Captured YouTube DOM snapshots
+  intent.test.mjs        — Intent resolution: field walk, percent-encoding, the panelId gate
+  innertube.test.mjs     — Config scrape, delegation, both renderer generations, tri-state membership
+  test-sheet-render.mjs  — The sheet's contract in a real engine (agent-browser; skips if absent)
+  e2e/                   — Live signed-in YouTube. See tests/e2e/README.md
+  fixtures/innertube/    — Captured InnerTube responses + CAPTURE.md
 
-esbuild.config.mjs       — Bundles src/content.js + src/lib/*.js into src/content.bundle.js
-architecture/            — Deep-dive docs on how the extension works
-docs/                    — Landing page, privacy policy, support (GitHub Pages)
+scripts/
+  build-store-zip.sh     — Gated packaging. Refuses to zip a source tree that fails its own tests
+  publish-cws.mjs        — Upload + publish. Runs tests/run-all.sh as a non-bypassable gate
+  validate-cws.mjs       — Structural review-blocker rules
+  build-privacy-page.mjs — Generates docs/privacy-policy.html from PRIVACY.md
+
+architecture/            — overview.md (the design), coverage.md (honest per-surface status),
+                           innertube-api.md (the endpoints and their traps)
+docs/                    — Landing page, privacy policy, support (deployed to playlist.codyh.xyz)
 ```
+
+**Note the world split.** `intent-hook.js` runs in the page's own JavaScript world; everything else runs isolated. Anything crossing that boundary is untrusted input by definition — the page can see the hook and could forge its messages. Keep the hook dumb: observe, extract, forward, no logic.
 
 See [`architecture/overview.md`](architecture/overview.md) for a tour of the codebase — subsystems, key design decisions, and pointers to each area.
 
@@ -72,83 +81,99 @@ See [`architecture/overview.md`](architecture/overview.md) for a tour of the cod
 1. Create a branch off `main`
 2. Make your changes — if you edit anything under `src/lib/`, `npm run build:watch` will keep the bundle hot
 3. Run `npm test` — it rebuilds the bundle first and then exercises:
-   - the InnerTube parser (fixture-driven unit tests, fast)
-   - the `/feed/playlists` anchor budget (fails if the coupling surface grows)
-   - the bundled content script in a vm sandbox (38 regression assertions)
-   - the live-Chromium feed-surface contract, if `agent-browser` is installed
+   - intent resolution and the InnerTube parsers (fast, no network, no browser)
+   - the save sheet's contract in a real browser engine, if `agent-browser` is installed
+   Use `npm run test:fast` for the unit tests alone.
 4. Test manually in Chrome (reload the extension after each build)
 5. Open a PR with a clear description of what changed and why
 
 ## When YouTube ships a regression
 
-The playbook for selector / renderer drift:
+Since 2.0.0 there are no selectors to drift, so a regression is almost always an
+InnerTube response-shape change. The playbook:
 
-1. Capture the new shape — a fixture under `tests/fixtures/innertube/*.json`
-   for API changes, `tests/fixtures/*.html` for DOM changes. See
-   `tests/fixtures/innertube/CAPTURE.md` for the exact recipe.
-2. Add a test that asserts the expected parse result. It will fail.
-3. Fix the parser or selector in `src/lib/*.js`. The test goes green.
-4. Rebuild (`npm run build`), smoke-test in Chrome, ship.
+1. **Run the contract probe first**: `bash tests/e2e/specs/innertube-contract.sh`.
+   It rebuilds both requests from YouTube's own config, so it tells you whether
+   YouTube changed or we did — which is a different bug each way.
+2. Capture the new shape into `tests/fixtures/innertube/*.json`. See
+   `tests/fixtures/innertube/CAPTURE.md` for the recipe.
+3. Add a test asserting the expected parse. It will fail.
+4. Fix the parser in `src/lib/innertube.js`. The test goes green.
+5. Rebuild (`npm run build`), smoke-test in Chrome, ship.
 
-This is the loop the fixture-driven test suite exists to enable. If your fix
-required editing `src/content.js` instead of a `src/lib/*` file, that's a
-signal the coupling surface is leaking — consider extending the extraction.
+**Do not add a DOM fallback.** When a parse fails the extension must say so and
+stop. Reading YouTube's rendered page to paper over an API change is what
+produced every symptom the 2.0.0 rebuild deleted, and it fails in the worst
+possible way: not visibly, but strangely.
+
+**Before claiming a fix works, name the set it belongs to.** "Save works" is not
+a verifiable claim; "save works from the watch page, untested on the feed" is.
+That exact generalisation shipped a broken home feed for a full release. See
+`architecture/coverage.md`, and keep it updated — a ❓ there is an admission,
+not a gap.
 
 ## Code Style
 
-- ES modules under `src/lib/`, bundled into a single IIFE by esbuild
-- Keep it simple — the extension is intentionally lightweight
+- ES modules under `src/lib/`, bundled into a single IIFE by esbuild for the content script and loaded natively by the module service worker
+- Keep it simple — the extension ships no third-party code, and that is a feature
 - Match the existing style in the file you're editing
 
-## Intervening in YouTube's DOM (principles)
+## The invariant
 
-YouTube's rendered DOM is not an API. Every regression this project has
-shipped — 1.6.6, 1.6.7, 1.6.8, 1.6.10, 1.6.15, 1.6.17 on `/feed/playlists`,
-and 1.6.6–1.6.18 on the Save modal — was the same bug: we parsed their
-markup, and they changed their markup. Both surfaces have since been rebuilt
-to render from InnerTube data we already hold. These rules keep them that way.
+> **We never read data from YouTube's DOM, and we never write a node into YouTube's DOM.**
 
-1. **Own the surface; don't read theirs.** If the data is already in an
-   InnerTube response, render it yourself. Re-deriving it from their DOM
-   trades a stable JSON shape for an unstable HTML one and buys nothing.
+This is not a guideline. Every regression this project shipped — 1.6.6, 1.6.7,
+1.6.8, 1.6.10, 1.6.15, 1.6.17 on `/feed/playlists`, and 1.6.6–1.6.18 on the Save
+modal — was one bug wearing different hats: we parsed their markup, and they
+changed their markup. 2.0.0 does not mitigate that. It deletes the code that
+made it possible.
 
-2. **Enumerate and budget the coupling.** Every YouTube selector lives in
-   `src/lib/selectors.js`, and `/feed/playlists` is budgeted to exactly two
-   anchors: one mount point, one container to hide.
-   `tests/selectors-anchor-budget.test.mjs` fails the build if that grows.
-   When you want a third, the fix is nearly always to derive it from one of
-   the two by DOM relationship, take it from InnerTube, or drop the need.
+Earlier versions of this file carried seven rules for intervening in YouTube's
+DOM *carefully* — a selector budget, an anchoring hierarchy, reversible
+mutation, no fallback mounts. They were good rules and they still did not work,
+because the safest amount of DOM coupling turned out to be none. They are
+preserved in git history if you ever need them for a different host app.
 
-3. **Anchor on the accessibility tree first, tag names second, generated
-   classes never.** `chip-bar-view-model [role='tablist']` survives a CSS
-   rebuild; `.ytChipBarViewModelChipBarScrollContainer` does not. The budget
-   test enforces this too.
+What remains today:
 
-4. **No fallback mounts.** If an anchor doesn't resolve, render nothing and
-   record a diagnostic. A fallback that puts our UI somewhere unexpected is
-   worse than no UI: the user can't tell it apart from a YouTube bug, and we
-   never hear about it. Every anchor records a `recordDiagnostic` entry when
-   it resolves to nothing *or* to more than one node.
+1. **Data comes from InnerTube, never from rendered markup.** If you find
+   yourself writing a selector to *learn* something, stop — the answer is
+   already in a JSON response one layer down.
 
-5. **Touch their nodes reversibly, or not at all.** The one thing we still do
-   to YouTube's DOM on `/feed/playlists` is toggle `display` on a single
-   container. We capture its inline `style` before, and restore it
-   byte-for-byte after — the e2e spec asserts the attribute is identical.
-   We no longer hide, re-grid, or inject `<mark>` into their cards.
+2. **The UI lives in a surface we own.** A closed shadow root on
+   `document.documentElement`, outside `<ytd-app>` entirely, so YouTube's
+   renderer cannot reconcile away what isn't in its subtree. A `<dialog>` in the
+   top layer, so there is no z-index war. `all: initial` at the shadow boundary,
+   because shadow DOM blocks selector bleed but *not* inherited properties.
 
-6. **Don't generalize from one captured fixture.** A fixture is *one*
-   observed shape, not "the /feed/playlists layout." Document fixtures as
-   shape coverage. (This mattered enormously when we parsed their cards; it
-   matters less now, which is the point.)
+3. **Nodes only, never `innerHTML`.** YouTube enforces
+   `require-trusted-types-for 'script'`. Building nodes with `createElement` /
+   `textContent` / `append` sidesteps the question entirely instead of betting
+   on a content-script CSP exemption holding. `tests/test-sheet-render.mjs`
+   fails the build if a string-to-HTML sink appears.
 
-7. **Write comments about the *current shape*, not about "YouTube."**
-   Phrasing like "YouTube wraps lockups inside row slots" reads as a law of
-   the surface. Prefer "on the row-wrapped layout, lockups sit inside row
-   slots, so…" — so the next reader knows it's conditional.
+4. **Intent comes from behaviour, not structure.** "YouTube's app just told its
+   own server the user wants to save video X" is a far stronger claim than "an
+   element matching some selector appeared." The gate is `panelId`, YouTube's
+   own semantic name for the panel — not the URL, which is generic and shared
+   with unrelated features.
 
-The short version: **own it, enumerate what you can't own, fail loudly.**
-Treat YouTube's layout as hostile/variable infrastructure we nudge, not a
-stable component we restyle wholesale.
+5. **Two contact points remain, and both fail harmlessly.** Reading
+   `INNERTUBE_CONTEXT` out of the page's config script (there is no other source
+   for the session handshake; it is configuration, not content), and dispatching
+   one synthetic `Escape` to dismiss YouTube's dialog (if it stops working,
+   their dialog sits behind ours, inert, under the backdrop).
+
+6. **Fail closed, never sideways.** A broken contract disables exactly the
+   feature that depends on it and says so. The old extension's cardinal sin was
+   not breaking — it was breaking *invisibly and weirdly*. A search bar in an
+   unrelated menu is worse than no search bar, because the user cannot tell it
+   from a YouTube bug and so never reports it.
+
+7. **Don't generalise from one observation.** One captured fixture is one
+   observed shape. One working surface is one working surface. Before claiming a
+   capability works, enumerate the set it belongs to and say which members you
+   actually tested — then write it down in `architecture/coverage.md`.
 
 ## Reporting Bugs
 

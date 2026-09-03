@@ -1,22 +1,58 @@
-## Unreleased
-
-- **Rebuilt `/feed/playlists` as a fully owned surface.** The extension no longer filters YouTube's rendered playlist cards. It already fetched the complete playlist library from InnerTube on this page and then threw it away to filter their DOM instead; now a query renders **our own** result list — thumbnail tile, title with match highlighting, item count, and a `/playlist?list=` link — into a shadow root, and YouTube's grid is hidden while those results are showing. Clearing the query restores their grid byte-for-byte (we capture and reinstate the original inline `style` attribute, and the tests compare it before/after). Their grid is only hidden once we actually have results to put in its place, so an in-flight or failed library fetch leaves their page untouched.
-- **The DOM coupling for this surface went from 8 anchors to 2.** Deleted: `PLAYLISTS_GRID_SELECTOR`, `PLAYLISTS_CONTENTS_SELECTOR`, `PLAYLISTS_OUTER_ROW_SELECTOR`, `PLAYLIST_RENDERER_SELECTOR`, `PLAYLIST_LINK_SELECTOR`, `PAGE_RELEVANT_SELECTOR`, `ITEM_TEXT_SELECTOR`, `CHIP_ROW_SELECTORS` (a four-entry OR list), and the `CHIP_ROW_WRAPPER_CLASS` we borrowed from YouTube's generated stylesheet. What remains is one mount point (`chip-bar-view-model [role='tablist']`) and one container to hide (`ytd-rich-grid-renderer > #contents`). Every `/feed/playlists` regression in 1.6.6, 1.6.7, 1.6.8, 1.6.10, 1.6.15 and 1.6.17 was a break in one of the deleted eight.
-- **The anchor budget is now a test, not a comment.** `tests/selectors-anchor-budget.test.mjs` fails the build if the feed surface grows a third anchor, if an anchor becomes a comma-separated fallback list, if one leans on a build-generated `.ytChipBarViewModel*`-style class, or if `content.js` starts importing individual selectors instead of the enumerated list. `src/test-search.cjs` asserts the same budget against the shipped bundle.
-- Deleted the row-filtering machinery this surface needed: `ytpf-hidden` row hiding, the `ytpf-page-filtering` / `ytpf-page-filtering-rows` reflow CSS and its direct-child shape gate (1.6.10 + 1.6.17), the orphaned-hidden-row sweep, per-row text/fingerprint/label `WeakMap`s, in-place `<mark>` injection into YouTube's own label nodes plus the restore logic that kept it from corrupting recycled rows, the multi-grid candidate scoring, and the per-host controller registry (now a single `feed` state object). `src/lib/dom-parse.js` and its test file are gone — both extractors existed only to read playlist titles and IDs out of Polymer row data.
-- **No fallback mounts.** The full-width `.ytpf-inline-page` bar that appeared when no chip bar was found is deleted. If an anchor doesn't resolve we render nothing and record a diagnostic (`feed_anchor_unresolved:<id>`, plus `feed_anchor_ambiguous:<id>` when a selector matches more than one visible node, and a post-settle `feed_surface_missing` probe). A control that shows up somewhere unexpected is worse than one that doesn't show up: the user can't tell it from a YouTube bug, so it never gets reported.
-- Anchors resolve light-DOM-first and only fall back to the shadow-piercing walk when that misses, and mutations inside YouTube's grid no longer wake the reconciler at all — we don't read those nodes, so their churn isn't ours. Fixed `TIMINGS.MOUNT_CHECK_DELAY_MS` being referenced but never defined, which made the mount-failure probe fire immediately instead of after YouTube's second paint.
-- The chip placeholder now reports the InnerTube library size ("Search 342 playlists"). It previously counted rendered DOM rows while `innertube-fetch.sh` asserted against it as a proxy for parser output — so that spec could not actually have caught the 1.6.9 parser cap it was written to guard.
-- `tests/test-feed-page-mount.mjs` rewritten to the new contract (31 assertions): chip mounts in the chip bar and refuses the fixture's decoy `[role='tablist']` nodes, our cards render from a stubbed InnerTube response, their grid hides and restores exactly, and a second page variant with no chip bar asserts that **nothing** renders. `tests/e2e/specs/feed-playlists.sh` rewritten to match. `src/test-search.cjs` had been failing since the save-sheet rebuild (it still referenced `MODAL_HOST_SELECTOR`, `renderSynthRows`, `beginSynthSave`); its dead suites are removed and the rest retargeted.
-- Known gap: result cards render an owned placeholder tile rather than a real playlist thumbnail. The InnerTube parse layer doesn't currently extract thumbnail URLs, and the card renderer already reads `playlist.thumbnail` when present — adding that one field to `parsePlaylistRenderers` lights the images up with no UI change.
-
-- **Rebuilt Save-to-playlist as a fully owned surface.** The extension no longer injects a search bar into YouTube's "Save to playlist" modal. That DOM migrated repeatedly (1.6.6–1.6.18) and each migration broke the feature silently. Clicking the action-bar Save button now opens our own shadow-DOM sheet — search input, playlist rows with add/remove toggles, optimistic updates via InnerTube `browse/edit_playlist` (`ACTION_ADD_VIDEO` / `ACTION_REMOVE_VIDEO`). The only remaining YouTube coupling is one intercepted button click.
-- Deleted the entire modal-DOM-injection architecture: `MODAL_HOST_SELECTOR` discovery, modal row collection, synthetic API rows, lifecycle-session invalidation observer, keep-dialog-open click guard, recycled-row fingerprinting, modal style blocks (~1,100 lines).
-- Added `parseAddToPlaylist` (src/lib/innertube-parse.js): single home for the save-panel payload shape, fixture-tested. Sheet rows currently render unchecked (library snapshot); wiring the panel request that carries per-video membership state is pending its first real capture.
-- youtubei.js evaluated for the InnerTube layer and not adopted: it covers session/config extraction, but in an isolated-world content script it cannot see `window.ytcfg`, so we would keep our own config scrape anyway — three endpoints don't justify shipping ~1MB of client for the same calls.
-- E2E `save-modal` spec rewritten to the owned-sheet contract; feed-page suite green.
-
 # Changelog
+
+## 2.0.0 - 2026-09-03
+
+A rebuild. The extension is now the save sheet and nothing else, and it holds one invariant that the 1.x line did not: **it never reads data from YouTube's DOM, and never writes a node into it.**
+
+Every recurring bug in 1.6.x traced to breaking that rule. The filter bar appearing inside unrelated menus, lists changing length on their own, having to close and reopen the dialog to recover, breaking every few weeks — those were not six bugs, they were one architectural decision with six symptoms. They are gone because the code that produced them is gone.
+
+### What's new
+
+- **Every playlist, not 200.** The library now comes from `browse FEplaylist_aggregation`, which is not capped. YouTube's own Save picker is built from `get_add_to_playlist`, which returns at most 200 playlists — a hard server limit with no continuation token and no parameter that widens it. Previous versions filtered *YouTube's* list, so they inherited *YouTube's* ceiling. Measured against a 256-playlist account: 253 real playlists in a single response.
+- **"Already in this playlist" is real state**, from one call rather than a guess. Past that same 200-playlist window YouTube reports membership to nobody, including its own client — so those rows are drawn unmarked rather than shown as "not in". An unchecked row now claims nothing, because it is not an answer we have.
+- **Saving works from every surface that offers it.** The home feed, search results, a channel page, the watch sidebar, subscriptions, history, playlist rows. In 1.x, Save worked on the watch page and silently did nothing on the home feed for a full release.
+- **Four ways in that need nothing from YouTube's page at all**: the toolbar icon, right-click on any video link, `Alt`+`S`, and the native Save button. The first three depend only on URL structure, so they keep working through any YouTube redesign — and they are the only way to save a Short, which has no Save affordance of its own.
+- **Brand-channel accounts work.** `INNERTUBE_CONTEXT` does not carry the channel delegation even when the page has it. Without explicitly setting `context.user.onBehalfOfUser`, an account whose playlists live on a brand channel got back 2 playlists instead of 256, and one membership row instead of 200 — no error, just a confidently wrong, smaller answer. Switching accounts mid-session now invalidates that delegation instead of caching it for the life of the tab.
+- **Keyboard-first.** Type to narrow, arrows to move, Enter to save. With hundreds of playlists you type; you do not scroll.
+
+### How the trigger changed
+
+Saving is now detected from **YouTube's own network request** rather than from an intercepted button click. When you click Save anywhere, YouTube's client POSTs `get_panel` with `panelId: "PAadd_to_playlist"`. That is a behavioural fact — YouTube's app stating what the user asked for — rather than a guess based on class names, which are the fastest-churning thing on the page.
+
+Three findings from the live capture, each of which had broken an earlier attempt:
+
+- `get_panel` is **generic** — the "Ask" panel uses the same endpoint. Firing on the URL alone is exactly how 1.x rendered its UI inside unrelated menus. `panelId` is the gate.
+- The `params` blob is **sometimes percent-encoded**, and `atob` throws on `%`. The home feed hits this and the watch page does not. That single detail is the whole of "it worked on watch but not the feed."
+- `chrome.webRequest` **cannot read these bodies at all.** YouTube uploads them as a gzip stream and Chrome reports streamed uploads with no bytes. The old code's `if (!body) return;` was a silent no-op on 100% of saves. The permission is not declared in 2.0.0, because a permission that buys nothing and costs review scrutiny is a liability, not a fallback.
+
+Observation now happens in a `MAIN`-world script that watches two API paths, copies at most four fields out of matching requests, and forwards nothing else — notably not YouTube's client-configuration blob, which it can see. This is a real tradeoff and it is documented in full in PRIVACY.md rather than buried.
+
+### Removed
+
+- **The `/feed/playlists` search surface.** 2.0.0 does one thing. Filtering your playlists library was a second product sharing a codebase with the first, and it was the source of most of the DOM coupling.
+- **MiniSearch**, and with it the last bundled dependency. Search over your own array of titles is a substring match; BM25 ranking over a few hundred short strings was solving a problem nobody had. The extension now ships no third-party code whatsoever.
+- **The `webRequest` permission**, as above. Permissions are now `scripting`, `storage`, `contextMenus`.
+- The selectors layer, the DOM extractors, and the row-filtering machinery — roughly 2,800 lines. The remaining coupling to YouTube's markup is: nothing, plus one synthetic `Escape` keypress to dismiss their dialog, whose failure mode is cosmetic.
+- The welcome page's demo video, which showed a feature that no longer exists.
+
+### A note on what isn't here
+
+Between 1.6.18 and this release an unshipped rewrite of the `/feed/playlists` surface and a first owned save sheet were built and then superseded by this one. Nothing from that work reached users, so it has been dropped from this changelog rather than listed as released. It is preserved in full on the `v2-overhaul` branch at commit `c93a417` if the feed surface is ever revived.
+
+### Upgrading
+
+The service worker now **reconciles** its content-script registrations on update instead of leaving an existing one alone. A surviving 1.6.x registration names `vendor/minisearch.js` and `styles.css`, neither of which exists in 2.0.0 — Chrome would have failed to inject anything and the extension would have installed silently dead. Open YouTube tabs need one reload after updating.
+
+`minimum_chrome_version` is now 123.
+
+### Testing
+
+- 49 unit assertions across intent resolution and InnerTube parsing, including the protobuf field walk, the percent-encoded blob, the `panelId` gate, brand-channel delegation, and both renderer generations — run against captured responses, not only synthetic ones.
+- `tests/test-sheet-render.mjs` pins the sheet's contract in a real browser engine: closed shadow root outside YouTube's tree, top-layer dialog, no string-to-HTML sink, tri-state membership rendering, failure and retry, keyboard navigation, constant row height. It found a real bug on its first run — "already in" rows were still clickable, and YouTube permits duplicate playlist entries, so clicking one silently added the video twice.
+- E2E now drives **the watch page and the home feed**, separately, and reports them separately. Testing one surface and generalising to the category is the specific process failure that shipped the feed bug; asserting per-surface is how it stops.
+- A new e2e spec probes the InnerTube contract by rebuilding both requests from YouTube's own config rather than calling our client — so it fails when *YouTube* changes, independently of whether our parser agrees with itself.
+- `docs/privacy-policy.html` is generated from `PRIVACY.md` and checked in the build. The two had already drifted; the published copy was missing an entire section.
+
 
 ## 1.6.18 - 2026-08-11
 - Fixed repeated Save-modal opens, same-element reuse, detached-host reuse, nested modal ownership, and modal discovery inside open shadow roots.

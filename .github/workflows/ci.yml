@@ -23,25 +23,29 @@ jobs:
       - name: Build bundle (esbuild src/content.js → src/content.bundle.js)
         run: npm run build
 
-      - name: Syntax check (source + bundle + workers)
+      - name: Syntax check (every shipped script)
         run: |
           node --check src/content.js
           node --check src/content.bundle.js
           node --check src/background.js
+          node --check src/intent-hook.js
           node --check src/onboarding-state.js
           node --check src/welcome.js
+          node --check src/lib/intent.js
+          node --check src/lib/innertube.js
+          node --check src/lib/sheet.js
 
       - name: Typecheck (JSDoc + tsc --checkJs)
         run: npm run typecheck
 
-      - name: Unit tests (fixture-driven parsers + /feed anchor budget)
-        run: node --test tests/innertube-parse.test.mjs tests/selectors-anchor-budget.test.mjs
+      - name: Unit tests (intent resolution + InnerTube parsers)
+        run: node --test tests/intent.test.mjs tests/innertube.test.mjs
 
-      - name: Integration test (bundled content.js in vm sandbox)
-        run: node src/test-search.cjs
-
-      - name: Feed-page mount regression (skips cleanly if agent-browser absent)
-        run: node tests/test-feed-page-mount.mjs
+      - name: Save-sheet UI contract (skips cleanly if agent-browser absent)
+        run: node tests/test-sheet-render.mjs
 
       - name: CWS structural validator
         run: node scripts/validate-cws.mjs
+
+      - name: Published privacy page is in sync with PRIVACY.md
+        run: node scripts/build-privacy-page.mjs --check

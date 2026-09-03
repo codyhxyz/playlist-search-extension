@@ -43,7 +43,6 @@ cp -R \
   "$SRC_DIR/welcome.html" \
   "$SRC_DIR/welcome.js" \
   "$SRC_DIR/icons" \
-  "$SRC_DIR/welcome-assets" \
   "$OUT_DIR/"
 cp "$SRC_DIR/lib/intent.js" "$OUT_DIR/lib/intent.js"
 

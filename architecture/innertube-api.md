@@ -1,126 +1,97 @@
 # InnerTube API
 
-The extension talks to YouTube via the **InnerTube API** — the same internal API youtube.com's own UI uses. This is not the public YouTube Data API v3.
+The extension talks to YouTube via the **InnerTube API** — the same internal API youtube.com's own web client uses. This is not the public YouTube Data API v3.
 
-## Why InnerTube, not Data API v3
+Implementation: [`src/lib/innertube.js`](../src/lib/innertube.js). Parsing is split from the calls so the response shapes are unit-testable without a network (`tests/innertube.test.mjs`), and a live contract probe (`tests/e2e/specs/innertube-contract.sh`) re-derives the same requests from YouTube's own config so it fails when *YouTube* changes rather than when our client does.
 
-The extension previously used the Data API v3 with OAuth. That path required:
+## Why InnerTube, and why not Data API v3
 
-- A Google Cloud project with the YouTube Data API enabled
-- OAuth consent screen + verification
-- Daily quota limits
-- Refresh token management in a background service worker
+We run in a content script on `www.youtube.com`, so we are same-origin: no CORS, no proxy, no backend, and the session cookie attaches automatically.
 
-InnerTube solves all of that because we're already on youtube.com:
+The Data API v3 is not merely more work — it is **non-viable for this product**, for two independent reasons:
 
-- No quota (reasonable rate limits only)
-- No OAuth — reuse the SAPISID cookie the user already has
-- No background worker — call it directly from the content script
-- Returns the full playlist library, paginated, without the 200-item cap the modal imposes
+1. **There is no bulk membership endpoint.** Answering "which of your playlists already contain this video" costs one request per playlist, against a 10,000-unit daily quota **pooled across the entire user base**. That is roughly 60–100 daily active users before the extension stops working for everyone.
+2. **It is the higher-risk option, not the safer one.** Registering for API credentials binds you to the YouTube API Developer Policies, which explicitly forbid use of undocumented APIs — converting a vague consumer-ToS gray area into a documented breach of a contract you opted into.
 
-See commit `6ef48ac` ("Migrate to InnerTube API and unify search architecture") for the removal of the old OAuth path.
+We also evaluated `youtubei.js` and did not adopt it: it is built for the hard problems (cipher extraction, protobuf, every YouTube surface) and drags a JS parser and ~16 MB unpacked along with it. First-party and same-origin, none of its proxy/CORS scaffolding buys us anything, and three endpoints do not justify putting a megabyte of someone else's client in front of a Chrome Web Store reviewer.
 
-## Endpoints used
+## Endpoints
 
-Both go through `innertubeRequest(endpoint, body)` at content.js:1076:
+All requests go through `plsPost(path, body)`:
 
 ```
-POST https://www.youtube.com/youtubei/v1/{endpoint}?key={apiKey}&prettyPrint=false
+POST https://www.youtube.com/youtubei/v1/{path}?prettyPrint=false[&key={apiKey}]
 ```
 
-| Endpoint | Purpose | Called from |
+| Path | Body | Purpose |
 |---|---|---|
-| `browse` with `browseId: "FEplaylist_aggregation"` | First page of the user's playlist library | `innertubeLoadPlaylists` |
-| `browse` with `continuation: <token>` | Subsequent pages | `innertubeLoadPlaylists` |
-| `browse/edit_playlist` | Add a video to a playlist | `innertubeSaveVideo` |
+| `browse` | `{ browseId: "FEplaylist_aggregation" }` | The user's full playlist library, page 1 |
+| `browse` | `{ continuation: <token> }` | Subsequent pages |
+| `playlist/get_add_to_playlist` | `{ videoIds: [videoId] }` | Which playlists already contain this video |
+| `browse/edit_playlist` | `{ playlistId, actions: [{ action: "ACTION_ADD_VIDEO", addedVideoId }] }` | Add |
+| `browse/edit_playlist` | `{ playlistId, actions: [{ action: "ACTION_REMOVE_VIDEO_BY_VIDEO_ID", removedVideoId }] }` | Remove (implemented, not exposed — see `coverage.md` E2) |
 
-`browseId: "FEplaylist_aggregation"` is the browse ID for the "Your playlists" aggregation shelf. It returns a paginated list of `gridPlaylistRenderer` / `playlistRenderer` entries.
+### The two-endpoint split is the whole product
 
-## Authentication: SAPISID hash
+`get_add_to_playlist` is the endpoint behind YouTube's own Save picker, and it returns **at most 200 playlists**. Earlier versions of this extension filtered *YouTube's rendered list*, so they inherited *YouTube's ceiling*. Fetching the library from `browse FEplaylist_aggregation` instead is not an optimisation — it is the entire reason the extension can show you playlist 201.
 
-YouTube's own web client authenticates itself using a SHA-1 hash of the `SAPISID` cookie plus a timestamp and origin. We replicate that exact scheme (content.js:1061):
+Measured against a 256-playlist account on 2026-08-28: 253 real playlists (256 ids including Liked / Watch Later / Favourites) in a **single** response, with a continuation token that led to a page adding nothing and returning no further token. The walk terminated because the server said done, not because the loop gave up.
 
-```js
-async function getSapisidHash() {
-  const sapisid = getSapisid();                                    // from document.cookie
-  if (!sapisid) return null;
-  const timestamp = Math.floor(Date.now() / 1000);
-  const input = `${timestamp} ${sapisid} https://www.youtube.com`;
-  const hash = sha1(input);                                         // via crypto.subtle
-  return `SAPISIDHASH ${timestamp}_${hash}`;
-}
-```
+### The 200 cap is a hard server limit
 
-Sent as the `Authorization` header. YouTube's server validates it against the SAPISID cookie it already has, so nothing sensitive leaves the browser — we're just proving we can read the user's cookies (which we can, because we run in a youtube.com content script).
+This was established exhaustively, because the temptation to assume it is a paging boundary is strong:
 
-**If the user isn't logged in, `getSapisid()` returns `null` and API calls are skipped gracefully.** The modal still works with whatever DOM rows YouTube rendered.
+- The 200-id set is **byte-identical across different videoIds** — a fixed per-account window, not a per-video selection.
+- It is the 200 most-recently-modified *addable* playlists. `LL` (Liked) is structurally excluded — you cannot add to it from a picker. `WL` is always index 0.
+- No continuation token appears anywhere in the response. `maxResults`, `pageSize`, `count`, `offset`, `continuation` and `includeAllPlaylists` are all ignored. Every field of the `get_panel` `params` protobuf was fuzzed. Always 200.
+- Other clients don't help: `MWEB` 200, `TVHTML5` 200, `WEB_REMIX` 33 (music only), `ANDROID`/`IOS` 400.
+- **YouTube's own client is equally blind.** For a video whose only playlist sat outside the window, YouTube's popover rendered every row unchecked and did not list that playlist at all.
 
-## Config extraction from page scripts
+Hence membership is **tri-state**: `true` / `false` / `undefined`. The parser only ever *sets* a key for a playlist the server actually reported, so absence means unknown, and the UI draws unknown rows bare. An unchecked row asserts "not in this playlist", and we do not make that claim without evidence.
 
-`getInnertubeConfig()` rescans bounded bootstrap-script text on every API session snapshot. It extracts the API key, client version, `SESSION_INDEX`, `DELEGATED_SESSION_ID`, and `DATASYNC_ID`; later configuration blocks win. It is intentionally not memoized because YouTube can switch Google accounts or Brand channels without replacing the content-script document.
+`resolveMembershipTail()` can settle the remainder by walking `browse VL<id>` per unknown playlist — measured at 56 playlists → 124 requests → ~9 s at concurrency 6, and it correctly found the one true member the fast path could not see. Too slow for first paint; correct as a background refinement. Implemented, not wired in.
 
-Authenticated requests send the extracted session index as `X-Goog-AuthUser` and, for delegated channels, send `X-Goog-PageId`. If the active account identity cannot be determined, the extension fails safely to DOM-only search instead of assuming account 0.
+### Two traps worth keeping on the record
 
-## Pagination
+Both produced **confident, plausible, false** conclusions — the failure mode that survives review:
 
-`innertubeLoadPlaylists` (content.js:1194) paginates via continuation tokens:
+| Call | Result |
+|---|---|
+| `{ videoId: id }` (singular) | 400 — wrong key |
+| `{ videoIds: [id, id2] }` | 400 — the array must hold exactly one |
+| `{ videoIds: [id] }` **without delegation** | 200, and **exactly one row: Watch Later** |
+| `{ videoIds: [id] }` **with delegation** | 200, **200 rows with real `containsSelectedVideos`** |
 
-```js
-let data = await innertubeRequest("browse", { browseId: "FEplaylist_aggregation" });
-for (let page = 0; page < 50; page += 1) {
-  const { playlists, continuation } = parsePlaylistRenderers(data);
-  for (const pl of playlists) if (!byId.has(pl.id)) byId.set(pl.id, pl);
-  if (!continuation) break;
-  data = await innertubeRequest("browse", { continuation });
-}
-```
+The third row is how "there is no bulk membership endpoint anymore" got written down and believed. The other half of that same wrong conclusion was parsing the *first* `listItems` array found rather than doing a full recursive collect. Both are now unit-tested by name.
 
-Hard cap of 50 pages is defensive — at ~100 playlists per page that's 5000 playlists, which dwarfs any realistic user library and prevents runaway loops if YouTube's response ever omits the terminator.
+## Authentication
 
-## Response parsing
-
-`parsePlaylistRenderers(data)` (content.js:1116) walks YouTube's deeply nested response and pulls out playlists from several shapes:
-
-- `gridPlaylistRenderer` — the main shelf format
-- `playlistRenderer` — alternate format
-- `richItemRenderer.content` — wrapped format on newer layouts
-- Continuation tokens from:
-  - `continuationItemRenderer.continuationEndpoint.continuationCommand.token`
-  - `grid.continuations[0].nextContinuationData.continuation` (older format)
-
-It also handles `onResponseReceivedActions` with `appendContinuationItemsAction` / `reloadContinuationItemsCommand` for continuation responses.
-
-All of this is necessary because YouTube varies its response shape by account, experiment bucket, and client version. The parser is intentionally permissive.
-
-## Session cache
-
-`apiSessionCaches` stores one in-memory cache entry per `[SESSION_INDEX, DELEGATED_SESSION_ID, DATASYNC_ID]` identity. Cache hits and in-flight joins therefore cannot cross Google accounts or Brand channels. Each controller also keeps the exact API playlist snapshot and account key used to build its index.
-
-Entries refresh after six hours when next requested. **Nothing is persisted to `chrome.storage`**.
-
-## Stale-request cancellation
-
-When a modal opens, `bootstrapModalApi(ctrl)` snapshots the active account and increments the per-controller `apiToken`. A response is applied only when the controller is still live, its token still matches, and the current account key equals the request snapshot. `apiPendingAccountKey` prevents duplicate bootstrap calls while still allowing a new account to start its own request immediately.
-
-`teardownHost` increments `apiToken`, so a response for a closed modal lands in the account cache but cannot update dead UI.
-
-## Saving a video to a playlist
-
-`innertubeSaveVideo(playlistId, videoId)` (content.js:1215):
+YouTube's own web client authenticates with a SHA-1 hash of the `SAPISID` cookie plus a timestamp and origin. We replicate that scheme exactly:
 
 ```js
-await innertubeRequest("browse/edit_playlist", {
-  playlistId,
-  actions: [{ action: "ACTION_ADD_VIDEO", addedVideoId: videoId }],
-});
+Authorization: `SAPISIDHASH ${ts}_${sha1(`${ts} ${sapisid} https://www.youtube.com`)}`
+X-Origin: https://www.youtube.com
 ```
 
-Called when the user clicks the "+" button on a synthetic API-only row. Pending/done operations are keyed by account, video, and playlist, so filtering can recreate DOM rows without issuing duplicate requests. Completed operations retain a short checkmark/dedup window, then expire rather than pretending to be permanent membership state.
+No OAuth, no `chrome.identity`, no tokens stored anywhere. The cookie value and the derived hash go only back to youtube.com as part of these same-origin calls.
 
-`getCurrentVideoId()` trusts only:
+PoToken / BotGuard is not involved: that machinery is scoped to video playback endpoints, not playlist CRUD.
 
-1. The modal's own hydrated `data.videoId` / `__data.videoId`.
-2. An 11-character `?v=` or `ytd-watch-flexy[video-id]` on `/watch`.
-3. An 11-character `/shorts/:id` path.
+## Context, and the brand-account requirement
 
-It never guesses from arbitrary page links. If no authoritative target exists, synthetic saves are disabled while native YouTube rows remain usable.
+Every request carries a `context` object lifted from the page's own `INNERTUBE_CONTEXT`. `ytcfg` lives in the MAIN world, so the isolated-world client scrapes the JSON out of the page's script text (`cfgFrom`). This reads *configuration*, not rendered markup — there is no other source for the session handshake, and it does not violate the "never read data from YouTube's DOM" invariant, which is about playlist data.
+
+**`INNERTUBE_CONTEXT` does not carry the channel delegation, even when the page has it.** If the user's playlists live on a brand channel, `context.user.onBehalfOfUser` must be set explicitly from `DELEGATED_SESSION_ID`. Without it:
+
+- `browse FEplaylist_aggregation` returns **2** playlists (Liked + Watch Later) instead of 256
+- `get_add_to_playlist` returns **1** row instead of 200
+
+Neither errors. You simply get a smaller, wrong answer that looks like an API limit — which is exactly what it was mistaken for. `fetchMembership` warns whenever it sees ≤1 row so this can never be silently misread again, and the delegation scrape is unit-tested.
+
+The cache holding this is invalidated on SPA navigation, because switching accounts on YouTube is a client-side navigation and a session that kept its first delegation would go on listing the wrong library.
+
+## Failure policy
+
+**Fail closed.** If InnerTube changes shape or authentication, the sheet says it could not load your playlists and does nothing. There is deliberately no fallback to reading YouTube's rendered page — that fallback is the disease, not the cure, and reintroducing it would recreate every symptom the rebuild deleted.
+
+This is not a public, documented API. Google may change or restrict it without notice. The mitigation is the contract probe, not a fallback: find out before users do.

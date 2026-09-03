@@ -45,8 +45,12 @@ node --test "$ROOT_DIR/tests/intent.test.mjs" "$ROOT_DIR/tests/innertube.test.mj
 echo "[build] Gate 5/6: save-sheet UI contract (real engine)"
 node "$ROOT_DIR/tests/test-sheet-render.mjs"
 
-echo "[build] Gate 6/6: CWS structural validator"
+echo "[build] Gate 6/6: CWS structural validator + published privacy page in sync"
 node "$ROOT_DIR/scripts/validate-cws.mjs"
+# The CWS listing and the welcome page both link to the published policy. It
+# drifted out of sync with PRIVACY.md once already, silently dropping a whole
+# section, so it is now generated and checked rather than maintained twice.
+node "$ROOT_DIR/scripts/build-privacy-page.mjs" --check
 
 # NOTE: the full e2e suite (signed-in YouTube via agent-browser) runs as the
 # pre-upload gate inside scripts/publish-cws.mjs, NOT here. Build = fast gates;
@@ -67,7 +71,6 @@ cp -R \
   "$SRC_DIR/welcome.html" \
   "$SRC_DIR/welcome.js" \
   "$SRC_DIR/icons" \
-  "$SRC_DIR/welcome-assets" \
   "$STAGE_DIR/"
 
 # lib/ ships too, but ONLY the module the service worker imports at runtime.
@@ -88,7 +91,6 @@ zip -r "$OUT" \
   welcome.js \
   icons \
   lib \
-  welcome-assets \
   -x "*.DS_Store"
 
 echo "[build] Packaged $OUT"

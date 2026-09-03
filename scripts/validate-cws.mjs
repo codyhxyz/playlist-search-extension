@@ -45,7 +45,7 @@ const DECLARATIVE_PERMS = new Set(["sidePanel"]);
 // Files/dirs under src/ that ship to the store via build-store-zip.sh.
 // test-*.js files stay out. As of 2.0.0 there is no vendor/ — the extension
 // carries no third-party code at all, which is most of its review story.
-const SKIP_ENTRIES = new Set(["welcome-assets", "icons"]);
+const SKIP_ENTRIES = new Set(["icons"]);
 const TEST_FILE_RE = /^test-.*\.(m?js|cjs)$/;
 const SCAN_EXT_RE = /\.(js|mjs|html)$/;
 

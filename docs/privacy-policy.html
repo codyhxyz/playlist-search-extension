@@ -5,107 +5,83 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>YouTube Playlist Search Privacy Policy</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 40px auto; max-width: 760px; line-height: 1.6; padding: 0 16px; }
-    h1, h2 { line-height: 1.3; }
-    code { background: #f4f4f4; padding: 2px 4px; }
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+           margin: 40px auto; max-width: 760px; line-height: 1.65; padding: 0 16px; }
+    h1, h2, h3 { line-height: 1.3; }
+    h2 { margin-top: 2em; }
+    code { background: rgba(127, 127, 127, 0.16); padding: 2px 5px; border-radius: 4px;
+           font-size: 0.9em; }
+    li { margin: 0.35em 0; }
+    li > ul, li > ol { margin-top: 0.35em; }
   </style>
 </head>
 <body>
-  <h1>YouTube Playlist Search Privacy Policy</h1>
-  <p><strong>Last updated:</strong> August 10, 2026</p>
-
+<!-- GENERATED FROM PRIVACY.md by scripts/build-privacy-page.mjs — do not edit by hand. -->
+  <h1>Privacy Policy</h1>
+  <p><strong>Last updated:</strong> September 3, 2026</p>
   <h2>Overview</h2>
-  <p>
-    YouTube Playlist Search is a Chrome extension that adds an in-page search bar to YouTube's
-    playlist selection interfaces. It fetches your playlists directly from YouTube and lets you
-    save videos to them.
-  </p>
-
+  <p>YouTube Playlist Search is a Chrome extension that replaces YouTube's "Save to playlist" picker with a searchable one covering every playlist you own. It fetches your playlists directly from YouTube and lets you save videos to them.</p>
+  <p>As of version 2.0.0 the extension adds nothing to YouTube's own page and reads no data out of it. Its interface is drawn in a private container of its own, and its data comes from YouTube's API rather than from the rendered page.</p>
   <h2>Data Collection</h2>
-  <p>
-    This extension does <strong>not</strong> collect, store, transmit, or sell personal data to the
-    extension developer or any third party. No analytics, tracking, or remote logging is performed.
-    The extension developer does not operate a backend server and never receives any of your data.
-  </p>
-  <p>
-    Your username, email, and profile photo are ignored. The extension reads only the playlist
-    content and YouTube session value described below. It sends neither item to the developer or
-    any third party.
-  </p>
-
+  <p>This extension does <strong>not</strong> collect, store, transmit, or sell personal data to the extension developer or any third party. No analytics, tracking, or remote logging is performed. The extension developer does not operate a backend server and never receives any of your data.</p>
+  <p>Your username, email, and profile photo are ignored. The extension reads only the playlist content, the YouTube session value, and the save-request signal described below. None of it is sent to the developer or any third party.</p>
   <h2>External Services</h2>
-  <p>
-    The extension only communicates with <code>youtube.com</code> &mdash; the same server you are
-    already browsing. It does this by calling YouTube's internal "InnerTube" API
-    (<code>https://www.youtube.com/youtubei/v1/*</code>) as a same-origin request from the YouTube
-    tab you already have open. No requests are made to any other server, and no data is sent to
-    the extension developer.
-  </p>
-
+  <p>The extension only communicates with <code>youtube.com</code> — the same server you are already browsing. It does this by calling YouTube's internal "InnerTube" API (<code>https://www.youtube.com/youtubei/v1/*</code>) as a same-origin request from the YouTube tab you already have open. No requests are made to any other server, and no data is sent to the extension developer.</p>
   <h2>Authentication</h2>
-  <p>
-    The extension does <strong>not</strong> use OAuth, does <strong>not</strong> use
-    <code>chrome.identity</code>, and does <strong>not</strong> obtain, store, or transmit any
-    access tokens or refresh tokens.
-  </p>
-  <p>
-    Because InnerTube requests originate from a youtube.com page, your browser automatically
-    attaches your existing YouTube session cookie &mdash; the same way it does when you click
-    around YouTube normally. To satisfy InnerTube's authentication scheme, the extension reads the
-    <code>SAPISID</code> cookie from <code>document.cookie</code> on the current YouTube tab and
-    uses it to compute a short-lived <code>SAPISIDHASH</code> authentication header. The cookie
-    value and the derived hash are only ever sent back to <code>youtube.com</code> itself as part
-    of these same-origin API calls. They are never stored, logged, or transmitted anywhere else.
-  </p>
-
+  <p>The extension does <strong>not</strong> use OAuth, does <strong>not</strong> use <code>chrome.identity</code>, and does <strong>not</strong> obtain, store, or transmit any access tokens or refresh tokens.</p>
+  <p>Because InnerTube requests originate from a youtube.com page, your browser automatically attaches your existing YouTube session cookie — the same way it does when you click around YouTube normally. To satisfy InnerTube's authentication scheme, the extension reads the <code>SAPISID</code> cookie from <code>document.cookie</code> on the current YouTube tab and uses it to compute a short-lived <code>SAPISIDHASH</code> authentication header. The cookie value and the derived hash are only ever sent back to <code>youtube.com</code> itself as part of these same-origin API calls. They are never stored, logged, or transmitted anywhere else.</p>
+  <h2>How the extension knows you clicked Save</h2>
+  <p>This is the one genuinely new behaviour in version 2.0.0, and it deserves to be described plainly rather than buried.</p>
+  <p>When you click "Save" on a YouTube video — from the player, from a <code>⋮</code> menu in a feed, from search results, anywhere — YouTube's own web app sends a request to its own server saying, in effect, "this user wants to save this video." The extension watches for <strong>that specific request</strong> and uses it as the signal to open its picker.</p>
+  <p>To do that, it installs a small script into the YouTube page itself (a <code>MAIN</code>-world content script, <code>intent-hook.js</code>) that wraps the browser's <code>fetch</code> and <code>XMLHttpRequest</code> functions. Concretely:</p>
+  <ul>
+    <li>It looks at requests to exactly two YouTube API paths: <code>/youtubei/v1/get_panel</code> and <code>/youtubei/v1/playlist/get_add_to_playlist</code>. Every other request on the page — video playback, comments, ads, search, sign-in, everything — is ignored and never inspected.</li>
+    <li>For those two, it reads a <strong>copy</strong> of the request body (the original is always passed through untouched, so YouTube's own functionality is unaffected) and extracts at most four short fields: <code>panelId</code>, <code>params</code>, <code>continuation</code>, and <code>videoId</code>.</li>
+    <li>Those four fields, and nothing else, are passed to the extension. YouTube's client-configuration blob — which contains identifiers like your visitor ID — is deliberately <strong>not</strong> forwarded, even though the script can see it.</li>
+    <li>Nothing observed here is stored, and nothing leaves your browser.</li>
+  </ul>
+  <p>Two honest consequences of this design:</p>
+  <ol>
+    <li><strong>The page can see this script.</strong> Code running in the <code>MAIN</code> world shares the page's environment, which means youtube.com could in principle detect that the extension is installed, or feed it a fake save request. The extension therefore treats everything crossing that boundary as untrusted, and the worst a forged message can achieve is opening the extension's own picker for a video of YouTube's choosing — something the page could equally do by navigating. The script is kept deliberately small and logic-free to keep that surface minimal.</li>
+    <li><strong>We tried to avoid it and could not.</strong> The intended design used Chrome's <code>webRequest</code> permission, which does not require any page-world code. It does not work: YouTube sends these request bodies as a compressed stream, and Chrome hands streamed uploads to extensions with no readable content whatsoever. The permission was removed rather than kept as dead weight.</li>
+  </ol>
+  <p>If you would rather the extension not observe anything at all, it works without this: the toolbar icon, the right-click menu, and <code>Alt</code>+<code>S</code> all open the same picker using only the page's URL. Those paths involve no observation of YouTube's requests.</p>
   <h2>Local Processing and Storage</h2>
-  <p>
-    The extension reads the following "website content" from the YouTube pages you visit:
-  </p>
+  <p>The extension reads the following from YouTube:</p>
   <ul>
-    <li>Playlist titles and IDs (from the page DOM and from InnerTube API responses)</li>
+    <li><strong>Playlist titles and IDs</strong>, and whether a given video is already in a playlist — from InnerTube API responses only. Version 2.0.0 removed all reading of playlist data out of the rendered page.</li>
+    <li><strong>The video ID you are trying to save</strong>, from one of: YouTube's own save request (see "How the extension knows you clicked Save"), the URL of the tab, or the URL of a link you right-clicked.</li>
+    <li><strong>YouTube's client configuration</strong> (<code>INNERTUBE_CONTEXT</code>, and the brand-channel session ID if you are acting as a channel), read from the page's own configuration script. This is what makes an API call from your session valid, and is the same configuration YouTube's own code uses. It is sent only back to YouTube.</li>
   </ul>
-  <p>
-    MiniSearch indexes this data in the current tab. Playlist titles, IDs, search text, URLs, and
-    modal HTML are not written to persistent storage or page diagnostics. Account-scoped playlist
-    caches refresh after six hours when next used. The browser clears them when the tab closes.
-  </p>
-  <p>
-    All search, ranking, and filtering is performed locally in your browser.
-  </p>
-
+  <p>All searching and filtering happens locally in your browser, over an in-memory list. Nothing is written to <code>chrome.storage</code>, <code>localStorage</code>, cookies, or any other persistent storage, and nothing survives closing the sheet: the extension keeps no playlist cache at all in this version.</p>
   <h2>Permissions</h2>
-  <p>The extension uses two Chrome API permissions:</p>
+  <p>The extension declares three Chrome API permissions in <code>manifest.json</code>:</p>
   <ul>
-    <li><code>scripting</code> registers the content script after you grant YouTube access.</li>
-    <li><code>storage</code> stores onboarding flags and content-script registration errors.</li>
+    <li><code>scripting</code> — to dynamically register its content scripts once you grant the YouTube host permission.</li>
+    <li><code>contextMenus</code> — to add a single "Save to playlist" item to the right-click menu on YouTube video links.</li>
+    <li><code>storage</code> — used for non-personal operational state only:</li>
+    <li><strong>Onboarding flags</strong> (<code>chrome.storage.local</code>): whether you've seen the welcome page and whether host permission is currently granted.</li>
+    <li><strong>Registration errors</strong> (<code>chrome.storage.local</code>): an error message and timestamp when Chrome cannot register the packaged content script. This contains no playlist, search, page, or authentication data.</li>
   </ul>
-  <p>
-    These records contain no playlist, search, page, or authentication data. Runtime diagnostics
-    stay in the local DevTools console. The extension does not persist or expose them in page DOM.
-  </p>
-  <p>
-    Site access is limited to <code>https://www.youtube.com/*</code>. You grant this optional host
-    permission on the welcome page. A service worker manages this permission and opens the welcome
-    page after installation. The extension has no popup.
-  </p>
-
+  <p>Runtime diagnostics are written only to the local DevTools console. They are not persisted, copied into the YouTube page DOM, or transmitted.</p>
+  <p>Site access is <code>https://www.youtube.com/*</code> only, and is requested as an <strong>optional host permission</strong> that you grant explicitly via the welcome page's "Grant access" button. The extension does not run on any other site, subdomain, or scheme.</p>
+  <p>A small service worker (<code>background.js</code>) registers or unregisters the content scripts, works out which video a save request refers to, opens the welcome page on first install, and stores the non-personal operational state listed above. It never sees your playlists, your cookies, or your authentication headers — those exist only inside the YouTube tab. There is no popup.</p>
+  <p>The extension does <strong>not</strong> request the <code>webRequest</code> permission. An earlier design used it to observe save requests; it was removed because Chrome cannot read the bodies of these particular requests at all, making the permission useless while still widening what the extension could see.</p>
   <h2>Third-Party Code</h2>
-  <p>
-    The extension bundles a local copy of MiniSearch for BM25-based ranking. MiniSearch runs
-    entirely in your browser; no remote executable code is loaded at runtime, and no third-party
-    SDKs are used.
-  </p>
-
+  <p><strong>There is none.</strong> Version 2.0.0 removed the last bundled dependency (MiniSearch, previously used for search ranking; the current search is a plain substring match over your own playlist titles). The extension is entirely first-party code. No remote executable code is loaded at runtime, and no third-party SDKs, analytics, or frameworks are used.</p>
+  <h2>On YouTube's Internal "InnerTube" API</h2>
+  <p>The extension calls YouTube's internal InnerTube API (<code>https://www.youtube.com/youtubei/v1/*</code>) — the same API YouTube's own web UI uses. This is not a public, documented API, and Google may change or restrict it without notice.</p>
+  <p>Three honest implications of that choice:</p>
+  <ol>
+    <li><strong>Reliability.</strong> If YouTube changes the InnerTube surface or its authentication scheme, the extension will stop working until an update ships. It is designed to <strong>fail closed</strong>: when it cannot load your playlists it says so and does nothing, rather than falling back to reading YouTube's page. That fallback is what produced the misbehaviour in earlier versions — a search box appearing inside unrelated menus, lists changing length on their own — so it was removed deliberately, accepting a visible outage over a confusing one.</li>
+    <li><strong>Scope of access.</strong> Every InnerTube call uses your existing logged-in YouTube session, same-origin, with the same authentication scheme YouTube's own web client uses. The extension does not gain any access you don't already have when you're logged into YouTube in your browser.</li>
+    <li><strong>No data goes to the developer.</strong> Whatever the extension reads via InnerTube stays in your browser tab. The extension developer does not operate any server and does not receive any of your data.</li>
+  </ol>
+  <p>We chose this design over the public YouTube Data API v3 because v3 requires OAuth, a Google Cloud project, and is subject to daily quotas — adding friction for users without changing what data is accessible.</p>
   <h2>Changes</h2>
-  <p>
-    If this policy changes, the updated version will be posted on this page with a new "Last updated"
-    date.
-  </p>
-
+  <p>If this policy changes, the updated version will be posted on this page with a new "Last updated" date.</p>
   <h2>Contact</h2>
-  <p>
-    Email: <a href="mailto:playlist@codyh.xyz">playlist@codyh.xyz</a>
-  </p>
+  <p>Email: playlist@codyh.xyz</p>
 </body>
 </html>

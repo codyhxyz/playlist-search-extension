@@ -36,7 +36,7 @@
  *
  * After capture:
  *   - Verify the parse summary looks right.
- *   - Update the corresponding `REAL:` test in tests/innertube-parse.test.mjs
+ *   - Update the corresponding `REAL:` test in tests/innertube.test.mjs
  *     to assert the captured count + first ID/title (replace the skip
  *     reason once the file exists). The mrbeast-channel test is the model.
  */
@@ -44,7 +44,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parsePlaylistRenderers } from "../src/lib/innertube-parse.js";
+import { parseMembership, scanKey, scanPlaylists } from "../src/lib/innertube.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, "..");
@@ -110,21 +110,30 @@ function writeFixture(outPath, sourceUrl, captured) {
   writeFixture._payload = stamped;
   writeFileSync(outPath, JSON.stringify(stamped, null, 2) + "\n");
 
-  // Sanity summary — exercise the parser against what we just captured.
-  const reasons = [];
-  const { playlists, continuation } = parsePlaylistRenderers(stamped, (info) =>
-    reasons.push(info),
-  );
+  // Sanity summary — run the real parsers over what we just captured, so a
+  // capture that the shipping code cannot read is obvious at capture time
+  // rather than three commits later.
+  const found = scanPlaylists(stamped, new Map());
+  const continuation = scanKey(stamped, "continuationCommand", []).find((c) => c && c.token)?.token ?? null;
+  const membership = parseMembership(stamped);
+  const playlists = [...found].map(([id, title]) => ({ id, title }));
+
   console.log(`[capture] wrote ${path.relative(REPO, outPath)} (${JSON.stringify(stamped).length} bytes)`);
-  console.log(`[capture] parsed: ${playlists.length} playlists, continuation=${continuation ? "yes" : "no"}, canary=${reasons.length ? "FIRED" : "silent"}`);
+  console.log(`[capture] parsed: ${playlists.length} playlists, continuation=${continuation ? "yes" : "no"}, membership rows=${membership.size}`);
   if (playlists.length > 0) {
-    console.log(`[capture] first: id=${playlists[0].id}  title=${JSON.stringify(playlists[0].title)}  count=${playlists[0].itemCount}`);
+    console.log(`[capture] first: id=${playlists[0].id}  title=${JSON.stringify(playlists[0].title)}`);
   }
-  if (reasons.length > 0) {
-    console.log(`[capture] canary unknown keys: ${reasons[0].unknownItemKeys.join(", ")}`);
-    console.log(`[capture] → parser likely needs a new renderer branch in src/lib/innertube-parse.js`);
+  // A title that is just the id back means the id/title pairing missed — the
+  // shape moved and the sheet would render raw ids.
+  const untitled = playlists.filter((p) => !p.title || p.title === p.id);
+  if (untitled.length > 0) {
+    console.log(`[capture] WARNING: ${untitled.length}/${playlists.length} playlists parsed with no title.`);
+    console.log(`[capture] → the id/title pairing in scanPlaylists() may need adjusting for this shape.`);
   }
-  return { playlists, continuation, reasons };
+  if (playlists.length === 0 && membership.size === 0) {
+    console.log(`[capture] WARNING: nothing parsed out of this response at all — check it is the payload you meant to capture.`);
+  }
+  return { playlists, continuation, membership };
 }
 
 function pullYtInitialData() {

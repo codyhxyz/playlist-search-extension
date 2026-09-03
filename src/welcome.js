@@ -1,7 +1,6 @@
-"use strict";
+import { YOUTUBE_ORIGIN, hasYouTubePermission } from "./onboarding-state.js";
 
 (() => {
-  const { YOUTUBE_ORIGIN, hasYouTubePermission } = globalThis.YTPF_onboarding;
 
   const stepGrant = document.getElementById("step-grant");
   const stepOpen = document.getElementById("step-open");
@@ -31,7 +30,7 @@
       stepGrant.dataset.state = "complete";
       stepOpen.dataset.state = "active";
       grantDesc.textContent =
-        "You're all set — the extension is active on youtube.com. It only talks to YouTube on your behalf — never to the developer or any third party.";
+        "You're all set — the extension is active on youtube.com. It talks only to YouTube, as you, and never to the developer or any third party. Already-open YouTube tabs need one reload.";
       grantBtn.textContent = "Access granted";
       grantBtn.disabled = true;
       openBtn.disabled = false;
