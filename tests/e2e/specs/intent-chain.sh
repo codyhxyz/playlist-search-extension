@@ -73,45 +73,65 @@ ab_assert_sheet_a11y "the sheet exposes a listbox" 'listbox'
 # YouTube binds single keys on `document` — f fullscreen, k play/pause, m mute,
 # t theater — and guards them with "ignore this if the user is typing". Shadow
 # retargeting defeats that guard: the event reaches document with our HOST as its
-# target, which is not an input. Typing a query used to fire the shortcuts.
+# target, which is not an input, so the guard waves it through.
 #
-# Real keystrokes, real page, and we check YouTube's actual state rather than
-# whether an event was seen — this is the assertion that would have caught it.
-PRE_STATE="$(ab_eval '(() => {
-  const v = document.querySelector("video");
-  return { fullscreen: !!document.fullscreenElement, paused: v ? v.paused : null, theater: !!document.querySelector("ytd-watch-flexy[theater]") };
+# FIRST establish that this harness can deliver real key events at all. It often
+# cannot: `keyboard type` uses Input.insertText, which produces `input` events and
+# NO key events, and `press` only lands when the browser window holds OS focus.
+# An earlier version of this check asserted "nothing leaked" without testing that,
+# and passed for the best possible reason and the worst possible cause — no
+# keystroke was ever generated. A check that cannot fail is not a check.
+#
+# The deterministic coverage for this lives in tests/test-sheet-render.mjs, which
+# dispatches from the focused input and watches a document-level listener. This is
+# the live confirmation on top of it, and it SKIPS rather than lies.
+KEYS_LAND="$(ab_eval '(() => {
+  window.__probeSeen = 0;
+  const h = (e) => { if (e.key === "Shift") window.__probeSeen++; };
+  document.documentElement.addEventListener("keydown", h, true);
+  window.__probeStop = () => { document.documentElement.removeEventListener("keydown", h, true); return window.__probeSeen; };
+  return true;
 })()')"
-echo "[$SPEC_NAME] player state before typing: $PRE_STATE"
+agent-browser --session "$SESSION" press Shift >/dev/null 2>&1 || true
+agent-browser --session "$SESSION" wait 400 >/dev/null
+DELIVERED="$(ab_eval 'window.__probeStop()')"
 
-# Every one of these is a YouTube shortcut. They are also just letters someone
-# might plausibly type while searching for a playlist.
-agent-browser --session "$SESSION" keyboard type "fkmt" >/dev/null 2>&1 || true
-agent-browser --session "$SESSION" wait 900 >/dev/null
-
-POST_STATE="$(ab_eval '(() => {
-  const v = document.querySelector("video");
-  return { fullscreen: !!document.fullscreenElement, paused: v ? v.paused : null, theater: !!document.querySelector("ytd-watch-flexy[theater]") };
-})()')"
-echo "[$SPEC_NAME] player state after typing:  $POST_STATE"
-
-if [[ "$PRE_STATE" == "$POST_STATE" ]]; then
-  echo "[$SPEC_NAME] PASS: typing f/k/m/t in the sheet changed nothing about YouTube's player"
+if [[ "$DELIVERED" == "0" || -z "$DELIVERED" ]]; then
+  echo "[$SPEC_NAME] SKIP: this harness is not delivering real key events (window focus), so the"
+  echo "[$SPEC_NAME]       live keyboard-containment check cannot run. It is covered"
+  echo "[$SPEC_NAME]       deterministically by tests/test-sheet-render.mjs."
 else
-  ab_fail "typing in the sheet leaked to YouTube's keyboard shortcuts — player state changed from $PRE_STATE to $POST_STATE"
+  PRE_STATE="$(ab_eval '(() => {
+    const v = document.querySelector("video");
+    return { fullscreen: !!document.fullscreenElement, paused: v ? v.paused : null, theater: !!document.querySelector("ytd-watch-flexy[theater]") };
+  })()')"
+  for k in f k m t; do
+    agent-browser --session "$SESSION" press "$k" >/dev/null 2>&1 || true
+  done
+  agent-browser --session "$SESSION" wait 900 >/dev/null
+  POST_STATE="$(ab_eval '(() => {
+    const v = document.querySelector("video");
+    return { fullscreen: !!document.fullscreenElement, paused: v ? v.paused : null, theater: !!document.querySelector("ytd-watch-flexy[theater]") };
+  })()')"
+  if [[ "$PRE_STATE" == "$POST_STATE" ]]; then
+    echo "[$SPEC_NAME] PASS: typing f/k/m/t in the sheet changed nothing about YouTube's player"
+  else
+    ab_fail "typing in the sheet leaked to YouTube's keyboard shortcuts — player state went from $PRE_STATE to $POST_STATE"
+  fi
 fi
-
-# And the query actually received those keystrokes, so the block is not just
-# "no keys reached anything".
-ab_assert_sheet_a11y "the keystrokes landed in our search field instead" '(No playlist matches|fkmt|0 of)'
-
-agent-browser --session "$SESSION" press Escape >/dev/null 2>&1 || true
-agent-browser --session "$SESSION" wait 500 >/dev/null
 
 # The generic-endpoint gate. `get_panel` is shared with unrelated panels (the "Ask"
 # panel uses it with no panelId), and firing on the URL alone is exactly how the 1.x
 # extension rendered itself inside menus that had nothing to do with saving.
-agent-browser --session "$SESSION" press Escape >/dev/null 2>&1 || true
-agent-browser --session "$SESSION" wait 500 >/dev/null
+# Reload rather than pressing Escape: this step needs the sheet definitively gone,
+# and it must not silently become a test of key delivery. A fresh load is
+# unambiguous, and it also re-proves that the content scripts register on load.
+agent-browser --session "$SESSION" open "https://www.youtube.com/watch?v=$VIDEO_ID" >/dev/null
+ab_wait_for "reloaded with no sheet" '(() => {
+  const a = document.activeElement;
+  return !(a && a.parentElement === document.documentElement && a.tagName.includes("-"));
+})()' 20000
+ab_wait_for "hook reinstalled after reload" 'window.__plsIntentHook === true' 15000
 DECOY="$(ab_eval "(async () => {
   try {
     await fetch('/youtubei/v1/get_panel?prettyPrint=false', {

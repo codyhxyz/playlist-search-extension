@@ -186,8 +186,14 @@ const PAGE = `<!doctype html>
       return this.snapshot();
     },
     async key(k) {
-      $('input').focus();
-      $('dialog').dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+      // Dispatch from the INPUT, not the dialog. A real keystroke starts at the
+      // focused input and travels input -> dialog -> shadow root -> host -> page,
+      // and the containment fix lives at the last hop. Firing straight at the
+      // dialog skips the very path under test — which is how a broken Escape
+      // passed here while failing in a browser.
+      const input = $('input');
+      input.focus();
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, composed: true, cancelable: true }));
       await new Promise((r) => setTimeout(r, 60));
       return this.snapshot();
     },
