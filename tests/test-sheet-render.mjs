@@ -145,6 +145,7 @@ const PAGE = `<!doctype html>
   window.__closes = 0;
   window.__sheet = createSheet({
     videoId: "dQw4w9WgXcQ",
+    videoTitle: "Never Gonna Give You Up (Official Video)",
     onPick: (p) => {
       window.__picks.push(p.id);
       // One playlist always fails, so the error path is exercised for real.
@@ -222,6 +223,8 @@ const PAGE = `<!doctype html>
     environment() {
       const host = window.__shadow.host;
       return {
+        sheetText: window.__shadow.textContent.replace(/\s+/g, " "),
+        hostVideoIdAttr: host.getAttribute("data-video-id"),
         requestedMode: window.__requestedMode,
         hostParentIsDocumentElement: host.parentElement === document.documentElement,
         hostInsideYouTubeApp: !!host.closest("ytd-app"),
@@ -326,6 +329,23 @@ try {
     assert.equal(env.hostParentIsDocumentElement, true);
     assert.equal(env.hostInsideYouTubeApp, false);
   });
+  check("names the video rather than printing its id", () => {
+    // The id is accurate and useless — it reads as a leaked debug field to
+    // anyone who isn't us. The name is the thing the user recognises.
+    assert.match(env.sheetText, /Never Gonna Give You Up/);
+    assert.doesNotMatch(
+      env.sheetText,
+      /dQw4w9WgXcQ/,
+      "the raw video id must not be rendered anywhere in the sheet",
+    );
+  });
+
+  check("keeps the video id reachable for diagnostics, off-screen", () => {
+    // Still needed by the console and by tests/e2e/specs/intent-chain.sh, which
+    // uses it to prove the worker decoded the protobuf. Attribute, not pixels.
+    assert.equal(env.hostVideoIdAttr, "dQw4w9WgXcQ");
+  });
+
   check("styles arrive via adoptedStyleSheets, not injected <style> tags", () => {
     assert.ok(env.adoptedSheets >= 1, "expected at least one adopted stylesheet");
     assert.equal(env.styleTagsInShadow, 0);

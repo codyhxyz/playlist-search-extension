@@ -11,7 +11,7 @@
 import { readFileSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadSecrets, getPublishedVersion, SECRET_ENV_NAMES } from "./cws-api.mjs";
+import { loadSecrets, getStagedVersion, SECRET_ENV_NAMES } from "./cws-api.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MANIFEST_PATH = join(ROOT, "src", "manifest.json");
@@ -45,7 +45,7 @@ async function run() {
   if (!secrets) {
     return { kind: "skipped", reason: `no CWS secrets configured (${SECRET_ENV_NAMES.join(", ")})`, localVersion, exitCode: 0 };
   }
-  const remoteVersion = await getPublishedVersion(secrets);
+  const remoteVersion = await getStagedVersion(secrets);
   if (!remoteVersion) {
     return { kind: "skipped", reason: "CWS API did not return crxVersion for this item", localVersion, exitCode: 0 };
   }

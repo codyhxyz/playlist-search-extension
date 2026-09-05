@@ -58,9 +58,14 @@ echo "[$SPEC_NAME] chain result: $RESULT"
 echo "$RESULT" | grep -q '"opened":true' || ab_fail \
   "the sheet never opened. One of: the hook did not observe the request, the relay to the service worker failed, the panelId gate rejected it, the videoId did not decode out of the params protobuf, or the content script never received SAVE_INTENT. Check the service-worker console for [pls][sw] lines"
 
-# The videoId is the real proof: it can only be on screen if the worker walked the
-# percent-encoded protobuf and pulled field 111.1 out of it.
-ab_assert_sheet_a11y "the decoded videoId reached the sheet" "$VIDEO_ID"
+# The videoId is the real proof: the sheet can only carry it if the worker walked
+# the percent-encoded protobuf and pulled field 111.1 out of it. It is no longer
+# rendered — showing users an 11-character id was debug output that escaped — so
+# read it from the host element, where the sheet parks it for exactly this.
+ab_assert_true "the decoded videoId reached the sheet" "(() => {
+  const a = document.activeElement;
+  return !!a && a.getAttribute('data-video-id') === '$VIDEO_ID';
+})()"
 ab_assert_sheet_a11y "the sheet exposes a search field" '(combobox|textbox|searchbox)'
 ab_assert_sheet_a11y "the sheet exposes a listbox" 'listbox'
 

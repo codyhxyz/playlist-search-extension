@@ -378,6 +378,37 @@ export async function resolveMembershipTail(videoId, playlistIds, onResolved, co
 }
 
 /**
+ * The video's human name, for the sheet's header.
+ *
+ * Uses `next` rather than `player`: both carry the title, but `player` is a
+ * playback endpoint and playback is where PoToken/BotGuard lives. `next` is
+ * not, and this is a label — it is not worth putting the one attested
+ * bot-check surface in the path of every save.
+ *
+ * Deep-scans rather than indexing a path, like everything else here. Returns
+ * null rather than throwing: a missing title costs the user a label, and the
+ * caller must not let that take the sheet down.
+ *
+ * @param {string} videoId
+ * @returns {Promise<string | null>}
+ */
+export async function fetchVideoTitle(videoId) {
+  try {
+    const data = await plsPost('next', { videoId });
+    // videoPrimaryInfoRenderer is the watch-page heading; videoDetails is the
+    // player-response shape. Prefer the first, accept either.
+    const primary = scanKey(data, 'videoPrimaryInfoRenderer', []).find((r) => r && r.title);
+    const fromPrimary = primary ? plsText(primary.title) : null;
+    if (fromPrimary) return fromPrimary;
+    const details = scanKey(data, 'videoDetails', []).find((d) => d && typeof d.title === 'string');
+    return details ? details.title : null;
+  } catch (e) {
+    console.warn('[pls] could not fetch the video title (non-fatal)', e);
+    return null;
+  }
+}
+
+/**
  * @param {string} playlistId
  * @param {string} videoId
  */

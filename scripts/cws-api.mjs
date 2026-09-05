@@ -103,7 +103,18 @@ export async function getItem(secrets, projection = "DRAFT") {
   );
 }
 
-export async function getPublishedVersion(secrets) {
+/**
+ * The version STAGED in the dashboard — i.e. the most recent successful upload.
+ * This is NOT what users have.
+ *
+ * Renamed from getPublishedVersion(), which read the DRAFT projection while
+ * claiming to report the published one. That is the worst kind of wrong: it
+ * answers "did my release go out?" with a confident yes the moment an upload
+ * succeeds, whether or not the publish step was ever accepted. Exactly that
+ * happened on the 2.0.0 upload — publish returned 400, and the old helper still
+ * said "2.0.0".
+ */
+export async function getStagedVersion(secrets) {
   const item = await getItem(secrets, "DRAFT");
   return typeof item?.crxVersion === "string" && item.crxVersion.length > 0
     ? item.crxVersion

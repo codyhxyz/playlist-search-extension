@@ -35,11 +35,14 @@
 // VIEWPORT  Field + count + close · hairline · list · hairline · status bar.
 //           Query text, result text, and the status bar share one left edge at
 //           20px. The count right of the field is empty until you type, then
-//           reports the yield — at rest the field owns the whole header. The
-//           video id is developer data, so it is demoted to the far left of the
-//           status bar, monospaced because it is data. Top-anchored, so the
-//           field never moves; the sheet grows down to a ceiling and shrinks as
-//           the query narrows.
+//           reports the yield — at rest the field owns the whole header. What
+//           you are saving is named at the far left of the status bar, elided
+//           and capped at half the bar so it can never crowd out the status;
+//           it arrives a beat after the sheet, because the sheet must open on
+//           intent and wait for nothing. The raw video id is developer data and
+//           is not shown at all — it lives on the host element for the console
+//           and the e2e specs. Top-anchored, so the field never moves; the sheet
+//           grows down to a ceiling and shrinks as the query narrows.
 // MOTION    One entrance (@starting-style, 220ms), one payoff (the check draws
 //           itself in 360ms while the row's field flashes jade and settles), one
 //           honest spinner while a save is in flight. Everything else is a 130ms
@@ -309,9 +312,14 @@ input::placeholder { color: var(--fg-3); letter-spacing: -.008em; }
   padding: 10px 20px 11px; border-top: 1px solid var(--line);
   font: 400 11.5px/1.5 var(--sans); color: var(--fg-3);
 }
-/* Developer-ish, so it lives in the status bar rather than the field: quiet,
-   monospaced because it is data, and holding the sheet's one left edge. */
-.vid { flex: none; font: 400 11px/1.5 var(--mono); letter-spacing: -.01em; }
+/* What you are saving, named. It shares the status bar with the status line and
+   yields to it: the title is context you glance at once, the status is what
+   changes. Elides rather than wraps so the footer keeps a fixed height, and it
+   is capped at half the bar so a long title cannot crowd out the status.
+   (This used to print the raw 11-character video ID — accurate, useless, and
+   the sort of thing that reads as a leaked debug field to anyone but us.) */
+.vid { flex: 0 1 auto; min-width: 0; max-width: 50%; overflow: hidden;
+       text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); }
 .status { flex: 1 1 auto; min-width: 0; overflow: hidden;
           display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .status:not(:empty)::before { content: "·"; margin: 0 7px 0 0; opacity: .55; }
@@ -425,7 +433,14 @@ function plsWriteTitle(node, text, q) {
 }
 
 // onPick(playlist) -> Promise. onClose() fires exactly once.
-export function createSheet({ videoId, onPick, onClose }) {
+/**
+ * @param {object} opts
+ * @param {string} opts.videoId              diagnostic only; never rendered
+ * @param {string} [opts.videoTitle]         the video's name, if known yet
+ * @param {(p: any) => Promise<any>} opts.onPick
+ * @param {() => void} [opts.onClose]        fires exactly once
+ */
+export function createSheet({ videoId, videoTitle, onPick, onClose }) {
   const uid = 'pls' + Math.random().toString(36).slice(2, 8);
   const host = document.createElement('pls-save-sheet');
   const shadow = host.attachShadow({ mode: 'closed' });
@@ -480,8 +495,19 @@ export function createSheet({ videoId, onPick, onClose }) {
   keys.setAttribute('aria-hidden', 'true');
   keys.append(navKeys, keyHint('esc', 'close'));
 
-  const vid = plsEl('div', 'vid', videoId || '');
-  vid.title = 'Video ID';
+  // The id is diagnostic, not user-facing: it goes on the host element where
+  // console-poking and e2e specs can still reach it, and never on screen.
+  if (videoId) host.setAttribute('data-video-id', videoId);
+  const vid = plsEl('div', 'vid');
+  // `setTitle` lets the caller fill this in once the name has been fetched,
+  // which happens after the sheet is already on screen — the sheet must open
+  // instantly on intent, so nothing in it waits on a network round trip.
+  function setTitle(t) {
+    const name = t == null ? '' : String(t).trim();
+    vid.textContent = name;
+    if (name) vid.title = name; else vid.removeAttribute('title');
+  }
+  setTitle(videoTitle);
 
   const foot = plsEl('div', 'foot');
   foot.append(vid, status, keys);
@@ -738,6 +764,7 @@ export function createSheet({ videoId, onPick, onClose }) {
   input.focus();
 
   return {
+    setTitle: (t) => { if (!dead) setTitle(t); },
     // The caller's status is the resting truth — the line a transient save
     // failure temporarily overwrites, and the one a successful retry restores.
     setStatus: (t) => {

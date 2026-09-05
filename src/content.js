@@ -10,6 +10,7 @@ import {
   addVideo,
   fetchAllPlaylists,
   fetchMembership,
+  fetchVideoTitle,
   resetConfigCache,
 } from './lib/innertube.js';
 
@@ -156,6 +157,14 @@ async function plsHandleIntent(videoId, source) {
   plsCurrent = sheet;
   plsCurrentVideoId = videoId;
   sheet.setStatus('Loading your playlists…');
+
+  // Deliberately NOT awaited and not part of the Promise.all below: the sheet is
+  // already on screen and typing must work immediately. The name arrives when it
+  // arrives, and if it never does the header simply stays empty — a label is not
+  // worth delaying the thing the user actually came to do.
+  fetchVideoTitle(videoId).then((t) => {
+    if (t && !sheet.dead && plsCurrentVideoId === videoId) sheet.setTitle(t);
+  });
 
   const t0 = performance.now();
   try {
