@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.0.0 - 2026-09-03
+## 2.0.0 - 2026-09-05
 
 A rebuild. The extension is now the save sheet and nothing else, and it holds one invariant that the 1.x line did not: **it never reads data from YouTube's DOM, and never writes a node into it.**
 

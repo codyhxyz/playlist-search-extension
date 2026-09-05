@@ -6,7 +6,12 @@
 //
 // Usage:
 //   node scripts/publish-cws.mjs [zip-path] [--json] [--no-auto-publish]
-//                                [--target=default|trustedTesters]
+//                                [--target=default|trustedTesters] [--skip-e2e]
+//
+// --skip-e2e drops ONLY the live signed-in-YouTube stage. Every other test
+// still runs and still blocks. The bypass is recorded as a `gate-bypassed`
+// transition in the output so a release published this way is identifiable
+// afterwards rather than indistinguishable from a fully-gated one.
 //
 // If zip-path is omitted, looks for dist/youtube-playlist-filter-<version>.zip
 // where <version> matches src/manifest.json.
@@ -21,6 +26,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ARGS = process.argv.slice(2);
 const JSON_MODE = ARGS.includes("--json");
 const AUTO_PUBLISH = !ARGS.includes("--no-auto-publish");
+const SKIP_E2E = ARGS.includes("--skip-e2e");
 const TARGET = (ARGS.find((a) => a.startsWith("--target="))?.split("=")[1] === "trustedTesters")
   ? "trustedTesters"
   : "default";
@@ -79,14 +85,20 @@ function log(state, detail) {
 }
 
 function runPrePublishE2EGate() {
-  // The e2e suite must pass before any zip can reach the Chrome Web Store.
-  // This is the ULTIMATE gate \u2014 build-store-zip.sh runs the same suite as a
-  // fast-fail during dev, but the publish path must verify independently so
-  // a stale or hand-built zip can't bypass the test wall. There is no
-  // skip flag, by design (see CHANGELOG / tests/e2e/README.md).
-  log("testing", "running tests/run-all.sh (fixture + e2e)");
+  // The test suite must pass before any zip can reach the Chrome Web Store.
+  // build-store-zip.sh runs the fast gates during dev, but the publish path
+  // verifies independently so a stale or hand-built zip can't bypass the wall.
+  //
+  // --skip-e2e drops the live-YouTube stage only. It is recorded below, not
+  // silent: a release published without live verification should be obvious in
+  // the record six months later, when someone is asking why it broke.
+  if (SKIP_E2E) {
+    log("gate-bypassed", "--skip-e2e \u2014 live signed-in YouTube NOT verified for this build");
+  }
+  log("testing", `running tests/run-all.sh (${SKIP_E2E ? "e2e SKIPPED" : "fixture + e2e"})`);
   const result = spawnSync("bash", [join(ROOT, "tests", "run-all.sh")], {
     stdio: "inherit",
+    env: { ...process.env, ...(SKIP_E2E ? { PLS_SKIP_E2E: "1" } : {}) },
   });
   if (result.status !== 0) {
     log("tests-failed", `tests/run-all.sh exited ${result.status}`);
@@ -158,6 +170,7 @@ run()
       process.stdout.write(JSON.stringify({
         schemaVersion: 1,
         script: "publish-cws",
+        e2eSkipped: SKIP_E2E,
         skipped: outcome.kind === "skipped",
         status: outcome.kind === "skipped" ? "skipped" : outcome.kind,
         state: outcome.kind === "terminal" ? outcome.poll.state : outcome.kind,
