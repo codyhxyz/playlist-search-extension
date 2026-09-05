@@ -448,6 +448,36 @@ export function createSheet({ videoId, videoTitle, onPick, onClose }) {
   css.replaceSync(PLS_CSS);
   shadow.adoptedStyleSheets = [css];
 
+  // ── Keystrokes stop here ──────────────────────────────────────────────────
+  // While the sheet is open the keyboard is ours, and the host page must not see
+  // it. This is not theoretical: YouTube binds single-key shortcuts on `document`
+  // (f fullscreen, k play/pause, m mute, t theater, j/l seek, digits scrub), and
+  // guards them with the usual "ignore this if the user is typing" check against
+  // the event target.
+  //
+  // That guard cannot see us. Events from inside a shadow root are RETARGETED on
+  // the way out, so by the time the event reaches `document` its target is the
+  // host element — `<pls-save-sheet>`, which is not an input — and the guard
+  // waves it through. `document.activeElement` reports the host for the same
+  // reason. Measured: typing "f" into the search field toggled fullscreen.
+  //
+  // `showModal()` does not help either. It makes the rest of the page `inert`,
+  // which blocks focus and pointer hits, but document-level key listeners still
+  // fire. So we stop the events at the boundary they are escaping through.
+  //
+  // Bubble phase, on the host: our own handlers live below it and have already
+  // run. This cannot block a capture-phase listener on window/document — nothing
+  // inside the tree can — but YouTube's shortcuts are bubble-phase, and
+  // tests/e2e/specs/intent-chain.sh checks the real thing on a real watch page
+  // rather than trusting this comment.
+  //
+  // It costs one thing, and it is not obvious: the UA's close watcher for
+  // <dialog> also sits above the host, so Escape stops closing the sheet unless
+  // we handle it ourselves. The keydown handler below does.
+  for (const type of ['keydown', 'keyup', 'keypress']) {
+    host.addEventListener(type, (e) => e.stopPropagation());
+  }
+
   const dlg = document.createElement('dialog');
   // The field is the title, so the name lives on the dialog itself.
   dlg.setAttribute('aria-label', 'Save to playlist');
@@ -737,6 +767,13 @@ export function createSheet({ videoId, videoTitle, onPick, onClose }) {
     // save cannot be undone from here. keyCode 229 is the pre-`isComposing`
     // spelling, kept for engines that still report it that way.
     if (e.isComposing || e.keyCode === 229) return;
+    // Close on Escape OURSELVES rather than leaning on the UA's close watcher.
+    // Stopping key events at the host (see above) also stops them reaching the
+    // window, which is where that watcher lives — so the containment fix silently
+    // broke Escape. Owning the key is the right answer anyway: the sheet's
+    // dismissal should not depend on a platform behaviour we are deliberately
+    // cutting off. destroy() is idempotent, so a UA close on top of ours is fine.
+    if (e.key === 'Escape') { dlg.close(); e.preventDefault(); return; }
     // Home/End belong to the text caret while focus is in the query field —
     // the ARIA combobox pattern reserves them for exactly that — and Shift+
     // anything is a selection gesture, not navigation.

@@ -69,6 +69,44 @@ ab_assert_true "the decoded videoId reached the sheet" "(() => {
 ab_assert_sheet_a11y "the sheet exposes a search field" '(combobox|textbox|searchbox)'
 ab_assert_sheet_a11y "the sheet exposes a listbox" 'listbox'
 
+# ── The sheet owns the keyboard while it is open ────────────────────────────
+# YouTube binds single keys on `document` — f fullscreen, k play/pause, m mute,
+# t theater — and guards them with "ignore this if the user is typing". Shadow
+# retargeting defeats that guard: the event reaches document with our HOST as its
+# target, which is not an input. Typing a query used to fire the shortcuts.
+#
+# Real keystrokes, real page, and we check YouTube's actual state rather than
+# whether an event was seen — this is the assertion that would have caught it.
+PRE_STATE="$(ab_eval '(() => {
+  const v = document.querySelector("video");
+  return { fullscreen: !!document.fullscreenElement, paused: v ? v.paused : null, theater: !!document.querySelector("ytd-watch-flexy[theater]") };
+})()')"
+echo "[$SPEC_NAME] player state before typing: $PRE_STATE"
+
+# Every one of these is a YouTube shortcut. They are also just letters someone
+# might plausibly type while searching for a playlist.
+agent-browser --session "$SESSION" keyboard type "fkmt" >/dev/null 2>&1 || true
+agent-browser --session "$SESSION" wait 900 >/dev/null
+
+POST_STATE="$(ab_eval '(() => {
+  const v = document.querySelector("video");
+  return { fullscreen: !!document.fullscreenElement, paused: v ? v.paused : null, theater: !!document.querySelector("ytd-watch-flexy[theater]") };
+})()')"
+echo "[$SPEC_NAME] player state after typing:  $POST_STATE"
+
+if [[ "$PRE_STATE" == "$POST_STATE" ]]; then
+  echo "[$SPEC_NAME] PASS: typing f/k/m/t in the sheet changed nothing about YouTube's player"
+else
+  ab_fail "typing in the sheet leaked to YouTube's keyboard shortcuts — player state changed from $PRE_STATE to $POST_STATE"
+fi
+
+# And the query actually received those keystrokes, so the block is not just
+# "no keys reached anything".
+ab_assert_sheet_a11y "the keystrokes landed in our search field instead" '(No playlist matches|fkmt|0 of)'
+
+agent-browser --session "$SESSION" press Escape >/dev/null 2>&1 || true
+agent-browser --session "$SESSION" wait 500 >/dev/null
+
 # The generic-endpoint gate. `get_panel` is shared with unrelated panels (the "Ask"
 # panel uses it with no panelId), and firing on the URL alone is exactly how the 1.x
 # extension rendered itself inside menus that had nothing to do with saving.

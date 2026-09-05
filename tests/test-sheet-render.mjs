@@ -110,6 +110,17 @@ const PAGE = `<!doctype html>
 <script>
   // Classic script, deliberately BEFORE the module: a module that fails to parse or
   // import never runs its own listeners, so the diagnostics have to already exist.
+  // Stand-in for YouTube's shortcut handler: document-level, bubble phase, with
+  // the usual "ignore this if the user is typing" guard. The guard is defeated by
+  // shadow retargeting (the target arrives as the host, not the input), which is
+  // exactly why the sheet has to stop these itself.
+  window.__hostPageKeys = [];
+  document.addEventListener("keydown", (e) => {
+    const t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+    window.__hostPageKeys.push(e.key);
+  });
+
   window.__errors = [];
   window.addEventListener("error", (e) => window.__errors.push(String(e.message || e)));
   window.addEventListener("unhandledrejection", (e) => window.__errors.push(String((e.reason && e.reason.stack) || e.reason)));
@@ -143,7 +154,7 @@ const PAGE = `<!doctype html>
 
   window.__picks = [];
   window.__closes = 0;
-  window.__sheet = createSheet({
+  const makeSheet = () => createSheet({
     videoId: "dQw4w9WgXcQ",
     videoTitle: "Never Gonna Give You Up (Official Video)",
     onPick: (p) => {
@@ -156,6 +167,7 @@ const PAGE = `<!doctype html>
     },
     onClose: () => { window.__closes++; },
   });
+  window.__sheet = makeSheet();
 
   const $ = (sel) => window.__shadow.querySelector(sel);
   const $$ = (sel) => Array.from(window.__shadow.querySelectorAll(sel));
@@ -193,6 +205,15 @@ const PAGE = `<!doctype html>
       dlg.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 4, clientY: 4 }));
       await new Promise((r) => setTimeout(r, 60));
       return { hostConnected: window.__shadow.host.isConnected, closes: window.__closes };
+    },
+    async typeKeys(keys) {
+      const input = $('input');
+      input.focus();
+      for (const k of keys) {
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, composed: true, cancelable: true }));
+      }
+      await new Promise((r) => setTimeout(r, 60));
+      return { escaped: window.__hostPageKeys.slice() };
     },
     // Text of a row, normalised — the tri-state comparison hangs off this.
     rowText: (t) => { const r = rowByTitle(t); return r ? r.textContent.replace(/\\s+/g, " ").trim() : null; },
@@ -232,6 +253,12 @@ const PAGE = `<!doctype html>
         styleTagsInShadow: window.__shadow.querySelectorAll("style, link").length,
       };
     },
+  };
+  // Dismissal is tested twice (Escape, then outside-click) and each needs a live
+  // sheet, so the harness can build a fresh one on demand.
+  window.__reopen = () => {
+    window.__sheet = makeSheet();
+    window.__sheet.setData(PLAYLISTS);
   };
   window.__booted = true;
 </script>
@@ -447,6 +474,30 @@ try {
   check("Enter saves the active row", () =>
     assert.equal(entered.picks.length, before + 1));
 
+  // ── The sheet owns the keyboard while it is open ─────────────────────────
+  const leak = await run(
+    "return window.h.typeKeys(['f','k','m','t','j','l','c','i','0','5',' ','ArrowLeft','ArrowRight']);",
+  );
+  check("no keystroke reaches the host page's shortcut handler", () => {
+    // f fullscreen, k play/pause, m mute, t theater, j/l seek, c captions,
+    // i miniplayer, digits scrub, space play/pause, arrows seek+volume. Every
+    // one of these is a single key on YouTube, and every one of them would fire
+    // mid-query without this. Measured before the fix: f/k/m/t all got through.
+    assert.deepEqual(
+      leak.escaped,
+      [],
+      "keys typed into the search field escaped to a document-level listener",
+    );
+  });
+
+  const stillWorks = await run("return window.h.key('ArrowDown');");
+  check("blocking the page does not block our own navigation", () => {
+    // The fix stops events at the host, ABOVE our handlers. If it ever moves
+    // below them it would silence the sheet's own keyboard instead.
+    assert.ok(stillWorks.activeId, "arrow keys must still move the cursor");
+    assert.equal(stillWorks.selectedCount, 1);
+  });
+
   // ── 8. Layout invariants ──────────────────────────────────────────────────
   console.log("\nLayout");
   await run("return window.h.type('');");
@@ -465,9 +516,22 @@ try {
 
   // ── 10. Dismissal ─────────────────────────────────────────────────────────
   console.log("\nDismissal");
+  // Escape had no test, which is how stopping key events at the host silently
+  // broke it — the containment fix also cut off the UA's close watcher. A live
+  // spec caught it two steps later, by which point the cause was not obvious.
+  const esc = await run("return window.h.key('Escape');");
+  check("Escape closes the sheet", () => {
+    assert.equal(esc.dialogOpen, false, "Escape must close the dialog");
+    assert.equal(esc.closes, 1, "onClose fires exactly once");
+  });
+  // Reopen for the outside-click check below.
+  await run("window.__reopen(); return null;");
+  // Delta, not absolute: Escape already closed one sheet above, so a running
+  // total would make this assert the previous test's outcome instead of its own.
+  const beforeClose = (await run("return { n: window.__closes };")).n;
   const closed = await run("return window.h.clickOutside();");
   check("clicking outside the dialog closes it and fires onClose exactly once", () =>
-    assert.equal(closed.closes, 1));
+    assert.equal(closed.closes, beforeClose + 1));
   const after = await run("return { hostConnected: window.__shadow.host.isConnected, closes: window.__closes };");
   check("closing removes the host element — no state outlives the sheet", () =>
     assert.equal(after.hostConnected, false));
