@@ -16,6 +16,14 @@ import {
 
 let plsCurrent = null;
 let plsCurrentVideoId = null;
+// The ordering the user last chose, remembered for the life of this page and no
+// longer. Deliberately NOT written to chrome.storage: PRIVACY.md states that this
+// extension persists nothing about your playlists or your searching, and a sort
+// preference is not worth making that sentence false. Re-picking it after a full
+// page load is a smaller cost than a privacy policy that no longer describes the
+// product. (It is also, unlike a playlist cache, state that cannot go stale
+// wrongly — the sheet re-derives every order from the rows it was just handed.)
+let plsSortMode;
 
 // ─────────────── L1 relay: MAIN world -> service worker ───────────────
 // intent-hook.js cannot use chrome.* APIs, and the service worker cannot see page
@@ -145,6 +153,8 @@ async function plsHandleIntent(videoId, source) {
 
   const sheet = createSheet({
     videoId,
+    sort: plsSortMode,
+    onSort: (mode) => { plsSortMode = mode; },
     onPick: (p) => addVideo(p.id, videoId),
     onClose: () => {
       if (plsCurrent === sheet) {
@@ -184,12 +194,16 @@ async function plsHandleIntent(videoId, source) {
     // 200 for every video — so on a larger library the tail is genuinely unknowable
     // and YouTube's own picker is equally blind there. Absence must stay `undefined`;
     // claiming `false` would be inventing an answer.
-    const rows = list
-      .map((p) => ({ ...p, member: membership.has(p.id) ? membership.get(p.id) : undefined }))
-      .sort(
-        (a, b) => Number(b.member === true) - Number(a.member === true) ||
-          a.title.localeCompare(b.title)
-      );
+    // Handed over in the order the server returned them, unsorted. Ordering is the
+    // sheet's job now that the user can change it — a session layer that pre-sorted
+    // would just be an order the UI had to undo. Note this array's order is not
+    // meaningless, it is *unverified*: it is whatever FEplaylist_aggregation shipped,
+    // and nobody has established what that ordering represents. The sheet therefore
+    // never offers it as a named mode, and neither should anything else.
+    const rows = list.map((p) => ({
+      ...p,
+      member: membership.has(p.id) ? membership.get(p.id) : undefined,
+    }));
     sheet.setData(rows);
 
     const already = rows.filter((p) => p.member === true).length;

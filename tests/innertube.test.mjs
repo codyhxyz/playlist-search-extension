@@ -259,6 +259,96 @@ test("an unrecognised renderer yields nothing rather than garbage", () => {
   assert.equal(scan(fixture("unknown-renderer.json")).size, 0);
 });
 
+// ─── Is there anything to sort "Recently updated" by? ────────────────────────
+// Asked before designing the sort, answered from real captures rather than from
+// memory, and pinned here so the answer does not have to be re-derived — or
+// re-guessed — by the next person who wants the feature.
+//
+// These are "notice me" tests. They assert an ABSENCE, so the day YouTube starts
+// shipping a timestamp on a playlist entry they go red, and that red is the
+// signal that "Recently updated" has become buildable. Read the failure as an
+// invitation, not a regression.
+
+// Every object that directly owns a playlist id — i.e. one rendered row.
+function playlistEntries(node, out = []) {
+  if (!node || typeof node !== "object") return out;
+  if (Array.isArray(node)) {
+    for (const v of node) playlistEntries(v, out);
+    return out;
+  }
+  if (typeof node.playlistId === "string" || typeof node.contentId === "string") out.push(node);
+  for (const v of Object.values(node)) playlistEntries(v, out);
+  return out;
+}
+
+function everyKey(node, out = new Set()) {
+  if (!node || typeof node !== "object") return out;
+  if (Array.isArray(node)) {
+    for (const v of node) everyKey(v, out);
+    return out;
+  }
+  for (const [k, v] of Object.entries(node)) {
+    out.add(k);
+    everyKey(v, out);
+  }
+  return out;
+}
+
+test("no real playlist entry carries a date — the reason there is no 'Recently updated' sort", () => {
+  const entries = playlistEntries(fixture("real-channel-playlists-mrbeast.json"));
+  assert.ok(entries.length >= 5, "expected the captured playlist rows");
+  const dateKey = /publish|created|modified|updated|lastVideo|dateAdded|timestamp|uploadDate/i;
+  const found = [];
+  for (const e of entries) for (const k of everyKey(e)) if (dateKey.test(k)) found.push(k);
+  assert.deepEqual(
+    [...new Set(found)],
+    [],
+    "YouTube now ships a date on playlist entries — 'Recently updated' is buildable; " +
+      "wire it up in sheet.js instead of leaving the sort list at title-only",
+  );
+});
+
+test("the real lockup's metadata row is EMPTY — the synthetic fixture's 'Updated yesterday' is invented", () => {
+  // `lockup-view-model.json` is hand-written and contains an "Updated yesterday"
+  // metadata row. It is not real. Designing a recency sort against it would ship a
+  // "Recently updated" that silently ordered by something else, which is the exact
+  // bug class architecture/coverage.md was written to stop. The real capture is the
+  // arbiter: title, a video-count badge, and a bare delimiter.
+  const real = playlistEntries(fixture("real-channel-playlists-mrbeast.json")).filter(
+    (e) => e.contentType === "LOCKUP_CONTENT_TYPE_PLAYLIST",
+  );
+  assert.equal(real.length, 5, "expected the five captured playlist lockups");
+  for (const e of real) {
+    const meta = e.metadata?.lockupMetadataViewModel?.metadata?.contentMetadataViewModel;
+    assert.ok(meta, "expected the current lockup metadata shape");
+    assert.deepEqual(
+      Object.keys(meta),
+      ["delimiter"],
+      "the real payload gained a metadata row — check whether it is a date before assuming it is not",
+    );
+  }
+  // …and the synthetic one really does claim otherwise, so nobody reads the two as
+  // agreeing and picks the wrong arbiter.
+  const synthetic = JSON.stringify(fixture("lockup-view-model.json"));
+  assert.match(synthetic, /Updated yesterday/);
+});
+
+test("scanPlaylists preserves the server's response order", () => {
+  // fetchAllPlaylists hands the sheet a Map's iteration order, i.e. the order
+  // YouTube sent. content.js relies on that being STABLE (a re-render must not
+  // shuffle equal rows). Nothing may rely on it MEANING anything — what that
+  // ordering represents has never been established, so it is not offered as a
+  // named sort. See the note in src/lib/innertube.js.
+  const out = scan({
+    contents: [
+      { gridPlaylistRenderer: { playlistId: "PLthird01", title: { content: "Zebra" } } },
+      { gridPlaylistRenderer: { playlistId: "PLfirst02", title: { content: "Apple" } } },
+      { gridPlaylistRenderer: { playlistId: "PLsecond3", title: { content: "Mango" } } },
+    ],
+  });
+  assert.deepEqual([...out.keys()], ["PLthird01", "PLfirst02", "PLsecond3"]);
+});
+
 test("parseMembership reads the live get_add_to_playlist shape", () => {
   const map = parseMembership(fixture("add-to-playlist-panel.json"));
   assert.equal(map.get("PLexampleContains001"), true);

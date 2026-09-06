@@ -238,9 +238,42 @@ export function scanKey(node, key, out) {
 
 // ─────────────── the calls ───────────────
 
+// ─────────────── what a playlist entry actually carries ───────────────
+// Checked before designing a "Recently updated" sort, and the answer is NO, so
+// the finding is written down here rather than re-derived (and re-guessed) later.
+//
+// A playlist entry carries an id, a title, and a video count. It does NOT carry a
+// modified date, a created date, a publish time, or an "Updated …" string — not in
+// either renderer generation:
+//
+//   gridPlaylistRenderer (legacy)  playlistId, title, videoCountText,
+//                                  videoCountShortText, navigationEndpoint, shareUrl
+//   lockupViewModel (current)      contentId, metadata.…title.content, a thumbnail
+//                                  badge holding the count
+//
+// Evidence, not recollection: `tests/fixtures/innertube/real-channel-playlists-mrbeast.json`
+// is a real capture, and its `contentMetadataViewModel` is EMPTY — `{delimiter: " • "}`
+// with no metadataRows at all. The rendered DOM of the same page agrees: title and
+// "N episodes", nothing else. `tests/innertube.test.mjs` pins this as an assertion, so
+// the day YouTube starts shipping a timestamp the test goes red and the sort becomes
+// buildable. Note the SYNTHETIC `lockup-view-model.json` fixture does contain an
+// invented "Updated yesterday" row; the real capture is what disproves it, and
+// designing against the synthetic one is exactly how a sort that lies gets shipped.
+//
+// The response ORDER is available — the Map below preserves it, so `fetchAllPlaylists`
+// returns rows in the order the server sent them — but what that order MEANS has never
+// been established. Same for `get_add_to_playlist`: it is widely assumed to be the 200
+// most-recently-modified playlists, and `coverage.md` C8 records that as ❓ with a known
+// counterexample. Neither is a recency signal you may put a label on.
+
 /**
  * Every playlist the user owns. NOT capped at 200 — that ceiling belongs to
  * `get_add_to_playlist`, the endpoint backing YouTube's own dialog.
+ *
+ * Returned in the server's own response order (`found` is a Map, and Maps iterate
+ * in insertion order). Callers may rely on that being *stable*; they may not
+ * rely on it *meaning* anything — see the note above.
+ *
  * @returns {Promise<Array<{id: string, title: string}>>}
  */
 export async function fetchAllPlaylists() {

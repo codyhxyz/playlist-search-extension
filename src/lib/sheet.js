@@ -32,6 +32,17 @@
 //           Saving, Saved, Retry — get the same slot in bold and in colour.
 //           Permanent facts whisper; events speak. Every state carries a word as
 //           well as a mark, so colour is never the sole carrier.
+// ORDER     Three orderings, and every one of them is a *claim* the sheet can
+//           back: "Best match" (where the query lands in the title, then the
+//           shorter title, then A→Z — and plain A→Z when the field is empty,
+//           because with no query there is nothing to match on and a mystery
+//           order is not a claim), "A → Z", "Z → A". There is deliberately no
+//           "Recently updated": no playlist entry YouTube returns carries a
+//           date, in either renderer generation — see the note in innertube.js,
+//           which records exactly what was checked. Membership is not one of the
+//           orderings. It is a partition — `member === true` rows are not save
+//           targets — so they group above the targets in every mode, and the
+//           cursor opens on the first row that Enter can actually act on.
 // VIEWPORT  Field + count + close · hairline · list · hairline · status bar.
 //           Query text, result text, and the status bar share one left edge at
 //           20px. The count right of the field is empty until you type, then
@@ -43,6 +54,12 @@
 //           is not shown at all — it lives on the host element for the console
 //           and the e2e specs. Top-anchored, so the field never moves; the sheet
 //           grows down to a ceiling and shrinks as the query narrows.
+//           The order control lives in that same status bar and nowhere else.
+//           The header is the command line; putting a chooser beside the field
+//           would tax every open to serve the rare one. The footer is already
+//           the strip the eye skips, so a chip there costs nothing at rest, and
+//           it stays a plain focusable button — no chord to learn, and no key
+//           stolen from a field people type into in every language.
 // MOTION    One entrance (@starting-style, 220ms), one payoff (the check draws
 //           itself in 360ms while the row's field flashes jade and settles), one
 //           honest spinner while a save is in flight. Everything else is a 130ms
@@ -58,6 +75,10 @@ const PLS_PAD = 8; // .list padding, and the scroll margin the cursor keeps
 const PLS_MIN_HL = 2; // shortest query worth marking inside a title
 const PLS_CHECK = 'M3.6 7.35 5.95 9.75 10.5 4.35';
 const PLS_CROSS = 'M4.3 4.3 9.7 9.7M9.7 4.3 4.3 9.7';
+// Three descending rules. One glyph for all three orderings on purpose — the
+// mode is carried by the word beside it, the same way every other state in this
+// sheet carries a word rather than leaning on a shape.
+const PLS_SORT = 'M2.6 3.6h8.8M2.6 7h5.8M2.6 10.4h2.8';
 
 // Wrap emoji runs so they stop out-shouting the text they sit beside.
 let PLS_EMOJI = null;
@@ -328,6 +349,32 @@ input::placeholder { color: var(--fg-3); letter-spacing: -.008em; }
 .k { display: inline-flex; align-items: baseline; gap: 5px; white-space: nowrap; }
 .kg { color: var(--fg-2); font-weight: 500; letter-spacing: .02em; }
 
+/* The one control in the footer. It sits at the same 11.5px as the key hints so
+   it reads as part of the strip rather than as a widget parked in it, and it
+   earns a hover/focus field because — unlike its neighbours — it is pressable.
+   Cycles rather than opening a menu: three modes is not a list worth a popover,
+   and a popover would put a second surface on top of a surface. */
+.sort {
+  all: initial; box-sizing: border-box; flex: none;
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 22px; padding: 0 8px; margin: 0 2px 0 0; border-radius: 7px;
+  font: 500 11.5px/1 var(--sans); letter-spacing: .01em;
+  color: var(--fg-3); cursor: pointer;
+  transition: color .13s ease, background-color .13s ease;
+}
+.sort:hover { color: var(--fg); background-color: var(--hov); }
+.sort:active { background-color: var(--act); }
+.sort:focus-visible { color: var(--fg); outline: 2px solid var(--ring); outline-offset: -2px; }
+.sort .mark { stroke-width: 1.6; }
+/* The label is always on, and the labels are kept short because this footer is
+   over-subscribed at 520px and everything in it already elides. An icon alone
+   was tried and rejected twice over: a bare glyph in a strip of passive hints
+   does not read as pressable, so the one adjustable behaviour in the sheet would
+   have shipped dark — and in a non-default order the label is also the only
+   on-screen explanation for why the rows are where they are. Held to one width so
+   cycling cannot shove the status line sideways. */
+.sl { min-width: 38px; text-align: left; white-space: nowrap; }
+
 @keyframes draw    { to { stroke-dashoffset: 0 } }
 @keyframes spin    { to { transform: rotate(1turn) } }
 @keyframes shimmer { 0%,100% { opacity: .55 } 50% { opacity: 1 } }
@@ -347,7 +394,7 @@ input::placeholder { color: var(--fg-3); letter-spacing: -.008em; }
    saved carries a word and a field, and membership carries a mark plus a full
    sentence on the row's accessible name. Nothing here is the sole carrier. */
 @media (prefers-reduced-motion: reduce) {
-  dialog, dialog::backdrop, .row, .x { transition-duration: 1ms; }
+  dialog, dialog::backdrop, .row, .x, .sort { transition-duration: 1ms; }
   .row.flash, .spin, .sk span { animation: none; }
   /* killing the draw must not leave the stroke dashed out of existence */
   .row.flash .mark { animation: none; stroke-dasharray: none; }
@@ -432,6 +479,70 @@ function plsWriteTitle(node, text, q) {
   if (!node.firstChild) node.textContent = text;
 }
 
+// ── Ordering ────────────────────────────────────────────────────────────────
+// Each mode has to be defensible if a user asks "why is this row above that
+// one?", so each one is computed from data we actually hold — the title, and
+// what they typed. Nothing here consults a date, because YouTube does not give
+// us one: neither `gridPlaylistRenderer` nor `lockupViewModel` carries a
+// timestamp, an "updated" string, or a publish time on a playlist entry, in the
+// real captures or the rendered page. `innertube.js` records the evidence.
+// The server's own response order IS available (`fetchAllPlaylists` preserves
+// it) but its meaning is not established — labelling it "Recently updated"
+// would be inventing a claim, which is the one failure mode this codebase has
+// already shipped once and written down.
+
+// Ties break on title, then id, so the order is total and a re-render can never
+// shuffle two rows that compare equal.
+const plsAZ = (a, b) =>
+  a.title.localeCompare(b.title) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
+const PLS_SORTS = [
+  {
+    id: 'match',
+    // Short on screen, complete in the accessible name — the footer has no room
+    // for "Best match" and every neighbour in it is already eliding.
+    label: 'Match',
+    // Where the query lands in the title, then the shorter title, then A→Z. With
+    // an empty field there is no match to rank by, so it resolves to A→Z rather
+    // than to an order nobody could explain.
+    say: 'best match, closest to the start of the title first',
+    cmp: (x, y, q) =>
+      (q ? x.pos - y.pos || x.p.title.length - y.p.title.length : 0) || plsAZ(x.p, y.p),
+  },
+  { id: 'az', label: 'A → Z', say: 'A to Z', cmp: (x, y) => plsAZ(x.p, y.p) },
+  { id: 'za', label: 'Z → A', say: 'Z to A', cmp: (x, y) => -plsAZ(x.p, y.p) },
+];
+
+const plsSortAt = (i) => PLS_SORTS[((i % PLS_SORTS.length) + PLS_SORTS.length) % PLS_SORTS.length];
+
+/**
+ * Order the rows that survived the filter.
+ *
+ * Membership groups FIRST in every mode, and it is not itself a mode: a
+ * `member === true` row is not a save target (`pick()` returns early), so this
+ * is a partition of facts from targets rather than an ordering of peers. The
+ * comparison is `=== true` on both sides, so `false` and `undefined` land in
+ * the same group — the tri-state promise holds through sorting, and an unmarked
+ * row still claims nothing.
+ *
+ * @param {Array<{id: string, title: string, member?: boolean}>} rows
+ * @param {number} sortIdx
+ * @param {string} q lowercased query, or ''
+ */
+function plsOrder(rows, sortIdx, q) {
+  const mode = plsSortAt(sortIdx);
+  // Decorate once: the match position is O(title) to compute and a sort would
+  // otherwise ask for it O(n log n) times.
+  const dec = rows.map((p, i) => ({ p, i, pos: q ? p.title.toLowerCase().indexOf(q) : -1 }));
+  dec.sort(
+    (x, y) =>
+      Number(y.p.member === true) - Number(x.p.member === true) ||
+      mode.cmp(x, y, q) ||
+      x.i - y.i,
+  );
+  return dec.map((d) => d.p);
+}
+
 // onPick(playlist) -> Promise. onClose() fires exactly once.
 /**
  * @param {object} opts
@@ -439,8 +550,10 @@ function plsWriteTitle(node, text, q) {
  * @param {string} [opts.videoTitle]         the video's name, if known yet
  * @param {(p: any) => Promise<any>} opts.onPick
  * @param {() => void} [opts.onClose]        fires exactly once
+ * @param {string} [opts.sort]               initial ordering: match | az | za
+ * @param {(id: string) => void} [opts.onSort]  fires when the user changes it
  */
-export function createSheet({ videoId, videoTitle, onPick, onClose }) {
+export function createSheet({ videoId, videoTitle, onPick, onClose, sort, onSort }) {
   const uid = 'pls' + Math.random().toString(36).slice(2, 8);
   const host = document.createElement('pls-save-sheet');
   const shadow = host.attachShadow({ mode: 'closed' });
@@ -508,6 +621,13 @@ export function createSheet({ videoId, videoTitle, onPick, onClose }) {
   list.id = uid + '-l';
   list.setAttribute('role', 'listbox');
   list.setAttribute('aria-label', 'Your playlists');
+  // Chrome makes any scrollable container a tab stop so a keyboard user can reach
+  // its scrollbar. This one is already fully keyboard-driven from the query field,
+  // so that stop is pure noise — and worse, it exists only when the list happens to
+  // overflow, which made the number of Tabs to anything else in the sheet depend on
+  // how many playlists matched. The listbox of a combobox does not belong in the
+  // tab order anyway; the field owns focus and aria-activedescendant owns the row.
+  list.tabIndex = -1;
 
   const status = plsEl('div', 'status');
   status.setAttribute('role', 'status');
@@ -539,8 +659,42 @@ export function createSheet({ videoId, videoTitle, onPick, onClose }) {
   }
   setTitle(videoTitle);
 
+  // Ordering. A plain button, in the natural tab order, that cycles. No chord:
+  // every modifier+letter that is free on one platform is taken on the other, and
+  // Option+letter types a real character into a field people search in — a sort
+  // shortcut that eats a keystroke someone meant for the query is a worse bug
+  // than no shortcut. Two Tabs from the field reaches it; a click reaches it; and
+  // typing anywhere puts focus straight back in the query (see the keydown
+  // handler), so wandering here never costs the common path a keystroke.
+  let sortIdx = Math.max(0, PLS_SORTS.findIndex((s) => s.id === sort));
+  const sortLabel = plsEl('span', 'sl');
+  const sortBtn = plsEl('button', 'sort');
+  sortBtn.type = 'button';
+  sortBtn.append(plsIcon(PLS_SORT), sortLabel);
+
+  function paintSort() {
+    const s = plsSortAt(sortIdx);
+    sortLabel.textContent = s.label;
+    // The name is the announcement: activating a cycling button re-reads it, so
+    // the change is spoken without hijacking the status line's live region —
+    // that region is reserved for what happened to the user's playlists.
+    sortBtn.setAttribute('aria-label', `Sort order: ${s.say}. Activate to change.`);
+    sortBtn.title = `Sort: ${s.say}. Playlists you’re already in stay at the top.`;
+  }
+
+  function setSort(next) {
+    sortIdx = (next + PLS_SORTS.length) % PLS_SORTS.length;
+    paintSort();
+    // Every row just moved, so the cursor cannot keep its index — treat it like a
+    // new query and reopen on the top target.
+    lastQ = null;
+    render();
+    onSort?.(plsSortAt(sortIdx).id);
+  }
+  paintSort();
+
   const foot = plsEl('div', 'foot');
-  foot.append(vid, status, keys);
+  foot.append(vid, status, sortBtn, keys);
 
   dlg.append(head, list, foot);
   shadow.append(dlg);
@@ -591,6 +745,12 @@ export function createSheet({ videoId, videoTitle, onPick, onClose }) {
     b.id = uid + '-r' + i;
     b.setAttribute('role', 'option');
     b.setAttribute('aria-selected', 'false');
+    // Out of the tab order, per the combobox pattern: the query field holds focus
+    // and `aria-activedescendant` names the current row. These are <button>s, so
+    // without this every one of them is a tab stop — 200 presses to get past the
+    // list to anything else in the sheet, which is not a tab order, it is a wall.
+    // They stay mouse- and script-focusable, so clicking a row behaves as before.
+    b.tabIndex = -1;
 
     const t = plsEl('span', 't');
     plsWriteTitle(t, p.title, q);
@@ -665,7 +825,15 @@ export function createSheet({ videoId, videoTitle, onPick, onClose }) {
     const keepScroll = fresh ? 0 : list.scrollTop;
     lastQ = q;
 
-    const matches = q ? data.filter((p) => p.title.toLowerCase().includes(q)) : data;
+    const matches = plsOrder(
+      q ? data.filter((p) => p.title.toLowerCase().includes(q)) : data,
+      sortIdx,
+      q,
+    );
+    // Ordering happens BEFORE the cap, so the 200 rows that survive are the 200
+    // best under the current mode rather than the 200 that happened to arrive
+    // first. On a 253-playlist library that is the difference between the cap
+    // being a scroll limit and the cap hiding the row you were looking for.
     shown = matches.slice(0, PLS_MAX_ROWS);
     nodes = shown.map((p, i) => rowNode(p, i, q));
 
@@ -692,7 +860,12 @@ export function createSheet({ videoId, videoTitle, onPick, onClose }) {
 
     input.setAttribute('aria-expanded', shown.length ? 'true' : 'false');
     navKeys.hidden = !shown.length;
-    active = fresh ? 0 : Math.min(active, Math.max(0, shown.length - 1));
+    // Open on a row Enter can act on. Members group first and are NOT targets, so
+    // landing the cursor on row 0 meant that for any video already in a playlist,
+    // opening the sheet and pressing Enter did nothing at all — silently. The
+    // arrow keys can still reach those rows; only the resting position skips them,
+    // because that is the one the user acts on without looking.
+    active = fresh ? Math.max(0, shown.findIndex(canPick)) : Math.min(active, Math.max(0, shown.length - 1));
     list.scrollTop = keepScroll;
     paint(false);
   }
@@ -721,12 +894,18 @@ export function createSheet({ videoId, videoTitle, onPick, onClose }) {
     paint(true);
   }
 
-  async function pick(p) {
+  // The single definition of "this row is a save target". `pick()` guards on it
+  // and the resting cursor position honours it, so the two can never disagree
+  // about which row Enter acts on. A failed row IS a target — clicking retries.
+  function canPick(p) {
     const cur = state.get(p.id);
-    if (cur === 'adding' || cur === 'added') return;
     // Already a member: terminal, not a toggle. YouTube would accept a second
     // copy of the video without complaint, and this build has no remove path.
-    if (p.member === true) return;
+    return p.member !== true && cur !== 'adding' && cur !== 'added';
+  }
+
+  async function pick(p) {
+    if (!canPick(p)) return;
     state.set(p.id, 'adding');
     render();
     try {
@@ -758,6 +937,7 @@ export function createSheet({ videoId, videoTitle, onPick, onClose }) {
   input.addEventListener('input', render);
   list.addEventListener('pointermove', () => list.classList.remove('kb'), { passive: true });
   closeBtn.addEventListener('click', () => dlg.close());
+  sortBtn.addEventListener('click', () => setSort(sortIdx + 1));
   dlg.addEventListener('keydown', (e) => {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     // An IME owns the arrows and Enter while a candidate window is open: those
@@ -774,6 +954,32 @@ export function createSheet({ videoId, videoTitle, onPick, onClose }) {
     // dismissal should not depend on a platform behaviour we are deliberately
     // cutting off. destroy() is idempotent, so a UA close on top of ours is fine.
     if (e.key === 'Escape') { dlg.close(); e.preventDefault(); return; }
+    // A palette's field must never be out of reach. If focus has wandered to one
+    // of the footer/header buttons, a typed character belongs in the query, not
+    // on the floor — otherwise adding a focusable control would have quietly put
+    // a "click back into the box first" step in front of the common path. Space
+    // is left alone: it is how a focused button is activated.
+    if (e.target !== input && e.key.length === 1 && e.key !== ' ') {
+      input.focus();
+      input.value += e.key;
+      render();
+      e.preventDefault();
+      return;
+    }
+    // The list keys below belong to the list. While a button owns focus, Enter
+    // and Space are its activation and the arrows are its own business — running
+    // both would have made Enter on the close button save a playlist instead of
+    // closing, because preventDefault here suppresses the button's click.
+    // `contains`, not `===`: the chip holds an icon and a label, and a key event
+    // retargeted from either of them is still the button's.
+    if (closeBtn.contains(/** @type {Node} */ (e.target))) return;
+    if (sortBtn.contains(/** @type {Node} */ (e.target))) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') setSort(sortIdx + 1);
+      else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') setSort(sortIdx - 1);
+      else return;
+      e.preventDefault();
+      return;
+    }
     // Home/End belong to the text caret while focus is in the query field —
     // the ARIA combobox pattern reserves them for exactly that — and Shift+
     // anything is a selection gesture, not navigation.

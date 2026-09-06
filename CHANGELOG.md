@@ -15,6 +15,17 @@ Every recurring bug in 1.6.x traced to breaking that rule. The filter bar appear
 - **Brand-channel accounts work.** `INNERTUBE_CONTEXT` does not carry the channel delegation even when the page has it. Without explicitly setting `context.user.onBehalfOfUser`, an account whose playlists live on a brand channel got back 2 playlists instead of 256, and one membership row instead of 200 — no error, just a confidently wrong, smaller answer. Switching accounts mid-session now invalidates that delegation instead of caching it for the life of the tab.
 - **Keyboard-first.** Type to narrow, arrows to move, Enter to save. With hundreds of playlists you type; you do not scroll.
 
+### Sorting
+
+Three orders, cycled from one control in the footer: **Match** (default — where the query lands in the title, then shorter title, then A→Z; plain A→Z at rest), **A → Z**, and **Z → A**. Playlists you've already saved to group above the rest in all three, and `false`/`undefined` stay in the same group, so the tri-state hedge survives sorting.
+
+**"Recently updated" is deliberately absent, because YouTube does not give us the data.** The real captured `browse FEplaylist_aggregation` response contains zero date-shaped fields — no modified date, no publish time, no "Updated…" string; its `contentMetadataViewModel` is literally empty. The rendered page agrees. Note that a *synthetic* fixture in this repo contains an invented `"Updated yesterday"` row, and designing against it would have shipped a sort that ordered by nothing — precisely the failure `architecture/coverage.md` was written to stop. A test now asserts the real capture has no date field and the synthetic one does, so the two can never be confused again; the day YouTube ships a timestamp, it goes red and the sort becomes buildable.
+
+Two bugs surfaced while building it, both of which would have shipped:
+
+- **Enter did nothing for any video you'd already saved.** Members float to the top, the cursor started at row 0, and `pick()` returns early on members — so opening the sheet and pressing Enter was a no-op. The resting cursor now lands on the first row Enter can act on; arrows still reach every row.
+- **Enter on the close button saved a playlist instead of closing.** The dialog's Enter handler fired regardless of what had focus, and its `preventDefault()` swallowed the button's own click.
+
 ### How the trigger changed
 
 Saving is now detected from **YouTube's own network request** rather than from an intercepted button click. When you click Save anywhere, YouTube's client POSTs `get_panel` with `panelId: "PAadd_to_playlist"`. That is a behavioural fact — YouTube's app stating what the user asked for — rather than a guess based on class names, which are the fastest-churning thing on the page.
