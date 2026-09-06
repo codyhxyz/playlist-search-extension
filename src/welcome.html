@@ -482,9 +482,81 @@
           transition-duration: 1ms !important;
         }
       }
+
+      /* Bullet lists. The page biases to points over paragraphs: onboarding is
+         read in glances, not sentences. Marker is a hairline dot on the same
+         ink ramp as everything else, hung outside the text column so wrapped
+         lines stay flush. */
+      .points {
+        list-style: none;
+        margin: 0.5rem 0 0;
+        padding: 0;
+        display: grid;
+        gap: 0.3rem;
+      }
+      .points li {
+        position: relative;
+        padding-left: 1rem;
+        color: var(--fg-2);
+      }
+      .points li::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0.62em;
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: currentColor;
+        opacity: 0.45;
+      }
+
+      /* THE GATE. This extension is inert until the youtube.com permission is
+         granted — no content scripts, no Save interception, nothing. Presenting
+         that as a mild first step invites the user to try the product, watch it
+         do nothing, and conclude it is broken. That has already happened.
+         So the blocked state is stated before anything else, in the same red the
+         product uses for a failed action, and it removes itself the instant the
+         permission lands. Default-visible: if the permission check has not
+         resolved yet, "not active" is the honest thing to show. */
+      .gate {
+        display: flex;
+        align-items: baseline;
+        gap: 0.6rem;
+        margin: 1.5rem 0 0;
+        padding: 0.85rem 1rem;
+        border: 1px solid color-mix(in srgb, var(--bad) 38%, transparent);
+        background: color-mix(in srgb, var(--bad) 9%, transparent);
+        border-radius: 10px;
+        font-size: 0.95rem;
+        line-height: 1.5;
+        color: var(--fg-2);
+      }
+      .gate b {
+        color: var(--bad);
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      body[data-permission="granted"] .gate { display: none; }
+
+      /* "Required" sits against the step title, not as decoration. */
+      .req {
+        margin-left: 0.55rem;
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--bad);
+        vertical-align: 0.12em;
+      }
+      body[data-permission="granted"] .req { display: none; }
+
+      /* Step 2 is genuinely unreachable until step 1 is done; say so there too. */
+      .locked { color: var(--fg-3); font-size: 0.9rem; margin: 0.35rem 0 0; }
+      body[data-permission="granted"] .locked { display: none; }
     </style>
   </head>
-  <body>
+  <body data-permission="ungranted">
     <main>
       <header class="masthead">
         <span>YouTube Playlist Search</span>
@@ -493,8 +565,15 @@
 
       <h1>Type, don’t scroll.</h1>
       <p class="deck">
-        Saving a video opens a search field over every playlist you own,
-        including the ones YouTube’s own picker can’t reach.
+        Hit Save on a video and search every playlist you own — including the
+        ones YouTube’s own picker can’t reach.
+      </p>
+
+      <p class="gate">
+        <b>Not active yet.</b>
+        <span>This extension does nothing at all — no search field, no Save
+        button changes — until you grant it access to youtube.com below. That is
+        step 1, and it is not optional.</span>
       </p>
 
       <ol class="steps">
@@ -506,13 +585,14 @@
             </svg>
           </span>
           <div>
-            <h2>Grant access to youtube.com</h2>
-            <p class="desc" id="grant-desc">
-              The extension does nothing at all until you allow it. It runs only
-              on youtube.com, draws its own interface instead of touching
-              YouTube’s page, ships no third-party code, and stores nothing. It
-              talks to YouTube as you, and to no one else.
-            </p>
+            <h2>Grant access to youtube.com<span class="req">Required</span></h2>
+            <p class="desc" id="grant-desc">Nothing happens until you allow it.</p>
+            <ul class="points">
+              <li>Runs only on youtube.com</li>
+              <li>Draws its own interface — never touches YouTube’s page</li>
+              <li>Talks to YouTube as you, never to us</li>
+              <li>No third-party code, nothing stored</li>
+            </ul>
             <button id="grant" type="button">Grant access to YouTube</button>
             <p class="status" id="status" aria-live="polite"></p>
           </div>
@@ -528,10 +608,10 @@
           <div>
             <h2>Save a video and watch it change</h2>
             <p class="desc">
-              Open anything on YouTube and hit Save. Instead of the usual picker
-              you get a search field: three letters and the list is already down
-              to what you meant.
+              Hit Save on any video. You get a search field instead of the
+              picker — three letters and you’re there.
             </p>
+            <p class="locked">Available once step 1 is done.</p>
             <button id="open" type="button" disabled>Open YouTube</button>
           </div>
         </li>
@@ -543,22 +623,21 @@
           <div class="way">
             <dt>Save</dt>
             <dd>
-              On a video page. Everywhere else, including the home feed, search
-              results, a channel, your subscriptions and your history, open the
+              On a video page. Anywhere else — home feed, search, a channel,
+              subscriptions, history — use the
               <span class="nb"
                 ><svg class="kebab" viewBox="0 0 14 14" aria-hidden="true">
                   <circle cx="7" cy="2.5" r="1.35" />
                   <circle cx="7" cy="7" r="1.35" />
                   <circle cx="7" cy="11.5" r="1.35" /></svg
-                > overflow menu</span
-              >
-              and choose Save to playlist.
+                > menu</span
+              >, then Save to playlist.
             </dd>
           </div>
           <div class="way">
             <dt>Toolbar icon</dt>
             <dd>
-              For anything with no Save button of its own. Shorts, for instance.
+              Anything with no Save button. Shorts, for instance.
             </dd>
           </div>
           <div class="way">
@@ -574,15 +653,18 @@
 
       <section class="block">
         <h2 class="label"><span>The 200 limit</span></h2>
-        <p class="prose">
-          YouTube’s own Save picker loads at most 200 playlists and offers no
-          way to ask it for more. This reads your library from a different
-          endpoint that isn’t capped, so
-          <strong>all of them are searchable</strong>. Past that same 200,
-          though, YouTube won’t tell anyone (us included) which playlists
-          already contain a video. Those rows are shown
-          <strong>unmarked rather than guessed at</strong>.
-        </p>
+        <ul class="points">
+          <li>
+            YouTube’s picker caps at 200 playlists, with no way to ask for more.
+            We read your library from a different endpoint that isn’t capped, so
+            <strong>all of them are searchable</strong>.
+          </li>
+          <li>
+            Past that same 200, YouTube won’t tell anyone — us included — which
+            playlists already hold a video. Those rows stay
+            <strong>unmarked rather than guessed at</strong>.
+          </li>
+        </ul>
       </section>
 
       <footer>

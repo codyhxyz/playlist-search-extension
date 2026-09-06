@@ -106,12 +106,46 @@ async function reconcileContentScripts() {
       await markSeen(KEYS.permissionGranted);
     } finally {
       _registrationInFlight = null;
+      void refreshActionAffordance();
     }
   })();
   return _registrationInFlight;
 }
 
 // ═══════════════════════ onboarding / welcome page ═══════════════════════
+
+/**
+ * Say out loud, on the toolbar icon, that the extension is not armed yet.
+ *
+ * youtube.com is an OPTIONAL host permission, so until it is granted this
+ * extension does exactly nothing: no content scripts, no Save interception, no
+ * sheet. That is the right privacy default, but the failure mode it produces is
+ * the worst one available — a freshly-installed extension that is silently inert
+ * and indistinguishable from broken. It has already been mistaken for a bug
+ * twice during development, by the person who wrote it.
+ *
+ * A badge costs nothing and converts "nothing happens" into "something is
+ * obviously waiting for me". Clicking the icon in this state opens the welcome
+ * page (see onActionClicked), so the badge points at its own fix.
+ */
+async function refreshActionAffordance() {
+  try {
+    const granted = await hasYouTubePermission();
+    if (granted) {
+      await chrome.action.setBadgeText({ text: '' });
+      await chrome.action.setTitle({ title: 'Save this video to a playlist' });
+      return;
+    }
+    await chrome.action.setBadgeText({ text: '!' });
+    await chrome.action.setBadgeBackgroundColor({ color: '#c2382f' });
+    await chrome.action.setTitle({
+      title: 'YouTube Playlist Search — click to finish setup.\nIt needs access to youtube.com before it can do anything.',
+    });
+  } catch (err) {
+    // Badge APIs are cosmetic; never let them take the worker down.
+    console.warn('[pls][sw] could not update the toolbar badge —', err?.message ?? err);
+  }
+}
 
 function welcomeUrl() {
   return chrome.runtime.getURL('welcome.html');
@@ -329,9 +363,9 @@ chrome.permissions.onAdded.addListener((permissions) => {
 
 chrome.permissions.onRemoved.addListener((permissions) => {
   if (permissions?.origins?.includes(YOUTUBE_ORIGIN)) {
-    void unregisterAll().then(() =>
-      chrome.storage.local.set({ [KEYS.permissionGranted]: false })
-    );
+    void unregisterAll()
+      .then(() => chrome.storage.local.set({ [KEYS.permissionGranted]: false }))
+      .then(() => refreshActionAffordance());
   }
 });
 
@@ -340,5 +374,6 @@ chrome.tabs.onRemoved.addListener((id) => {
 });
 
 void reconcileContentScripts().catch(() => {});
+void refreshActionAffordance();
 
 console.log(`[pls][sw] ${VERSION} — listeners registered (hook + toolbar + context menu + hotkey)`);

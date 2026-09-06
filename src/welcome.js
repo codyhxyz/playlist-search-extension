@@ -30,7 +30,7 @@ import { YOUTUBE_ORIGIN, hasYouTubePermission } from "./onboarding-state.js";
       stepGrant.dataset.state = "complete";
       stepOpen.dataset.state = "active";
       grantDesc.textContent =
-        "You're all set. The extension is active on youtube.com, and it talks to YouTube as you, never to the developer or any third party. YouTube tabs you already had open need one reload.";
+        "You're all set. Reload any YouTube tabs you already had open.";
       grantBtn.textContent = "Access granted";
       grantBtn.disabled = true;
       openBtn.disabled = false;
