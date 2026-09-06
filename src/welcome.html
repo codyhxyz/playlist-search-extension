@@ -512,28 +512,30 @@
       }
 
       /* THE GATE. This extension is inert until the youtube.com permission is
-         granted — no content scripts, no Save interception, nothing. Presenting
-         that as a mild first step invites the user to try the product, watch it
-         do nothing, and conclude it is broken. That has already happened.
-         So the blocked state is stated before anything else, in the same red the
-         product uses for a failed action, and it removes itself the instant the
-         permission lands. Default-visible: if the permission check has not
-         resolved yet, "not active" is the honest thing to show. */
+         granted — no content scripts, no Save interception, nothing. Leaving
+         that implicit invites the user to try the product, watch it do nothing,
+         and conclude it is broken; that has already happened. So it is stated
+         before anything else, and removes itself the instant permission lands.
+         Deliberately achromatic: this is the next step, not a failure, and
+         dressing it in the red reserved for failed saves would both cry wolf and
+         spend the product's one alarm colour on a routine setup click.
+         Default-visible, so a permission check that has not resolved yet renders
+         as "not active" rather than as "everything is fine". */
       .gate {
         display: flex;
         align-items: baseline;
-        gap: 0.6rem;
+        gap: 0.55rem;
         margin: 1.5rem 0 0;
-        padding: 0.85rem 1rem;
-        border: 1px solid color-mix(in srgb, var(--bad) 38%, transparent);
-        background: color-mix(in srgb, var(--bad) 9%, transparent);
+        padding: 0.8rem 1rem;
+        border: 1px solid var(--edge);
+        background: color-mix(in srgb, var(--fg) 4%, transparent);
         border-radius: 10px;
         font-size: 0.95rem;
         line-height: 1.5;
         color: var(--fg-2);
       }
       .gate b {
-        color: var(--bad);
+        color: var(--fg);
         font-weight: 600;
         white-space: nowrap;
       }
@@ -546,7 +548,7 @@
         font-weight: 600;
         letter-spacing: 0.06em;
         text-transform: uppercase;
-        color: var(--bad);
+        color: var(--fg-3);
         vertical-align: 0.12em;
       }
       body[data-permission="granted"] .req { display: none; }
@@ -570,10 +572,9 @@
       </p>
 
       <p class="gate">
-        <b>Not active yet.</b>
-        <span>This extension does nothing at all — no search field, no Save
-        button changes — until you grant it access to youtube.com below. That is
-        step 1, and it is not optional.</span>
+        <b>One step first.</b>
+        <span>Nothing changes on YouTube until you grant access below — the
+        extension stays inactive until then.</span>
       </p>
 
       <ol class="steps">

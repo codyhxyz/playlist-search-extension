@@ -136,8 +136,10 @@ async function refreshActionAffordance() {
       await chrome.action.setTitle({ title: 'Save this video to a playlist' });
       return;
     }
-    await chrome.action.setBadgeText({ text: '!' });
-    await chrome.action.setBadgeBackgroundColor({ color: '#c2382f' });
+    // A quiet dot, not an alarm. "Unfinished setup" is not an error, and the
+    // red is reserved for a save that actually failed.
+    await chrome.action.setBadgeText({ text: '•' });
+    await chrome.action.setBadgeBackgroundColor({ color: '#6b7280' });
     await chrome.action.setTitle({
       title: 'YouTube Playlist Search — click to finish setup.\nIt needs access to youtube.com before it can do anything.',
     });
