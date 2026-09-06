@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "OLD SPIKE \u2014 do not load (superseded by dist/unpacked)",
+  "version": "0.0.1",
+  "description": "Superseded. The shipping implementation lives in src/ and is built by scripts/build-dev.sh into dist/unpacked. This folder is the original 2026-08-28 spike, kept for its ARCHITECTURE.md and COVERAGE.md only. It has none of the fixes made since.",
+  "permissions": [
+    "webRequest",
+    "contextMenus",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://www.youtube.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "pls spike: open save sheet for this video"
+  },
+  "commands": {
+    "open-save-sheet": {
+      "suggested_key": {
+        "default": "Alt+S"
+      },
+      "description": "Open the playlist save sheet for the current video"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "intent-hook.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "innertube.js",
+        "sheet.js",
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

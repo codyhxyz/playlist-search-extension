@@ -5,359 +5,599 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>YouTube Playlist Search — Welcome</title>
     <style>
+      /* ── Direction ─────────────────────────────────────────────────────────
+         The save sheet (lib/sheet.js) is a command palette: achromatic, one
+         ground, three opacity steps, one hairline weight, colour in exactly two
+         places — jade when a save lands, red when one fails. This page is a
+         document, not a palette, so it does not imitate the sheet's chrome. It
+         inherits its tokens verbatim instead: the same ink ramp, the same
+         hairline, the same 8/12/16 radii, the same exponential ease-out, the
+         same check path drawn with the same 1.7 stroke. Granting the permission
+         reuses the sheet's one payoff — the check draws itself while a jade
+         field flashes and settles — because it is the same event: something
+         landed. No cards, no gradients, no glass, no glow.
+         ──────────────────────────────────────────────────────────────────── */
+
       :root {
         color-scheme: light dark;
-        --bg: #ffffff;
-        --surface: #f9f9f9;
-        --border: rgba(0, 0, 0, 0.1);
-        --text: #0f0f0f;
-        --text-muted: #606060;
-        --btn-bg: #0f0f0f;
-        --btn-text: #ffffff;
-        --btn-bg-hover: #272727;
-        --accent: #0b8043;
-        --error: #c5221f;
-        --step-pending-bg: rgba(0, 0, 0, 0.06);
-        --step-pending-border: rgba(0, 0, 0, 0.12);
-        font-family: "Roboto", "Helvetica Neue", Arial, sans-serif;
+
+        /* Ground and ink — three steps, straight from the sheet. --fg-3 is the
+           lowest alpha that still clears 4.5:1 on the ground it sits on. */
+        --bg: #131417;
+        --fg: #eceef1;
+        --fg-2: rgba(236, 238, 241, 0.72);
+        --fg-3: rgba(236, 238, 241, 0.55);
+
+        --line: rgba(255, 255, 255, 0.075);
+        --edge: rgba(255, 255, 255, 0.14);
+        --hov: rgba(255, 255, 255, 0.048);
+        --hit: rgba(255, 255, 255, 0.13);
+        --thumb: rgba(255, 255, 255, 0.15);
+        --ring: rgba(236, 238, 241, 0.6);
+        --sel: rgba(236, 238, 241, 0.24);
+
+        --ok: #4cdea1;
+        --bad: #ff7d72;
+        --f-ok: color-mix(in srgb, var(--ok) 13%, transparent);
+        --f-bad: color-mix(in srgb, var(--bad) 10%, transparent);
+
+        --ink: var(--fg);
+        --ink-hover: #ffffff;
+
+        --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+          sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
+        --ease: cubic-bezier(0.16, 1, 0.3, 1);
       }
-      @media (prefers-color-scheme: dark) {
+
+      @media (prefers-color-scheme: light) {
         :root {
-          --bg: #0f0f0f;
-          --surface: #1f1f1f;
-          --border: rgba(255, 255, 255, 0.1);
-          --text: #f1f1f1;
-          --text-muted: #aaaaaa;
-          --btn-bg: #f1f1f1;
-          --btn-text: #0f0f0f;
-          --btn-bg-hover: #ffffff;
-          --accent: #4ade80;
-          --error: #f87171;
-          --step-pending-bg: rgba(255, 255, 255, 0.04);
-          --step-pending-border: rgba(255, 255, 255, 0.1);
+          --bg: #ffffff;
+          --fg: #14161a;
+          --fg-2: rgba(20, 22, 26, 0.72);
+          --fg-3: rgba(20, 22, 26, 0.6);
+
+          --line: rgba(0, 0, 0, 0.08);
+          --edge: rgba(0, 0, 0, 0.14);
+          --hov: rgba(0, 0, 0, 0.04);
+          --hit: rgba(0, 0, 0, 0.1);
+          --thumb: rgba(0, 0, 0, 0.2);
+          --ring: rgba(20, 22, 26, 0.55);
+          --sel: rgba(20, 22, 26, 0.15);
+
+          /* Deep enough to clear 4.5:1 against their own tinted fields, not
+             against white. Same pinning the sheet does. */
+          --ok: #096546;
+          --bad: #a82c22;
+          --f-ok: color-mix(in srgb, var(--ok) 9%, transparent);
+          --f-bad: color-mix(in srgb, var(--bad) 8%, transparent);
+
+          --ink-hover: #2f333b;
         }
       }
-      * {
+
+      *,
+      *::before,
+      *::after {
         box-sizing: border-box;
       }
+
+      /* The surfaces we did not draw still belong to the page. */
+      html {
+        scrollbar-color: var(--thumb) transparent;
+      }
+      ::selection {
+        background: var(--sel);
+      }
+      :focus-visible {
+        outline: 2px solid var(--ring);
+        outline-offset: 2px;
+        border-radius: 4px;
+      }
+
       body {
         margin: 0;
-        min-height: 100vh;
+        min-height: 100dvh;
         display: flex;
-        align-items: flex-start;
-        justify-content: center;
+        padding: clamp(28px, 7vh, 76px) clamp(18px, 5vw, 28px);
         background: var(--bg);
-        color: var(--text);
-        padding: 48px 20px;
+        color: var(--fg);
+        font: 400 15px/1.55 var(--sans);
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
       }
+
+      /* auto margins centre without ever clipping the top on a short viewport */
       main {
+        margin: auto;
         width: 100%;
-        max-width: 560px;
+        max-width: 620px;
+        container-type: inline-size;
+        container-name: page;
+        transition: opacity 0.3s ease, transform 0.42s var(--ease);
       }
-      header {
-        text-align: center;
-        margin-bottom: 24px;
+      @starting-style {
+        main {
+          opacity: 0;
+          transform: translateY(10px);
+        }
       }
+
+      /* ── masthead ──────────────────────────────────────────────────────── */
+      .masthead {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+        margin: 0 0 clamp(30px, 6vw, 44px);
+        padding-bottom: 13px;
+        border-bottom: 1px solid var(--line);
+        font: 500 12.5px/1 var(--sans);
+        letter-spacing: 0.012em;
+        color: var(--fg-2);
+      }
+      #version {
+        flex: none;
+        font-weight: 400;
+        font-variant-numeric: tabular-nums;
+        color: var(--fg-3);
+      }
+
+      /* ── opening ───────────────────────────────────────────────────────── */
       h1 {
-        font-size: 28px;
+        margin: 0 0 15px;
+        font-size: clamp(31px, 6.6vw, 41px);
         font-weight: 600;
-        margin: 0 0 8px;
-        letter-spacing: -0.01em;
+        line-height: 1.06;
+        letter-spacing: -0.025em;
+        text-wrap: balance;
       }
-      .lede {
-        font-size: 15px;
+      .deck {
+        margin: 0 0 clamp(30px, 6vw, 44px);
+        max-width: 33em;
+        font-size: clamp(16px, 3.6vw, 18.5px);
         line-height: 1.5;
-        margin: 0;
-        color: var(--text-muted);
+        letter-spacing: -0.008em;
+        color: var(--fg-2);
+        text-wrap: pretty;
+      }
+
+      /* ── the two steps ─────────────────────────────────────────────────
+         A ledger, not cards: one band bounded by hairlines, each step a row
+         whose state lives in its marker and its button. --bleed lets a step's
+         field run past the text column, so the payoff flash reads as a field
+         rather than as a box that appeared. */
+      .steps {
+        --bleed: 16px;
+        list-style: none;
+        margin: 0 calc(var(--bleed) * -1);
+        padding: 0;
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
       }
       .step {
-        display: flex;
-        gap: 16px;
-        padding: 20px;
-        border: 1px solid var(--step-pending-border);
+        display: grid;
+        grid-template-columns: 26px minmax(0, 1fr);
+        column-gap: 16px;
+        align-items: start;
+        padding: 22px var(--bleed);
         border-radius: 12px;
-        background: var(--step-pending-bg);
-        margin-bottom: 12px;
-        transition: border-color 120ms ease, background 120ms ease;
       }
-      .step[data-state="active"] {
-        border-color: var(--text);
-        background: var(--surface);
+      .step[data-state="pending"] {
+        color: var(--fg-2);
+      }
+
+      .marker {
+        display: grid;
+        place-items: center;
+        width: 26px;
+        height: 26px;
+        margin-top: 1px;
+        border: 1px solid var(--edge);
+        border-radius: 50%;
+        color: var(--fg-3);
+        font: 500 11.5px/1 var(--sans);
+        font-variant-numeric: tabular-nums;
+        transition: color 0.13s ease, border-color 0.13s ease,
+          background-color 0.13s ease;
+      }
+      .step[data-state="active"] .marker {
+        border-color: var(--fg);
+        color: var(--fg);
+      }
+      .step[data-state="complete"] .marker {
+        border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+        background: var(--f-ok);
+        color: var(--ok);
+      }
+
+      /* The sheet's check, its path and its stroke, drawn on the same curve.
+         The dash lives inside the keyframes so killing the animation leaves a
+         solid check rather than an invisible one. */
+      .check {
+        display: none;
+        width: 14px;
+        height: 14px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.7;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .step[data-state="complete"] .num {
+        display: none;
+      }
+      .step[data-state="complete"] .check {
+        display: block;
+        animation: draw 0.38s var(--ease) both;
       }
       .step[data-state="complete"] {
-        border-color: var(--accent);
-        background: var(--surface);
+        animation: land 0.55s var(--ease);
       }
-      .step-marker {
-        flex: 0 0 28px;
-        width: 28px;
-        height: 28px;
-        border-radius: 50%;
-        border: 2px solid var(--text-muted);
-        color: var(--text-muted);
-        display: flex;
+
+      .step h2 {
+        margin: 0 0 7px;
+        font-size: 16.5px;
+        font-weight: 600;
+        line-height: 1.3;
+        letter-spacing: -0.014em;
+        text-wrap: balance;
+      }
+      .desc {
+        margin: 0;
+        font-size: 14.5px;
+        line-height: 1.55;
+        color: var(--fg-2);
+        text-wrap: pretty;
+      }
+
+      /* ── buttons ───────────────────────────────────────────────────────── */
+      button {
+        appearance: none;
+        display: inline-flex;
         align-items: center;
         justify-content: center;
-        font-size: 13px;
-        font-weight: 600;
-        line-height: 1;
-      }
-      .step[data-state="active"] .step-marker {
-        border-color: var(--text);
-        color: var(--text);
-      }
-      .step[data-state="complete"] .step-marker {
-        background: var(--accent);
-        border-color: var(--accent);
+        margin-top: 17px;
+        min-height: 36px;
+        padding: 0 17px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        font: 500 14px/1 var(--sans);
+        letter-spacing: -0.006em;
         color: var(--bg);
-      }
-      .step-marker svg {
-        width: 16px;
-        height: 16px;
-        display: none;
-      }
-      .step[data-state="complete"] .step-marker svg {
-        display: block;
-      }
-      .step[data-state="complete"] .step-marker .step-num {
-        display: none;
-      }
-      .step-body {
-        flex: 1;
-        min-width: 0;
-      }
-      .step-title {
-        font-size: 16px;
-        font-weight: 600;
-        margin: 2px 0 6px;
-      }
-      .step-desc {
-        font-size: 14px;
-        line-height: 1.5;
-        margin: 0 0 14px;
-        color: var(--text-muted);
-      }
-      .step-desc strong {
-        color: var(--text);
-        font-weight: 500;
-      }
-      button {
-        font: inherit;
-        font-size: 14px;
-        font-weight: 600;
-        padding: 10px 20px;
-        border-radius: 20px;
-        border: none;
-        background: var(--btn-bg);
-        color: var(--btn-text);
+        background: var(--ink);
         cursor: pointer;
+        transition: background-color 0.13s ease, color 0.13s ease,
+          border-color 0.13s ease;
       }
       button:hover:not(:disabled) {
-        background: var(--btn-bg-hover);
+        background: var(--ink-hover);
       }
       button:disabled {
-        opacity: 0.4;
-        cursor: not-allowed;
+        cursor: default;
       }
+
+      /* Step 2 is a ghost until it is the thing to do; then it takes the ink
+         and step 1 stands down to a plain confirmation. The emphasis moves. */
+      #open {
+        color: var(--fg);
+        background: transparent;
+        border-color: var(--edge);
+      }
+      #open:hover:not(:disabled) {
+        background: var(--hov);
+        border-color: var(--ring);
+      }
+      /* Still legibly a button: dimming the label is the state, dissolving the
+         shape is just a hole in the layout. */
+      #open:disabled {
+        color: var(--fg-3);
+        border-color: var(--edge);
+      }
+      body[data-permission="granted"] #open:not(:disabled) {
+        color: var(--bg);
+        background: var(--ink);
+        border-color: transparent;
+      }
+      body[data-permission="granted"] #open:not(:disabled):hover {
+        background: var(--ink-hover);
+      }
+      body[data-permission="granted"] #grant {
+        min-height: 0;
+        padding: 0;
+        margin-top: 14px;
+        background: none;
+        border-color: transparent;
+        color: var(--ok);
+        font-weight: 600;
+      }
+
+      /* Empty and stateless it is a zero-height block, so the live region stays
+         in the tree instead of being switched off and on. */
       .status {
-        margin-top: 10px;
-        font-size: 13px;
-        color: var(--text-muted);
-        min-height: 18px;
+        margin: 0;
+        font-size: 13.5px;
+        line-height: 1.5;
+        color: var(--fg-2);
+        text-wrap: pretty;
       }
-      .status[data-state="ok"] {
-        color: var(--accent);
+      /* Hugs its sentence: a field the width of the column would read as a
+         region that failed, not as one line of bad news. */
+      .status:not(:empty) {
+        width: fit-content;
+        max-width: 100%;
+        margin-top: 13px;
+        padding: 9px 12px;
+        border-radius: 8px;
       }
       .status[data-state="err"] {
-        color: var(--error);
+        background: var(--f-bad);
+        color: var(--bad);
       }
-      .surfaces {
-        margin-top: 28px;
-        padding: 20px;
-        border: 1px solid var(--border);
-        border-radius: 12px;
+      .status[data-state="ok"] {
+        background: var(--f-ok);
+        color: var(--ok);
       }
-      .surfaces h2 {
-        font-size: 13px;
-        font-weight: 600;
+
+      /* ── sections ──────────────────────────────────────────────────────── */
+      .block {
+        margin-top: clamp(34px, 7vw, 50px);
+      }
+      .label {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin: 0 0 6px;
+        font: 500 11.5px/1 var(--sans);
+        letter-spacing: 0.085em;
         text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: var(--text-muted);
-        margin: 0 0 12px;
+        color: var(--fg-2);
       }
-      .surfaces ul {
-        list-style: none;
-        padding: 0;
+      .label::after {
+        content: "";
+        flex: 1 1 auto;
+        height: 1px;
+        background: var(--line);
+      }
+
+      /* Terms and their definitions. Normal inline flow inside each cell — the
+         row is the grid, the prose is never the grid. */
+      .ways {
         margin: 0;
       }
-      .surfaces li {
-        font-size: 14px;
-        line-height: 1.5;
-        padding: 6px 0;
-        display: flex;
-        gap: 10px;
-        align-items: flex-start;
+      .way {
+        display: grid;
+        grid-template-columns: 8.5rem minmax(0, 1fr);
+        column-gap: 24px;
+        align-items: start;
+        padding: 14px 0;
+        border-bottom: 1px solid var(--line);
       }
-      .surfaces li::before {
-        content: "";
-        flex: 0 0 6px;
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        background: var(--text-muted);
-        margin-top: 8px;
+      .way dt {
+        font-size: 14.5px;
+        font-weight: 500;
+        line-height: 1.55;
+        color: var(--fg);
       }
-      .surfaces code {
-        font-family: "SF Mono", Menlo, Consolas, monospace;
-        font-size: 13px;
-        padding: 1px 5px;
+      .way dd {
+        margin: 0;
+        font-size: 14.5px;
+        line-height: 1.55;
+        color: var(--fg-2);
+        text-wrap: pretty;
+      }
+
+      kbd {
+        font: inherit;
+        font-weight: 500;
+        color: var(--fg);
+        padding: 0.1em 0.36em;
         border-radius: 4px;
-        background: var(--step-pending-bg);
+        background: var(--hit);
       }
-      .tip {
-        margin-top: 16px;
-        padding: 12px 16px;
-        border-left: 3px solid var(--accent);
-        background: var(--surface);
-        border-radius: 0 8px 8px 0;
-        font-size: 14px;
-        line-height: 1.5;
-        color: var(--text-muted);
+      /* The glyph names a button the reader has to go and find, so it must not
+         be stranded at a line end away from the words that identify it. */
+      .nb {
+        white-space: nowrap;
       }
-      .tip strong {
-        color: var(--text);
-        font-weight: 600;
-        margin-right: 4px;
+      .kebab {
+        width: 1em;
+        height: 1em;
+        vertical-align: -0.14em;
+        fill: currentColor;
+        color: var(--fg);
       }
+
+      .prose {
+        margin: 12px 0 0;
+        font-size: 14.5px;
+        line-height: 1.65;
+        color: var(--fg-2);
+        text-wrap: pretty;
+      }
+      .prose strong {
+        font-weight: 500;
+        color: var(--fg);
+      }
+
+      /* ── footer ────────────────────────────────────────────────────────── */
       footer {
-        margin-top: 32px;
-        padding-top: 20px;
-        border-top: 1px solid var(--border);
         display: flex;
         flex-wrap: wrap;
-        gap: 8px 16px;
-        justify-content: center;
-        font-size: 12px;
-        color: var(--text-muted);
+        gap: 8px 20px;
+        margin-top: clamp(34px, 7vw, 48px);
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+        font-size: 12.5px;
       }
       footer a {
-        color: var(--text-muted);
+        color: var(--fg-2);
         text-decoration: none;
+        transition: color 0.13s ease;
       }
       footer a:hover {
-        color: var(--text);
+        color: var(--fg);
         text-decoration: underline;
+        text-decoration-thickness: 1px;
+        text-underline-offset: 3px;
       }
-      footer .sep {
-        opacity: 0.4;
+
+      @keyframes draw {
+        from {
+          stroke-dasharray: 12;
+          stroke-dashoffset: 12;
+        }
+        to {
+          stroke-dasharray: 12;
+          stroke-dashoffset: 0;
+        }
+      }
+      /* No 'to' — it settles back to the step's own resting ground. */
+      @keyframes land {
+        from {
+          background-color: color-mix(in srgb, var(--ok) 26%, transparent);
+        }
+      }
+
+      @container page (max-width: 460px) {
+        .steps {
+          --bleed: 0px;
+        }
+        .step {
+          border-radius: 0;
+        }
+        .way {
+          grid-template-columns: minmax(0, 1fr);
+          row-gap: 3px;
+        }
+      }
+
+      /* Nothing above is the sole carrier of anything: every state also has a
+         word, so removing the motion removes only the motion. */
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 1ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 1ms !important;
+        }
       }
     </style>
   </head>
   <body>
     <main>
-      <header>
-        <h1>YouTube Playlist Search</h1>
-        <p class="lede">
-          When you save a video, get a searchable list of every playlist you
-          own — including the ones YouTube's own picker can't reach.
-        </p>
+      <header class="masthead">
+        <span>YouTube Playlist Search</span>
+        <span id="version">v—</span>
       </header>
 
-      <section class="step" id="step-grant" data-state="active">
-        <div class="step-marker">
-          <span class="step-num">1</span>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
-            />
-          </svg>
-        </div>
-        <div class="step-body">
-          <h2 class="step-title">Grant access to youtube.com</h2>
-          <p class="step-desc" id="grant-desc">
-            So the extension can see when you click Save and load your playlists
-            from YouTube. It runs <strong>only on youtube.com</strong>, adds
-            nothing to YouTube's own page, and
-            <strong>talks only to YouTube, as you</strong> — never to the
-            developer or any third party.
-          </p>
-          <button id="grant" type="button">Grant access to YouTube</button>
-          <div id="status" class="status" aria-live="polite"></div>
-        </div>
+      <h1>Type, don’t scroll.</h1>
+      <p class="deck">
+        Saving a video opens a search field over every playlist you own,
+        including the ones YouTube’s own picker can’t reach.
+      </p>
+
+      <ol class="steps">
+        <li class="step" id="step-grant" data-state="active">
+          <span class="marker" aria-hidden="true">
+            <span class="num">1</span>
+            <svg class="check" viewBox="0 0 14 14">
+              <path d="M3.6 7.35 5.95 9.75 10.5 4.35" />
+            </svg>
+          </span>
+          <div>
+            <h2>Grant access to youtube.com</h2>
+            <p class="desc" id="grant-desc">
+              The extension does nothing at all until you allow it. It runs only
+              on youtube.com, draws its own interface instead of touching
+              YouTube’s page, ships no third-party code, and stores nothing. It
+              talks to YouTube as you, and to no one else.
+            </p>
+            <button id="grant" type="button">Grant access to YouTube</button>
+            <p class="status" id="status" aria-live="polite"></p>
+          </div>
+        </li>
+
+        <li class="step" id="step-open" data-state="pending">
+          <span class="marker" aria-hidden="true">
+            <span class="num">2</span>
+            <svg class="check" viewBox="0 0 14 14">
+              <path d="M3.6 7.35 5.95 9.75 10.5 4.35" />
+            </svg>
+          </span>
+          <div>
+            <h2>Save a video and watch it change</h2>
+            <p class="desc">
+              Open anything on YouTube and hit Save. Instead of the usual picker
+              you get a search field: three letters and the list is already down
+              to what you meant.
+            </p>
+            <button id="open" type="button" disabled>Open YouTube</button>
+          </div>
+        </li>
+      </ol>
+
+      <section class="block">
+        <h2 class="label"><span>Where you’ll see it</span></h2>
+        <dl class="ways">
+          <div class="way">
+            <dt>Save</dt>
+            <dd>
+              On a video page. Everywhere else, including the home feed, search
+              results, a channel, your subscriptions and your history, open the
+              <span class="nb"
+                ><svg class="kebab" viewBox="0 0 14 14" aria-hidden="true">
+                  <circle cx="7" cy="2.5" r="1.35" />
+                  <circle cx="7" cy="7" r="1.35" />
+                  <circle cx="7" cy="11.5" r="1.35" /></svg
+                > overflow menu</span
+              >
+              and choose Save to playlist.
+            </dd>
+          </div>
+          <div class="way">
+            <dt>Toolbar icon</dt>
+            <dd>
+              For anything with no Save button of its own. Shorts, for instance.
+            </dd>
+          </div>
+          <div class="way">
+            <dt>Right-click</dt>
+            <dd>Any video link, then Save to playlist.</dd>
+          </div>
+          <div class="way">
+            <dt><kbd>Alt</kbd> + <kbd>S</kbd></dt>
+            <dd>On a video page.</dd>
+          </div>
+        </dl>
       </section>
 
-      <section class="step" id="step-open" data-state="pending">
-        <div class="step-marker">
-          <span class="step-num">2</span>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
-            />
-          </svg>
-        </div>
-        <div class="step-body">
-          <h2 class="step-title">Save a video to see it in action</h2>
-          <p class="step-desc">
-            Open any video on YouTube and click <strong>Save</strong>. Instead of
-            YouTube's picker you'll get a search field — start typing and the
-            list narrows to what you meant. Nothing to scroll.
-          </p>
-          <button id="open" type="button" disabled>
-            Open YouTube
-          </button>
-        </div>
+      <section class="block">
+        <h2 class="label"><span>The 200 limit</span></h2>
+        <p class="prose">
+          YouTube’s own Save picker loads at most 200 playlists and offers no
+          way to ask it for more. This reads your library from a different
+          endpoint that isn’t capped, so
+          <strong>all of them are searchable</strong>. Past that same 200,
+          though, YouTube won’t tell anyone (us included) which playlists
+          already contain a video. Those rows are shown
+          <strong>unmarked rather than guessed at</strong>.
+        </p>
       </section>
-
-      <section class="surfaces">
-        <h2>Where you'll see it</h2>
-        <ul>
-          <li>
-            <strong>Save</strong> on a video page, or
-            <strong>⋮ &rarr; Save to playlist</strong> anywhere else — the home
-            feed, search results, a channel, your subscriptions or history
-          </li>
-          <li>
-            The <strong>toolbar icon</strong>, for anything with no Save button
-            of its own — Shorts, for instance
-          </li>
-          <li>
-            <strong>Right-click</strong> any video link &rarr; Save to playlist
-          </li>
-          <li>
-            <code>Alt</code>+<code>S</code> on a video page
-          </li>
-        </ul>
-      </section>
-
-      <aside class="tip">
-        <strong>Why it has all of them:</strong>
-        YouTube's own Save picker loads at most 200 playlists, and there is no
-        way to ask it for more. This reads your library from a different
-        endpoint that isn't capped, so every playlist you own is searchable.
-        One honest caveat: past that same 200, YouTube won't tell
-        <em>anyone</em> which playlists already contain a video — so those rows
-        are shown unmarked rather than guessed at.
-      </aside>
 
       <footer>
-        <span id="version">v—</span>
-        <span class="sep">·</span>
         <a
           href="https://github.com/codyhxyz/playlist-search-extension"
           target="_blank"
           rel="noopener"
           >Source</a
         >
-        <span class="sep">·</span>
         <a
           href="https://playlist.codyh.xyz/privacy-policy.html"
           target="_blank"
           rel="noopener"
           >Privacy</a
         >
-        <span class="sep">·</span>
         <a
           href="https://github.com/codyhxyz/playlist-search-extension/issues"
           target="_blank"
