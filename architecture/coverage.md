@@ -63,7 +63,7 @@ Status: ✅ verified live · ⚠️ known broken/missing · ❓ never tested · 
 | # | Operation | Status | Note |
 |---|---|---|---|
 | E1 | Add to playlist | ✅ | Verified round-trip, then rolled back |
-| E2 | Remove from playlist | ⚠️ | *(2.0.0)* `removeVideo()` ships in the data layer but is **deliberately not exposed in the UI**, because it was never round-tripped. Payload is lifted verbatim from the `removeFromPlaylistServiceEndpoint` YouTube ships on every row, so the shape is authoritative — but shipping an untested write against a user's real playlists is not a trade worth making. "Already in" is a terminal state, not a toggle |
+| E2 | Remove from playlist | ⚠️ | *(2.0.0)* Exposed for known-member rows behind a separate confirmation action. The payload is lifted verbatim from YouTube's live `removeFromPlaylistServiceEndpoint`, but the write has not been manually round-tripped against a disposable playlist |
 | E3 | Create new playlist | ⚠️ | YouTube's own picker offers it; we don't |
 | E4 | Add failure / offline / 401 | ❓ | Error path never exercised |
 | E5 | Concurrent adds (fast clicking) | ✅ | *(2.0.0)* Per-row state guards it: a row in `adding` or `added` returns early from `pick()`. Covered by `tests/test-sheet-render.mjs` |

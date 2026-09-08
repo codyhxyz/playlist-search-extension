@@ -5,11 +5,10 @@
 //
 // ── Direction ───────────────────────────────────────────────────────────────
 // THESIS    A command palette, not a picker. 256 playlists means you type, you
-//           don't scroll — so the field IS the sheet's title and there is no
-//           other title. Nothing sits above the query: no label row, no eyebrow,
-//           no stacked chrome. The placeholder names the job ("Save to playlist")
-//           until the library lands, then names the tool ("Search 256 playlists")
-//           and gets out of the way.
+//           don't scroll — so search remains the primary control. One quiet,
+//           elided line above it names the video being changed. The placeholder
+//           names the job ("Save to playlist") until the library lands, then
+//           names the tool ("Search 256 playlists") and gets out of the way.
 // WORLD     Achromatic. One ground, one foreground, three opacity steps, one
 //           hairline weight, one 14px icon family at one stroke. Colour exists in
 //           exactly two places: jade when a save lands, red when one fails.
@@ -25,13 +24,11 @@
 // STATE     `member` is tri-state and mostly unknown — YouTube stops telling us
 //           past ~200 playlists. So `undefined` and `false` render identically
 //           and bare: an unmarked row claims nothing, it is simply a target.
-//           Only `member === true` earns a mark, and it earns a *quiet* one —
-//           a muted check and an unweighted "Already in", title dimmed, no
-//           hover and no pointer, because it is not a target: this build has no
-//           remove path and YouTube would accept a duplicate. Session events —
-//           Saving, Saved, Retry — get the same slot in bold and in colour.
-//           Permanent facts whisper; events speak. Every state carries a word as
-//           well as a mark, so colour is never the sole carrier.
+//           Only `member === true` earns a mark and a removal path. Removal
+//           requires a separate confirmation button so a double-click or key
+//           repeat cannot delete anything. Session events — Saving, Saved,
+//           Removing, Removed, Retry — use the same state slot. Every state
+//           carries a word as well as a mark, so colour is never the sole carrier.
 // ORDER     Three orderings, and every one of them is a *claim* the sheet can
 //           back: "Best match" (where the query lands in the title, then the
 //           shorter title, then A→Z — and plain A→Z when the field is empty,
@@ -43,23 +40,11 @@
 //           orderings. It is a partition — `member === true` rows are not save
 //           targets — so they group above the targets in every mode, and the
 //           cursor opens on the first row that Enter can actually act on.
-// VIEWPORT  Field + count + close · hairline · list · hairline · status bar.
-//           Query text, result text, and the status bar share one left edge at
-//           20px. The count right of the field is empty until you type, then
-//           reports the yield — at rest the field owns the whole header. What
-//           you are saving is named at the far left of the status bar, elided
-//           and capped at half the bar so it can never crowd out the status;
-//           it arrives a beat after the sheet, because the sheet must open on
-//           intent and wait for nothing. The raw video id is developer data and
-//           is not shown at all — it lives on the host element for the console
-//           and the e2e specs. Top-anchored, so the field never moves; the sheet
-//           grows down to a ceiling and shrinks as the query narrows.
-//           The order control lives in that same status bar and nowhere else.
-//           The header is the command line; putting a chooser beside the field
-//           would tax every open to serve the rare one. The footer is already
-//           the strip the eye skips, so a chip there costs nothing at rest, and
-//           it stays a plain focusable button — no chord to learn, and no key
-//           stolen from a field people type into in every language.
+// VIEWPORT  Video title · field + count + order + close · hairline · list.
+//           The title is elided above the query, and the raw video id remains
+//           diagnostic-only on the host element. The footer exists only for a
+//           useful transient status or removal confirmation. Top-anchored, so
+//           the sheet grows down to a ceiling and shrinks with the query.
 // MOTION    One entrance (@starting-style, 220ms), one payoff (the check draws
 //           itself in 360ms while the row's field flashes jade and settles), one
 //           honest spinner while a save is in flight. Everything else is a 130ms
@@ -99,6 +84,7 @@ const PLS_CSS = `
   --edge:rgba(255,255,255,.10);
   --sheen:rgba(255,255,255,.09);
 
+  --alt:rgba(255,255,255,.022);
   --hov:rgba(255,255,255,.048);
   --act:rgba(255,255,255,.088);
   --hit:rgba(255,255,255,.13);
@@ -137,6 +123,7 @@ const PLS_CSS = `
   --edge:rgba(0,0,0,.09);
   --sheen:transparent;      /* a white sheet has no lit top edge to fake */
 
+  --alt:rgba(0,0,0,.018);
   --hov:rgba(0,0,0,.04);
   --act:rgba(0,0,0,.07);
   --hit:rgba(0,0,0,.10);
@@ -195,11 +182,18 @@ dialog::backdrop {
 } }
 dialog ::selection { background: var(--sel); }
 
-/* ── header: the field is the title, so nothing sits above it ─────────────── */
+/* ── header ──────────────────────────────────────────────────────────────── */
 .head {
-  flex: none; display: flex; align-items: center; gap: 12px;
+  flex: none; display: grid; grid-template-columns: minmax(0,1fr) auto auto auto;
+  align-items: center; gap: 8px 12px;
   padding: 15px 20px 14px; border-bottom: 1px solid var(--line);
 }
+.vid {
+  grid-column: 1 / -1; min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2);
+  font: 400 12px/1.3 var(--sans);
+}
+.vid:empty { display: none; }
 input {
   all: initial; flex: 1 1 auto; min-width: 0;
   font: 400 17px/1.4 var(--sans); letter-spacing: -.012em;
@@ -247,15 +241,13 @@ input::placeholder { color: var(--fg-3); letter-spacing: -.008em; }
   color: var(--fg); cursor: pointer; background-color: transparent;
   transition: background-color .13s ease, color .13s ease;
 }
-/* Saved, in-flight, and already-a-member rows are not actionable (pick() returns
-   early), so they get no hover affordance and no pointer — their field is a
-   fact, not a target. "Already in" is terminal here, not a toggle: this build
-   has no round-trip-tested remove path, and YouTube would happily accept a
-   duplicate. A failed row keeps both affordances: clicking it retries. */
+.row:nth-child(even) { background-color: var(--alt); }
+/* In-flight and completed session events are terminal. Known member rows remain
+   actionable, but activation only opens the separate removal confirmation. */
 .row.done { background-color: var(--f-ok); }
 .row.fail { background-color: var(--f-bad); }
-.row.done, .row.busy, .row.mem { cursor: default; }
-:where(.list:not(.kb)) .row:not(.on,.done,.busy,.mem):hover { background-color: var(--hov); }
+.row.done, .row.busy, .row.removed { cursor: default; }
+:where(.list:not(.kb)) .row:not(.on,.done,.busy,.removed):hover { background-color: var(--hov); }
 /* The cursor is simply the brightest field on screen, layered per state so it
    never argues with the state colour underneath it. */
 .row.on { background-color: var(--act); }
@@ -268,10 +260,9 @@ input::placeholder { color: var(--fg-3); letter-spacing: -.008em; }
    would move as you type. */
 .hit { border-radius: 3px; background-color: var(--hit); box-shadow: 0 0 0 1px var(--hit); }
 .emo { font-size: .86em; opacity: .8; letter-spacing: .02em; }
-/* Dimmed because it is not a target — the cursor may still land on it, and
-   there it brightens enough to be read comfortably. */
+/* Known members are dimmed at rest and brighten when targeted for removal. */
 .row.mem .t { color: var(--fg-2); }
-.row.mem.on .t { color: var(--fg); }
+.row.mem:hover .t, .row.mem.on .t { color: var(--fg); }
 .row.done .t { color: var(--fg); }
 
 /* State column: optional word, then mark, flush right. The mark box is a fixed
@@ -292,6 +283,7 @@ input::placeholder { color: var(--fg-3); letter-spacing: -.008em; }
 .row.done .state { color: var(--ok); }
 .row.done .tag, .row.fail .tag { font-weight: 600; }
 .row.fail .state { color: var(--bad); }
+.row.removed .state { color: var(--fg-2); }
 /* Two thirds of the ring, so it still reads as a spinner in the frame where it
    is not moving — including under reduced motion, where it never moves at all. */
 .spin { animation: spin .8s linear infinite; }
@@ -327,33 +319,25 @@ input::placeholder { color: var(--fg-3); letter-spacing: -.008em; }
 .sk:nth-child(7n+6) span { width: 67%; animation-delay: .55s }
 .sk:nth-child(7n+7) span { width: 47%; animation-delay: .66s }
 
-/* ── footer ───────────────────────────────────────────────────────────────── */
+/* ── footer: transient status and removal confirmation only ─────────────── */
 .foot {
   flex: none; display: flex; align-items: center; gap: 10px;
   padding: 10px 20px 11px; border-top: 1px solid var(--line);
   font: 400 11.5px/1.5 var(--sans); color: var(--fg-3);
 }
-/* What you are saving, named. It shares the status bar with the status line and
-   yields to it: the title is context you glance at once, the status is what
-   changes. Elides rather than wraps so the footer keeps a fixed height, and it
-   is capped at half the bar so a long title cannot crowd out the status.
-   (This used to print the raw 11-character video ID — accurate, useless, and
-   the sort of thing that reads as a leaked debug field to anyone but us.) */
-.vid { flex: 0 1 auto; min-width: 0; max-width: 50%; overflow: hidden;
-       text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); }
+.foot:has(.status:empty) { display: none; }
 .status { flex: 1 1 auto; min-width: 0; overflow: hidden;
           display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.status:not(:empty)::before { content: "·"; margin: 0 7px 0 0; opacity: .55; }
-.keys { flex: none; display: flex; align-items: baseline; gap: 12px; }
-.nav { display: contents; }
-.k { display: inline-flex; align-items: baseline; gap: 5px; white-space: nowrap; }
-.kg { color: var(--fg-2); font-weight: 500; letter-spacing: .02em; }
+.confirm { flex: none; display: flex; gap: 8px; }
+.confirm button {
+  all: initial; box-sizing: border-box; padding: 5px 9px; border-radius: 7px;
+  font: 500 11.5px/1 var(--sans); color: var(--fg-2); cursor: pointer;
+}
+.confirm button:hover { background-color: var(--hov); color: var(--fg); }
+.confirm button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.confirm .danger { color: var(--bad); }
 
-/* The one control in the footer. It sits at the same 11.5px as the key hints so
-   it reads as part of the strip rather than as a widget parked in it, and it
-   earns a hover/focus field because — unlike its neighbours — it is pressable.
-   Cycles rather than opening a menu: three modes is not a list worth a popover,
-   and a popover would put a second surface on top of a surface. */
+/* The header's order control cycles through the three supported modes. */
 .sort {
   all: initial; box-sizing: border-box; flex: none;
   display: inline-flex; align-items: center; gap: 7px;
@@ -366,13 +350,7 @@ input::placeholder { color: var(--fg-3); letter-spacing: -.008em; }
 .sort:active { background-color: var(--act); }
 .sort:focus-visible { color: var(--fg); outline: 2px solid var(--ring); outline-offset: -2px; }
 .sort .mark { stroke-width: 1.6; }
-/* The label is always on, and the labels are kept short because this footer is
-   over-subscribed at 520px and everything in it already elides. An icon alone
-   was tried and rejected twice over: a bare glyph in a strip of passive hints
-   does not read as pressable, so the one adjustable behaviour in the sheet would
-   have shipped dark — and in a non-default order the label is also the only
-   on-screen explanation for why the rows are where they are. Held to one width so
-   cycling cannot shove the status line sideways. */
+/* Held to one width so cycling cannot move the query field. */
 .sl { min-width: 38px; text-align: left; white-space: nowrap; }
 
 @keyframes draw    { to { stroke-dashoffset: 0 } }
@@ -387,7 +365,6 @@ input::placeholder { color: var(--fg-3); letter-spacing: -.008em; }
   .foot { padding: 9px 16px 10px; }
   .list { padding: 6px; }
   .row { padding: 8px 10px; }
-  .keys .nav { display: none; }
 }
 
 /* Every state still reads without motion: in-flight and failed carry a word,
@@ -499,7 +476,7 @@ const plsAZ = (a, b) =>
 const PLS_SORTS = [
   {
     id: 'match',
-    // Short on screen, complete in the accessible name — the footer has no room
+    // Short on screen, complete in the accessible name — the header stays compact
     // for "Best match" and every neighbour in it is already eliding.
     label: 'Match',
     // Where the query lands in the title, then the shorter title, then A→Z. With
@@ -549,11 +526,12 @@ function plsOrder(rows, sortIdx, q) {
  * @param {string} opts.videoId              diagnostic only; never rendered
  * @param {string} [opts.videoTitle]         the video's name, if known yet
  * @param {(p: any) => Promise<any>} opts.onPick
+ * @param {(p: any) => Promise<any>} opts.onRemove
  * @param {() => void} [opts.onClose]        fires exactly once
  * @param {string} [opts.sort]               initial ordering: match | az | za
  * @param {(id: string) => void} [opts.onSort]  fires when the user changes it
  */
-export function createSheet({ videoId, videoTitle, onPick, onClose, sort, onSort }) {
+export function createSheet({ videoId, videoTitle, onPick, onRemove, onClose, sort, onSort }) {
   const uid = 'pls' + Math.random().toString(36).slice(2, 8);
   const host = document.createElement('pls-save-sheet');
   const shadow = host.attachShadow({ mode: 'closed' });
@@ -614,8 +592,7 @@ export function createSheet({ videoId, videoTitle, onPick, onClose, sort, onSort
   closeBtn.setAttribute('aria-label', 'Close');
   closeBtn.append(plsIcon(PLS_CROSS));
 
-  const head = plsEl('div', 'head');
-  head.append(input, readout, closeBtn);
+  const head = plsEl('header', 'head');
 
   const list = plsEl('div', 'list');
   list.id = uid + '-l';
@@ -632,18 +609,13 @@ export function createSheet({ videoId, videoTitle, onPick, onClose, sort, onSort
   const status = plsEl('div', 'status');
   status.setAttribute('role', 'status');
   status.setAttribute('aria-live', 'polite');
-
-  const keyHint = (glyph, word) => {
-    const s = plsEl('span', 'k');
-    s.append(plsEl('span', 'kg', glyph), plsEl('span', 'kw', word));
-    return s;
-  };
-  const navKeys = plsEl('span', 'nav');
-  navKeys.append(keyHint('↑↓', 'move'), keyHint('⏎', 'save'));
-  navKeys.hidden = true;
-  const keys = plsEl('div', 'keys');
-  keys.setAttribute('aria-hidden', 'true');
-  keys.append(navKeys, keyHint('esc', 'close'));
+  const cancelRemoveBtn = plsEl('button', null, 'Cancel');
+  cancelRemoveBtn.type = 'button';
+  const confirmRemoveBtn = plsEl('button', 'danger', 'Remove');
+  confirmRemoveBtn.type = 'button';
+  const confirmRemove = plsEl('div', 'confirm');
+  confirmRemove.hidden = true;
+  confirmRemove.append(cancelRemoveBtn, confirmRemoveBtn);
 
   // The id is diagnostic, not user-facing: it goes on the host element where
   // console-poking and e2e specs can still reach it, and never on screen.
@@ -659,11 +631,11 @@ export function createSheet({ videoId, videoTitle, onPick, onClose, sort, onSort
   }
   setTitle(videoTitle);
 
-  // Ordering. A plain button, in the natural tab order, that cycles. No chord:
+  // Ordering. A plain button beside the query, in the natural tab order, that cycles. No chord:
   // every modifier+letter that is free on one platform is taken on the other, and
   // Option+letter types a real character into a field people search in — a sort
   // shortcut that eats a keystroke someone meant for the query is a worse bug
-  // than no shortcut. Two Tabs from the field reaches it; a click reaches it; and
+  // than no shortcut. One Tab from the field reaches it; a click reaches it; and
   // typing anywhere puts focus straight back in the query (see the keydown
   // handler), so wandering here never costs the common path a keystroke.
   let sortIdx = Math.max(0, PLS_SORTS.findIndex((s) => s.id === sort));
@@ -683,6 +655,7 @@ export function createSheet({ videoId, videoTitle, onPick, onClose, sort, onSort
   }
 
   function setSort(next) {
+    cancelRemoval(false);
     sortIdx = (next + PLS_SORTS.length) % PLS_SORTS.length;
     paintSort();
     // Every row just moved, so the cursor cannot keep its index — treat it like a
@@ -693,15 +666,18 @@ export function createSheet({ videoId, videoTitle, onPick, onClose, sort, onSort
   }
   paintSort();
 
+  head.append(vid, input, readout, sortBtn, closeBtn);
+
   const foot = plsEl('div', 'foot');
-  foot.append(vid, status, sortBtn, keys);
+  foot.append(status, confirmRemove);
 
   dlg.append(head, list, foot);
   shadow.append(dlg);
   document.documentElement.append(host);
 
   let data = [];                 // {id, title, member}
-  const state = new Map();       // id -> 'adding' | 'added' | 'error'
+  const state = new Map();       // id -> add/remove pending, success, or error
+  let armedRemove = null;
   let dead = false;
   let loaded = false;
   let patience = false;          // load took long enough to stop promising rows
@@ -710,9 +686,8 @@ export function createSheet({ videoId, videoTitle, onPick, onClose, sort, onSort
   let active = 0;
   let lastQ = null;
   // The status line is an aria-live region, so what it currently asserts matters
-  // beyond the pixels. `restingStatus` is the last thing the caller set — the
-  // library summary — and `failureShown` records that a save error has since
-  // overwritten it, so a successful retry can put the truth back.
+  // beyond the pixels. `restingStatus` is the last thing the caller set, and
+  // `failureShown` records that an operation error has overwritten it.
   let restingStatus = '';
   let failureShown = false;
 
@@ -761,11 +736,14 @@ export function createSheet({ videoId, videoTitle, onPick, onClose, sort, onSort
     let said = p.title;
     if (st === 'adding') {
       b.classList.add('busy');
+      b.setAttribute('aria-busy', 'true');
+      b.setAttribute('aria-disabled', 'true');
       gut.append(plsSpinner());
       cell.append(plsEl('span', 'tag', 'Saving'));
       said = p.title + ', saving';
     } else if (st === 'added') {
       b.classList.add('done');
+      b.setAttribute('aria-disabled', 'true');
       gut.append(plsIcon(PLS_CHECK));
       cell.append(plsEl('span', 'tag', 'Saved'));
       said = p.title + ', saved';
@@ -774,16 +752,28 @@ export function createSheet({ videoId, videoTitle, onPick, onClose, sort, onSort
       gut.append(plsIcon(PLS_CROSS));
       cell.append(plsEl('span', 'tag', 'Retry'));
       said = p.title + ', could not be saved. Activate to try again';
-    } else if (known) {
-      // A permanent fact whispers: a muted mark, no word, the title dimmed.
-      // The sentence lives on the accessible name so colour is never alone.
-      // Informative, not actionable — aria-disabled rather than `disabled`, so
-      // it stays readable and arrow-navigable inside the listbox.
-      b.classList.add('mem');
+    } else if (st === 'removing') {
+      b.classList.add('busy');
+      b.setAttribute('aria-busy', 'true');
       b.setAttribute('aria-disabled', 'true');
+      gut.append(plsSpinner());
+      cell.append(plsEl('span', 'tag', 'Removing'));
+      said = p.title + ', removing';
+    } else if (st === 'removed') {
+      b.classList.add('removed');
+      b.setAttribute('aria-disabled', 'true');
+      cell.append(plsEl('span', 'tag', 'Removed'));
+      said = p.title + ', removed';
+    } else if (st === 'remove-error') {
+      b.classList.add('fail');
+      gut.append(plsIcon(PLS_CROSS));
+      cell.append(plsEl('span', 'tag', 'Retry remove'));
+      said = p.title + ', could not be removed. Activate to try again';
+    } else if (known) {
+      b.classList.add('mem');
       gut.append(plsIcon(PLS_CHECK));
       cell.append(plsEl('span', 'tag', 'Already in'));
-      said = p.title + ', already in this playlist';
+      said = p.title + ', already in this playlist. Activate to remove';
     }
     cell.append(gut);
 
@@ -791,7 +781,9 @@ export function createSheet({ videoId, videoTitle, onPick, onClose, sort, onSort
     b.setAttribute('aria-label', said);
     b.title = st === 'error'
       ? p.title + ' — couldn’t be saved. Click to try again.'
-      : p.title;
+      : st === 'remove-error'
+        ? p.title + ' — couldn’t be removed. Click to try again.'
+        : p.title;
     b.addEventListener('click', () => { active = i; paint(false); pick(p); });
     return b;
   }
@@ -859,13 +851,9 @@ export function createSheet({ videoId, videoTitle, onPick, onClose, sort, onSort
     readout.textContent = q && loaded ? `${matches.length} of ${data.length}` : '';
 
     input.setAttribute('aria-expanded', shown.length ? 'true' : 'false');
-    navKeys.hidden = !shown.length;
-    // Open on a row Enter can act on. Members group first and are NOT targets, so
-    // landing the cursor on row 0 meant that for any video already in a playlist,
-    // opening the sheet and pressing Enter did nothing at all — silently. The
-    // arrow keys can still reach those rows; only the resting position skips them,
-    // because that is the one the user acts on without looking.
-    active = fresh ? Math.max(0, shown.findIndex(canPick)) : Math.min(active, Math.max(0, shown.length - 1));
+    // Rest on the first add target. Removal remains reachable with the arrows,
+    // but Enter at rest must not arm a destructive action without navigation.
+    active = fresh ? shown.findIndex(canAdd) : Math.min(active, Math.max(0, shown.length - 1));
     list.scrollTop = keepScroll;
     paint(false);
   }
@@ -889,63 +877,113 @@ export function createSheet({ videoId, videoTitle, onPick, onClose, sort, onSort
 
   function move(delta) {
     if (!shown.length) return;
+    cancelRemoval(false);
     active = Math.max(0, Math.min(shown.length - 1, active + delta));
     list.classList.add('kb');
     paint(true);
   }
 
-  // The single definition of "this row is a save target". `pick()` guards on it
-  // and the resting cursor position honours it, so the two can never disagree
-  // about which row Enter acts on. A failed row IS a target — clicking retries.
   function canPick(p) {
     const cur = state.get(p.id);
-    // Already a member: terminal, not a toggle. YouTube would accept a second
-    // copy of the video without complaint, and this build has no remove path.
-    return p.member !== true && cur !== 'adding' && cur !== 'added';
+    return cur !== 'adding' && cur !== 'added' && cur !== 'removing' && cur !== 'removed';
+  }
+
+  function canAdd(p) {
+    return p.member !== true && canPick(p);
+  }
+
+  function cancelRemoval(focus = true) {
+    if (!armedRemove) return;
+    armedRemove = null;
+    confirmRemove.hidden = true;
+    confirmRemoveBtn.removeAttribute('aria-label');
+    setStatus(restingStatus);
+    if (focus) input.focus();
+  }
+
+  function armRemoval(p) {
+    if (armedRemove === p) return;
+    armedRemove = p;
+    confirmRemove.hidden = false;
+    confirmRemoveBtn.setAttribute('aria-label', `Remove from ${p.title}`);
+    setStatus(`Remove from “${p.title}”?`);
+    cancelRemoveBtn.focus();
+  }
+
+  async function remove(p) {
+    armedRemove = null;
+    confirmRemove.hidden = true;
+    confirmRemoveBtn.removeAttribute('aria-label');
+    input.focus();
+    state.set(p.id, 'removing');
+    setStatus(`Removing from “${p.title}”…`);
+    render();
+    try {
+      await onRemove(p);
+      if (dead) return;
+      p.member = false;
+      state.set(p.id, 'removed');
+      failureShown = false;
+      setStatus(restingStatus);
+      render();
+      const i = shown.findIndex((x) => x.id === p.id);
+      if (i > -1) { active = i; paint(false); }
+    } catch (e) {
+      console.warn('[pls] remove failed', p.id, e);
+      if (dead) return;
+      state.set(p.id, 'remove-error');
+      render();
+      failureShown = true;
+      setStatus(`Couldn’t remove from “${p.title}”. Select it again to retry.`);
+    }
   }
 
   async function pick(p) {
     if (!canPick(p)) return;
+    const cur = state.get(p.id);
+    if (p.member === true) {
+      if (cur === 'remove-error') remove(p);
+      else armRemoval(p);
+      return;
+    }
+    cancelRemoval(false);
     state.set(p.id, 'adding');
     render();
     try {
       await onPick(p);
       if (dead) return;
+      p.member = true;
       state.set(p.id, 'added');
       render();
-      // Clear any earlier failure. The status line is an aria-live region, so
-      // leaving it asserting a save failed after the retry succeeded tells a
-      // screen-reader user the opposite of what happened.
       if (failureShown) {
         failureShown = false;
         setStatus(restingStatus);
       }
       const i = shown.findIndex((x) => x.id === p.id);
-      if (i > -1) nodes[i].classList.add('flash');
+      if (i > -1) { active = i; paint(false); nodes[i].classList.add('flash'); }
     } catch (e) {
       console.warn('[pls] add failed', p.id, e);
       if (dead) return;
       state.set(p.id, 'error');
       render();
-      // Names the problem and the recovery, short enough to survive the clamp;
-      // the title attribute carries the whole sentence either way.
       failureShown = true;
       setStatus(`Couldn’t save to “${p.title}”. Select it again to retry.`);
     }
   }
 
-  input.addEventListener('input', render);
+  input.addEventListener('input', () => { cancelRemoval(false); render(); });
   list.addEventListener('pointermove', () => list.classList.remove('kb'), { passive: true });
   closeBtn.addEventListener('click', () => dlg.close());
   sortBtn.addEventListener('click', () => setSort(sortIdx + 1));
+  cancelRemoveBtn.addEventListener('click', () => cancelRemoval());
+  confirmRemoveBtn.addEventListener('click', () => { if (armedRemove) remove(armedRemove); });
   dlg.addEventListener('keydown', (e) => {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     // An IME owns the arrows and Enter while a candidate window is open: those
     // keys are picking a character, not a playlist. Acting on them would both
-    // break composition for every CJK user AND commit a save to whatever row
-    // the cursor happened to be on — and this build has no remove path, so that
-    // save cannot be undone from here. keyCode 229 is the pre-`isComposing`
-    // spelling, kept for engines that still report it that way.
+    // break composition for every CJK user and commit an unintended write.
+    // keyCode 229 is the pre-`isComposing` spelling, kept for engines that still
+    // report it that way.
     if (e.isComposing || e.keyCode === 229) return;
     // Close on Escape OURSELVES rather than leaning on the UA's close watcher.
     // Stopping key events at the host (see above) also stops them reaching the
@@ -953,13 +991,18 @@ export function createSheet({ videoId, videoTitle, onPick, onClose, sort, onSort
     // broke Escape. Owning the key is the right answer anyway: the sheet's
     // dismissal should not depend on a platform behaviour we are deliberately
     // cutting off. destroy() is idempotent, so a UA close on top of ours is fine.
-    if (e.key === 'Escape') { dlg.close(); e.preventDefault(); return; }
+    if (e.key === 'Escape') {
+      if (armedRemove) cancelRemoval(); else dlg.close();
+      e.preventDefault();
+      return;
+    }
     // A palette's field must never be out of reach. If focus has wandered to one
-    // of the footer/header buttons, a typed character belongs in the query, not
+    // of the header buttons, a typed character belongs in the query, not
     // on the floor — otherwise adding a focusable control would have quietly put
     // a "click back into the box first" step in front of the common path. Space
     // is left alone: it is how a focused button is activated.
     if (e.target !== input && e.key.length === 1 && e.key !== ' ') {
+      cancelRemoval(false);
       input.focus();
       input.value += e.key;
       render();
@@ -973,6 +1016,7 @@ export function createSheet({ videoId, videoTitle, onPick, onClose, sort, onSort
     // `contains`, not `===`: the chip holds an icon and a label, and a key event
     // retargeted from either of them is still the button's.
     if (closeBtn.contains(/** @type {Node} */ (e.target))) return;
+    if (confirmRemove.contains(/** @type {Node} */ (e.target))) return;
     if (sortBtn.contains(/** @type {Node} */ (e.target))) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowRight') setSort(sortIdx + 1);
       else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') setSort(sortIdx - 1);

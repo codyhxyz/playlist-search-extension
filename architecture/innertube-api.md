@@ -29,7 +29,7 @@ POST https://www.youtube.com/youtubei/v1/{path}?prettyPrint=false[&key={apiKey}]
 | `browse` | `{ continuation: <token> }` | Subsequent pages |
 | `playlist/get_add_to_playlist` | `{ videoIds: [videoId] }` | Which playlists already contain this video |
 | `browse/edit_playlist` | `{ playlistId, actions: [{ action: "ACTION_ADD_VIDEO", addedVideoId }] }` | Add |
-| `browse/edit_playlist` | `{ playlistId, actions: [{ action: "ACTION_REMOVE_VIDEO_BY_VIDEO_ID", removedVideoId }] }` | Remove (implemented, not exposed — see `coverage.md` E2) |
+| `browse/edit_playlist` | `{ playlistId, actions: [{ action: "ACTION_REMOVE_VIDEO_BY_VIDEO_ID", removedVideoId }] }` | Remove after explicit UI confirmation (see `coverage.md` E2) |
 
 ### The two-endpoint split is the whole product
 

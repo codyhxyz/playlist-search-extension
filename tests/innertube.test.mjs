@@ -350,7 +350,8 @@ test("scanPlaylists preserves the server's response order", () => {
 });
 
 test("parseMembership reads the live get_add_to_playlist shape", () => {
-  const map = parseMembership(fixture("add-to-playlist-panel.json"));
+  const data = fixture("add-to-playlist-panel.json");
+  const map = parseMembership(data);
   assert.equal(map.get("PLexampleContains001"), true);
   assert.equal(map.get("PLexampleOmitted002"), false);
   assert.equal(map.get("WL"), false);
@@ -358,4 +359,11 @@ test("parseMembership reads the live get_add_to_playlist shape", () => {
   // fixed path — or took the first listItems array it found — reads zero here,
   // which is precisely how "there is no bulk membership endpoint" got written down.
   assert.equal(map.size, 3);
+
+  const remove = data.contents[0].addToPlaylistRenderer.playlists[0]
+    .playlistAddToOptionRenderer.removeFromPlaylistServiceEndpoint.playlistEditEndpoint;
+  assert.deepEqual(remove, {
+    playlistId: "WL",
+    actions: [{ removedVideoId: "jNQXAC9IVRw", action: "ACTION_REMOVE_VIDEO_BY_VIDEO_ID" }],
+  });
 });

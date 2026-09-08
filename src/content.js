@@ -8,6 +8,7 @@
 import { createSheet } from './lib/sheet.js';
 import {
   addVideo,
+  removeVideo,
   fetchAllPlaylists,
   fetchMembership,
   fetchVideoTitle,
@@ -156,6 +157,7 @@ async function plsHandleIntent(videoId, source) {
     sort: plsSortMode,
     onSort: (mode) => { plsSortMode = mode; },
     onPick: (p) => addVideo(p.id, videoId),
+    onRemove: (p) => removeVideo(p.id, videoId),
     onClose: () => {
       if (plsCurrent === sheet) {
         plsCurrent = null;
@@ -176,7 +178,6 @@ async function plsHandleIntent(videoId, source) {
     if (t && !sheet.dead && plsCurrentVideoId === videoId) sheet.setTitle(t);
   });
 
-  const t0 = performance.now();
   try {
     // The full list is the point; membership is an enhancement, so it is allowed to
     // fail on its own without taking the sheet down with it.
@@ -205,15 +206,7 @@ async function plsHandleIntent(videoId, source) {
       member: membership.has(p.id) ? membership.get(p.id) : undefined,
     }));
     sheet.setData(rows);
-
-    const already = rows.filter((p) => p.member === true).length;
-    const unknown = rows.filter((p) => p.member === undefined).length;
-    sheet.setStatus(
-      `${list.length} playlists · ${Math.round(performance.now() - t0)}ms` +
-        (already ? ` · ${already} already saved` : '') +
-        // Say the quiet part out loud rather than letting blank rows imply "not in".
-        (unknown ? ` · ${unknown} YouTube won’t report on` : '')
-    );
+    sheet.setStatus('');
   } catch (e) {
     console.error('[pls] load failed — failing closed, no DOM fallback', e);
     if (sheet.dead) return;

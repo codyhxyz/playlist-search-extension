@@ -17,12 +17,13 @@
  *   3. Membership is TRI-STATE. `false` and `undefined` must render identically —
  *      YouTube reports at most 200 playlists, so on a larger library the tail is
  *      unknowable and an unmarked row must not claim "not in this playlist".
- *   4. "Already in" rows are not save targets. YouTube permits duplicate entries, so a
- *      clickable already-saved row silently adds the video twice.
- *   5. Failure is recoverable and legible: a failed save says so and can be retried.
+ *   4. "Already in" rows remove only through a separate confirmation action; they
+ *      never enter the add path, and double activation cannot remove accidentally.
+ *   5. Add and remove failures are recoverable and legible.
  *   6. Every offered sort orders by what its label claims, membership still groups
- *      first in all of them, and the control is reachable with a real Tab without
- *      taking a single key away from the query field.
+ *      first in all of them, and the header control is one real Tab from the query.
+ *   7. The header names the video without leaking its id, visible key hints are gone,
+ *      and adjacent resting rows remain distinguishable in either colour scheme.
  *
  * Run:   node tests/test-sheet-render.mjs
  * Skip:  set YTPF_SKIP_BROWSER_TESTS=1 (CI without agent-browser available)
@@ -105,6 +106,8 @@ const PLAYLISTS = (() => {
   return out;
 })();
 
+const VIDEO_TITLE = "Never Gonna Give You Up (Official Video) — an intentionally long title that must stay on one line without crowding the playlist search controls";
+
 const PAGE = `<!doctype html>
 <html><head><meta charset="utf-8"><title>save sheet harness</title></head>
 <body>
@@ -156,15 +159,23 @@ const PAGE = `<!doctype html>
   for (const p of PLAYLISTS) if (!("member" in p)) p.member = undefined;
 
   window.__picks = [];
+  window.__removes = [];
   window.__closes = 0;
   const makeSheet = () => createSheet({
     videoId: "dQw4w9WgXcQ",
-    videoTitle: "Never Gonna Give You Up (Official Video)",
+    videoTitle: ${JSON.stringify(VIDEO_TITLE)},
     onPick: (p) => {
       window.__picks.push(p.id);
       // One playlist always fails, so the error path is exercised for real.
       if (p.id === "PLfail000009" && window.__picks.filter((x) => x === p.id).length === 1) {
         return Promise.reject(new Error("simulated 500"));
+      }
+      return new Promise((r) => setTimeout(r, 30));
+    },
+    onRemove: (p) => {
+      window.__removes.push(p.id);
+      if (p.id === "PLmember0002" && window.__removes.filter((x) => x === p.id).length === 1) {
+        return Promise.reject(new Error("simulated remove 500"));
       }
       return new Promise((r) => setTimeout(r, 30));
     },
@@ -213,6 +224,13 @@ const PAGE = `<!doctype html>
       await new Promise((r) => setTimeout(r, 220));
       return { clicked: true, ...this.snapshot() };
     },
+    async clickControl(text) {
+      const button = $$('button').find((b) => b.textContent.trim() === text && !b.closest('[hidden]'));
+      if (!button) return { clicked: false };
+      button.click();
+      await new Promise((r) => setTimeout(r, 220));
+      return { clicked: true, ...this.snapshot() };
+    },
     async clickOutside() {
       const dlg = $('dialog');
       // A modal dialog reports backdrop clicks as its own target, so aim well
@@ -238,6 +256,31 @@ const PAGE = `<!doctype html>
       return { ariaDisabled: r.getAttribute("aria-disabled"), cursor: getComputedStyle(r).cursor };
     },
     heights: () => rows().slice(0, 12).map((r) => Math.round(r.getBoundingClientRect().height)),
+    headerContract() {
+      const head = $('header');
+      const input = $('input');
+      const sort = sortBtn();
+      const title = Array.from(head.children).find((n) => n.title === ${JSON.stringify(VIDEO_TITLE)});
+      const cs = title && getComputedStyle(title);
+      return {
+        titleInHeader: !!title,
+        sortInHeader: sort?.parentElement === head,
+        titleBeforeSearch: !!title && Array.from(head.children).indexOf(title) < Array.from(head.children).indexOf(input),
+        sortAfterSearch: Array.from(head.children).indexOf(sort) > Array.from(head.children).indexOf(input),
+        titleOverflow: cs?.overflow,
+        titleTextOverflow: cs?.textOverflow,
+        titleWhiteSpace: cs?.whiteSpace,
+        titleIsClipped: !!title && title.scrollWidth > title.clientWidth,
+        visibleText: window.__shadow.textContent.replace(/\\s+/g, " "),
+      };
+    },
+    restingRowBackgrounds() {
+      return rows()
+        .filter((r) => r.getAttribute('aria-selected') === 'false' && r.getAttribute('aria-disabled') !== 'true')
+        .slice(0, 2)
+        .map((r) => getComputedStyle(r).backgroundColor);
+    },
+    footerDisplay: () => getComputedStyle($('[role="status"]').parentElement).display,
 
     // ── ordering ──────────────────────────────────────────────────────────
     titles: (n) => rows().slice(0, n == null ? rows().length : n).map(rowTitle),
@@ -261,7 +304,7 @@ const PAGE = `<!doctype html>
           $('dialog').querySelectorAll(
             'input:not([tabindex="-1"]), button:not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])',
           ),
-        ).map((n) => n.getAttribute("aria-label") || n.tagName),
+        ).filter((n) => !n.closest('[hidden]')).map((n) => n.getAttribute("aria-label") || n.tagName),
       };
     },
     async cycleSort(times = 1) {
@@ -321,6 +364,8 @@ const PAGE = `<!doctype html>
         statusText: ($('[role="status"]') || {}).textContent || "",
         listText,
         picks: window.__picks.slice(),
+        removes: window.__removes.slice(),
+        focused: this.focusedInSheet(),
         closes: window.__closes,
         errors: window.__errors.slice(),
       };
@@ -451,6 +496,22 @@ try {
     );
   });
 
+  const header = await run("return window.h.headerContract();");
+  check("puts the video title and sort control in the header beside search", () => {
+    assert.equal(header.titleInHeader, true);
+    assert.equal(header.sortInHeader, true);
+    assert.equal(header.titleBeforeSearch, true);
+    assert.equal(header.sortAfterSearch, true);
+  });
+  check("truncates a long video title on one line", () => {
+    assert.equal(header.titleOverflow, "hidden");
+    assert.equal(header.titleTextOverflow, "ellipsis");
+    assert.equal(header.titleWhiteSpace, "nowrap");
+    assert.equal(header.titleIsClipped, true);
+  });
+  check("has no visible keyboard-hint clutter", () =>
+    assert.doesNotMatch(header.visibleText, /↑↓\s*move|⏎\s*save|esc\s*close/i));
+
   check("keeps the video id reachable for diagnostics, off-screen", () => {
     // Still needed by the console and by tests/e2e/specs/intent-chain.sh, which
     // uses it to prove the worker decoded the protobuf. Attribute, not pixels.
@@ -477,6 +538,13 @@ try {
     assert.equal(loaded.rowCount, 200));
   check("says how many it is not showing rather than truncating silently", () =>
     assert.match(loaded.listText, /60 more/));
+  const restingBackgrounds = await run("return window.h.restingRowBackgrounds();");
+  check("adjacent resting rows have subtly different backgrounds", () => {
+    assert.equal(restingBackgrounds.length, 2);
+    assert.notEqual(restingBackgrounds[0], restingBackgrounds[1]);
+  });
+  const emptyFooter = await run("return { display: window.h.footerDisplay() };");
+  check("the empty footer is hidden", () => assert.equal(emptyFooter.display, "none"));
 
   const focus = await run("return window.h.type('focus');");
   check("typing narrows to matching playlists only", () => {
@@ -506,12 +574,12 @@ try {
     assert.match(ctl.label, /Sort order:/);
     assert.equal(ctl.ariaHidden, false, "the control must not sit inside an aria-hidden subtree");
   });
-  check("the control is in the tab order, after the field it must not compete with", () => {
+  check("the control is in the tab order, immediately after the field", () => {
     assert.ok(ctl.tabIndex >= 0, `tabIndex ${ctl.tabIndex} would take it out of the tab order`);
     assert.equal(ctl.disabled, false);
     const i = ctl.focusOrder.findIndex((n) => /^Sort order/.test(n));
     const q = ctl.focusOrder.findIndex((n) => n === "Search playlists");
-    assert.ok(i > q && q > -1, `sort must follow the query field in tab order: ${ctl.focusOrder}`);
+    assert.equal(i, q + 1, `sort must immediately follow the query field in tab order: ${ctl.focusOrder}`);
     // Rows are <button>s. If they are left in the tab order the sort control is 200
     // presses away, which is the same as unreachable.
     assert.ok(
@@ -611,11 +679,12 @@ try {
   await run("return window.h.type('focus');");
   const cursor = await run("return { i: window.h.activeIndex(), t: window.h.titles() };");
   check("the cursor opens below the member group, on the first real target", () => {
-    // Members are not save targets — pick() returns early on them. Resting the
-    // cursor on row 0 meant that for any video already in a playlist, opening the
-    // sheet and pressing Enter did nothing whatsoever, and said nothing about it.
     assert.equal(cursor.i, 2, `cursor sat on "${cursor.t[cursor.i]}", which cannot be saved to`);
   });
+  const memberOnlyCursor = await run("await window.h.type('Rain & Thunder'); return window.h.activeIndex();");
+  check("a member-only result does not arm destructive action at rest", () =>
+    assert.equal(memberOnlyCursor, -1));
+  await run("return window.h.type('focus');");
 
   // ── 2d. The control costs the query field nothing ─────────────────────────
   const typed = await run("return window.h.sortKey('z');");
@@ -650,9 +719,8 @@ try {
   // almost always overflows — puts an extra stop in the way.
   await run("await window.h.type(''); return window.h.focusInput();");
   await ab("press", "Tab");
-  await ab("press", "Tab");
   const tabbed = await run("return window.h.focusedInSheet();");
-  check("two real Tabs from the query field reach the sort control", () =>
+  check("one real Tab from the query field reaches the sort control", () =>
     assert.match(tabbed?.label ?? "(nothing focused)", /^Sort order/));
   const beforeRealEnter = (await run("return { n: window.__picks.length };")).n;
   await ab("press", "Enter");
@@ -688,11 +756,47 @@ try {
     assert.equal(tri.memberUnknown, "Focus (archive)");
   });
 
-  // ── 4. Already-saved rows are not save targets ────────────────────────────
-  console.log("\nAlready-saved rows are not targets");
+  // ── 4. Removing from a playlist ───────────────────────────────────────────
+  console.log("\nRemoving from a playlist");
   const memberClick = await run("return window.h.clickTitle('Deep Focus Instrumentals');");
-  check("clicking an 'already in' row does not add the video again", () =>
-    assert.deepEqual(memberClick.picks, [], "YouTube allows duplicate entries — this would silently double-add"));
+  check("clicking an 'already in' row arms removal without adding or removing", () => {
+    assert.deepEqual(memberClick.picks, [], "a member row must never enter the add path");
+    assert.deepEqual(memberClick.removes, [], "the row itself must not remove");
+    assert.match(memberClick.statusText, /Remove from “Deep Focus Instrumentals”/);
+    assert.equal(memberClick.focused?.tag, "BUTTON");
+  });
+  const secondMemberClick = await run("return window.h.clickTitle('Deep Focus Instrumentals');");
+  check("double activation cannot bypass confirmation", () =>
+    assert.deepEqual(secondMemberClick.removes, []));
+  const cancel = await run("return window.h.key('Escape');");
+  check("Escape cancels removal before it closes the sheet", () => {
+    assert.equal(cancel.dialogOpen, true);
+    assert.deepEqual(cancel.removes, []);
+  });
+  await run("return window.h.clickTitle('Deep Focus Instrumentals');");
+  await ab("press", "Tab");
+  await ab("press", "Enter");
+  await ab("wait", "100");
+  const removed = await run("return window.h.snapshot();");
+  check("the explicit Remove action is keyboard reachable and calls only onRemove", () => {
+    assert.deepEqual(removed.picks, []);
+    assert.deepEqual(removed.removes, ["PLmember0001"]);
+    assert.match(removed.listText, /Deep Focus Instrumentals\s*Removed/);
+  });
+
+  await run("return window.h.clickTitle('Focus — Rain & Thunder');");
+  const removeFailed = await run("return window.h.clickControl('Remove');");
+  check("a failed removal is legible and retryable", () => {
+    assert.match(removeFailed.listText, /Retry remove/);
+    assert.match(removeFailed.statusText, /Couldn’t remove/);
+    assert.deepEqual(removeFailed.picks, []);
+  });
+  const removeRetried = await run("return window.h.clickTitle('Focus — Rain & Thunder');");
+  check("retrying a failed removal succeeds without entering the add path", () => {
+    assert.equal(removeRetried.removes.filter((id) => id === "PLmember0002").length, 2);
+    assert.deepEqual(removeRetried.picks, []);
+    assert.match(removeRetried.listText, /Focus — Rain & Thunder\s*Removed/);
+  });
 
   // ── 5. Saving ─────────────────────────────────────────────────────────────
   console.log("\nSaving");
@@ -774,10 +878,12 @@ try {
 
   // ── 9. Status line ────────────────────────────────────────────────────────
   console.log("\nStatus");
-  await ab("eval", "window.h.status('260 playlists · 809ms · 2 already saved')");
+  await ab("eval", "window.h.status('Still loading your playlists…')");
   const status = await run("return window.h.snapshot();");
   check("setStatus lands in a polite live region", () =>
-    assert.match(status.statusText, /260 playlists/));
+    assert.match(status.statusText, /Still loading/));
+  const shownFooter = await run("return { display: window.h.footerDisplay() };");
+  check("a useful transient status shows the footer", () => assert.notEqual(shownFooter.display, "none"));
 
   // ── 10. Dismissal ─────────────────────────────────────────────────────────
   console.log("\nDismissal");
