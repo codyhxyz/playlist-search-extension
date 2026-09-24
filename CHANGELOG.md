@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.3
+
+- **The blurred backdrop is back.** 2.0.2 replaced it with YouTube's flat 30% black to match YouTube's styling. Since 2.0.2 also stopped dismissing YouTube's own Save popup, that left YouTube's playlist picker plainly visible behind ours. The 2.0.1 blur (6px dark, 4px light) is restored, so the popup underneath is hidden again.
+
 ## 2.0.2
 
 - **The save sheet now looks like YouTube's own.** Every colour, font size, spacing, corner radius, icon and hover shade was measured off YouTube's native Save sheet and New-playlist dialog, in both themes: "Save to..." header with the video's title under it, an outlined search field, flat full-width rows, YouTube's bookmark icon (filled when the video is already in the playlist), and a full-width "New playlist" button in the footer. It follows YouTube's own dark/light setting rather than the operating system's.

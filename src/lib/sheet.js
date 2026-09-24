@@ -133,9 +133,21 @@ dialog {
 }
 dialog:not([open]) { display: none; }
 @starting-style { dialog[open] { opacity: 0; } }
-/* tp-yt-iron-overlay-backdrop: flat black at 30%, no blur. */
-dialog::backdrop { background: rgba(0,0,0,.3); transition: opacity .15s ease; }
+/* Blurred, deliberately NOT YouTube's flat 30% black. The blur is what hides
+   YouTube's own Save popup, which stays open underneath since 2.0.2 stopped
+   dismissing it with a synthetic Escape. Removing the blur puts two playlist
+   pickers on screen at once — restored in 2.0.3 after exactly that shipped.
+   ::backdrop did not inherit custom properties from its originator until late
+   Chrome, so these rules stay literal on purpose. */
+dialog::backdrop {
+  background: rgba(6,7,10,.58);
+  backdrop-filter: blur(6px) saturate(.9);
+  transition: opacity .18s ease;
+}
 @starting-style { dialog[open]::backdrop { opacity: 0; } }
+@media (prefers-color-scheme: light) { dialog::backdrop {
+  background: rgba(16,18,24,.28); backdrop-filter: blur(4px) saturate(.95);
+} }
 
 svg.i { display: block; width: 24px; height: 24px; fill: currentColor; flex: none; }
 
