@@ -6,10 +6,10 @@ set -euo pipefail
 # Why this exists: `src/` cannot be loaded directly and just work. It declares
 # youtube.com as an OPTIONAL host permission, so a fresh dev install injects
 # nothing until you click through the welcome page — which looks exactly like
-# "the extension is broken". And the repo still carries `overhaul/`, the original
-# spike, which IS directly loadable, is named "pls spike — sidecar save sheet",
-# and predates every fix in src/. Loading that and concluding a bug is unfixed is
-# a trap that has already cost real time.
+# "the extension is broken". (The repo used to carry `overhaul/`, the original
+# spike, which WAS directly loadable, was named "pls spike — sidecar save sheet",
+# and predated every fix in src/. Loading that and concluding a bug is unfixed
+# cost real time; it was deleted in 2.0.4, but old unpacked copies may linger.)
 #
 # This build changes exactly two things from what ships:
 #   1. optional_host_permissions -> mandatory host_permissions, so it works the
@@ -62,6 +62,6 @@ echo "  Load it:  chrome://extensions  ->  Developer mode  ->  Load unpacked  ->
 echo "  It shows up as: YouTube Playlist Search (dev)"
 echo
 echo "  REMOVE any older copy first — especially 'pls spike — sidecar save sheet'"
-echo "  (the overhaul/ folder). That one is the original spike and has none of"
+echo "  (the old overhaul/ folder). That one is the original spike and has none of"
 echo "  the fixes; two builds loaded at once will both answer the Save button."
 echo
