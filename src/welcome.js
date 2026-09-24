@@ -1,4 +1,4 @@
-import { YOUTUBE_ORIGIN, hasYouTubePermission } from "./onboarding-state.js";
+import { YOUTUBE_ORIGIN, hasYouTubePermission, touchesYouTube } from "./onboarding-state.js";
 
 (() => {
 
@@ -68,10 +68,10 @@ import { YOUTUBE_ORIGIN, hasYouTubePermission } from "./onboarding-state.js";
   openBtn.addEventListener("click", onOpenClick);
 
   chrome.permissions.onAdded.addListener((p) => {
-    if (p?.origins?.includes(YOUTUBE_ORIGIN)) render(true);
+    if (touchesYouTube(p)) render(true);
   });
   chrome.permissions.onRemoved.addListener((p) => {
-    if (p?.origins?.includes(YOUTUBE_ORIGIN)) render(false);
+    if (touchesYouTube(p)) render(false);
   });
 
   hasYouTubePermission().then(render);

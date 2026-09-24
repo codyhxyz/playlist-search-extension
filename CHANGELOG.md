@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.4
+
+- **Stores less.** The extension no longer writes onboarding flags or a content-script registration error to `chrome.storage`; nothing read them. Existing copies are deleted on update. The two display preferences (sort order, new-playlist privacy) are now the only thing it stores. The privacy policy is updated to match.
+- **Internal cleanup, no change in behaviour.** Removed duplicated code across the save sheet, the InnerTube client, intent resolution and the service worker: one row-state table instead of six branches, one helper behind save/remove/create, one playlist-edit call behind add/remove, one pagination loop, one reader for request bodies. A membership check past the 200 that YouTube reports now stops at its 12-page limit instead of fetching a 13th page it would throw away.
+- Removed the superseded 2026-08 spike (`overhaul/`) from the repository.
+
 ## 2.0.3
 
 - **The blurred backdrop is back.** 2.0.2 replaced it with YouTube's flat 30% black to match YouTube's styling. Since 2.0.2 also stopped dismissing YouTube's own Save popup, that left YouTube's playlist picker plainly visible behind ours. The 2.0.1 blur (6px dark, 4px light) is restored, so the popup underneath is hidden again.

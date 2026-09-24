@@ -19,10 +19,9 @@
 // it is a liability; MAIN-world observation (intent-hook.js) is the only path that
 // reads these bodies, and the zero-DOM floor below is the real backstop.
 
-import { KEYS, YOUTUBE_ORIGIN, hasYouTubePermission, markSeen } from './onboarding-state.js';
+import { YOUTUBE_ORIGIN, hasYouTubePermission, touchesYouTube } from './onboarding-state.js';
 import { isAddToPlaylist, resolveVideoId, videoIdFromUrl } from './lib/intent.js';
 
-const VERSION = 'pls-2.0.0';
 const DEDUPE_MS = 1500;
 
 /** `${tabId}:${videoId}` -> timestamp, so one click can't open two sheets. */
@@ -80,11 +79,10 @@ async function reconcileContentScripts() {
   if (_registrationInFlight) return _registrationInFlight;
   _registrationInFlight = (async () => {
     try {
-      if (!(await hasYouTubePermission())) {
-        await unregisterAll();
-        return;
-      }
+      // Unregister first either way: revoked access means nothing may stay injected,
+      // and granted access re-registers from a clean slate (see unregisterAll).
       await unregisterAll();
+      if (!(await hasYouTubePermission())) return;
       try {
         await chrome.scripting.registerContentScripts(REGISTRATIONS);
       } catch (err) {
@@ -98,12 +96,8 @@ async function reconcileContentScripts() {
           'click the reload icon. Underlying error: ' +
           (err && err.message ? err.message : String(err));
         console.error(message);
-        await chrome.storage.local
-          .set({ pls_registration_error: { message, ts: Date.now() } })
-          .catch(() => {});
         throw err;
       }
-      await markSeen(KEYS.permissionGranted);
     } finally {
       _registrationInFlight = null;
       void refreshActionAffordance();
@@ -345,11 +339,17 @@ chrome.commands?.onCommand.addListener(async (command) => {
 chrome.runtime.onInstalled.addListener(async (details) => {
   // Pre-2.0 versions could persist modal HTML and playlist identifiers in these
   // records. Purge them even when YouTube access is revoked.
-  await chrome.storage.local.remove(['ytpfDiagnostics', 'ytpf_registration_error']);
+  // The last three were written by earlier versions but never read by anything.
+  await chrome.storage.local.remove([
+    'ytpfDiagnostics',
+    'ytpf_registration_error',
+    'onboarding.installWelcomeShown',
+    'onboarding.permissionGranted',
+    'pls_registration_error',
+  ]);
   installMenu();
   if (details.reason === 'install') {
     await openOrFocusWelcome();
-    await markSeen(KEYS.installWelcomeShown);
   }
   await reconcileContentScripts().catch(() => {});
 });
@@ -360,14 +360,12 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 chrome.permissions.onAdded.addListener((permissions) => {
-  if (permissions?.origins?.includes(YOUTUBE_ORIGIN)) void reconcileContentScripts().catch(() => {});
+  if (touchesYouTube(permissions)) void reconcileContentScripts().catch(() => {});
 });
 
 chrome.permissions.onRemoved.addListener((permissions) => {
-  if (permissions?.origins?.includes(YOUTUBE_ORIGIN)) {
-    void unregisterAll()
-      .then(() => chrome.storage.local.set({ [KEYS.permissionGranted]: false }))
-      .then(() => refreshActionAffordance());
+  if (touchesYouTube(permissions)) {
+    void unregisterAll().then(() => refreshActionAffordance());
   }
 });
 
@@ -378,4 +376,4 @@ chrome.tabs.onRemoved.addListener((id) => {
 void reconcileContentScripts().catch(() => {});
 void refreshActionAffordance();
 
-console.log(`[pls][sw] ${VERSION} — listeners registered (hook + toolbar + context menu + hotkey)`);
+console.log(`[pls][sw] v${chrome.runtime.getManifest().version} — listeners registered (hook + toolbar + context menu + hotkey)`);

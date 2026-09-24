@@ -29,11 +29,18 @@
 //     which field path the id came from, so drift shows up in the log instead of as a
 //     silently wrong id.
 
+/** The one spelling of "11 chars of base64url"; every id regex below is built from it. */
+const ID11 = '[A-Za-z0-9_-]{11}';
+
 /** A YouTube video id: exactly 11 chars of base64url. */
-export const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
+export const VIDEO_ID = new RegExp(`^${ID11}$`);
 
 /** YouTube's own semantic name for the add-to-playlist panel. Our gate. */
 export const ADD_TO_PLAYLIST_PANEL = 'PAadd_to_playlist';
+
+// Id-bearing URL paths: /shorts/<id>, /embed/<id>, /live/<id>, /v/<id>; and youtu.be/<id>.
+const PATH_ID = new RegExp(`^/(?:shorts|embed|live|v)/(${ID11})`);
+const SHORT_PATH_ID = new RegExp(`^/(${ID11})`);
 
 // ───────────────────────── videoId from a URL ─────────────────────────
 // The zero-DOM floor depends only on this: URL structure, nothing else.
@@ -48,10 +55,10 @@ export function videoIdFromUrl(url) {
     const u = new URL(url);
     const v = u.searchParams.get('v');
     if (v && VIDEO_ID.test(v)) return v;
-    const m = u.pathname.match(/^\/(?:shorts|embed|live|v)\/([A-Za-z0-9_-]{11})/);
+    const m = u.pathname.match(PATH_ID);
     if (m) return m[1];
     if (/(^|\.)youtu\.be$/.test(u.hostname)) {
-      const s = u.pathname.match(/^\/([A-Za-z0-9_-]{11})/);
+      const s = u.pathname.match(SHORT_PATH_ID);
       if (s) return s[1];
     }
   } catch {}
@@ -83,6 +90,28 @@ export function b64ToBytes(s) {
 }
 
 /**
+ * Read one base-128 varint starting at `i`. Returns the value and the index just past
+ * it, or null if it runs past 5 bytes (shift > 28) — which in a 32-bit reader means
+ * we are not looking at a real protobuf, and protoFields stops walking. A varint cut
+ * off by the end of the buffer is returned as-is; the caller's bounds checks catch it.
+ * @param {Uint8Array} bytes
+ * @param {number} i
+ * @returns {{value: number, next: number} | null}
+ */
+function readVarint(bytes, i) {
+  let value = 0;
+  let shift = 0;
+  while (i < bytes.length) {
+    const b = bytes[i++];
+    value |= (b & 0x7f) << shift;
+    shift += 7;
+    if (!(b & 0x80)) break;
+    if (shift > 28) return null;
+  }
+  return { value, next: i };
+}
+
+/**
  * Minimal protobuf reader: yields every length-delimited field with its field path.
  * We only care about wire type 2; varints/fixed widths are skipped, not decoded.
  * @param {Uint8Array} bytes
@@ -93,28 +122,18 @@ export function* protoFields(bytes, prefix = '', depth = 0) {
   if (depth > 6) return;
   let i = 0;
   while (i < bytes.length) {
-    let tag = 0;
-    let shift = 0;
-    while (i < bytes.length) {
-      const b = bytes[i++];
-      tag |= (b & 0x7f) << shift;
-      shift += 7;
-      if (!(b & 0x80)) break;
-      if (shift > 28) return;
-    }
+    const t = readVarint(bytes, i);
+    if (!t) return;
+    const tag = t.value;
+    i = t.next;
     const field = tag >>> 3;
     const wire = tag & 7;
     const path = prefix + field;
     if (wire === 2) {
-      let len = 0;
-      let sh = 0;
-      while (i < bytes.length) {
-        const b = bytes[i++];
-        len |= (b & 0x7f) << sh;
-        sh += 7;
-        if (!(b & 0x80)) break;
-        if (sh > 28) return;
-      }
+      const l = readVarint(bytes, i);
+      if (!l) return;
+      const len = l.value;
+      i = l.next;
       if (len < 0 || i + len > bytes.length) return;
       const sub = bytes.subarray(i, i + len);
       i += len;
@@ -136,6 +155,16 @@ function ascii(b) {
 }
 
 /**
+ * Could this field be a nested base64 blob worth decoding? Continuation tokens embed
+ * another (possibly percent-encoded) token; anything under 12 bytes is too short to be one.
+ * @param {Uint8Array} bytes  the field's raw bytes
+ * @param {string} s          the same bytes as a latin-1 string
+ */
+function looksLikeNestedB64(bytes, s) {
+  return bytes.length >= 12 && /^[A-Za-z0-9_%+/=-]+$/.test(s);
+}
+
+/**
  * Collect every plausible videoId inside a base64 protobuf blob, with its field path,
  * following one level of nested base64 (continuation tokens embed another token).
  * @param {string} b64
@@ -154,7 +183,7 @@ export function idsInBlob(b64, depth = 1) {
   for (const f of protoFields(bytes)) {
     const s = ascii(f.bytes);
     if (VIDEO_ID.test(s)) found.push({ id: s, path: f.path });
-    else if (depth > 0 && f.bytes.length >= 12 && /^[A-Za-z0-9_%+/=-]+$/.test(s)) {
+    else if (depth > 0 && looksLikeNestedB64(f.bytes, s)) {
       for (const inner of idsInBlob(s, depth - 1)) found.push({ id: inner.id, path: f.path + '/' + inner.path });
     }
   }
@@ -180,7 +209,7 @@ export function blobMentions(b64, needle, depth = 1) {
   if (depth <= 0) return false;
   for (const f of protoFields(bytes)) {
     const s = ascii(f.bytes);
-    if (f.bytes.length >= 12 && /^[A-Za-z0-9_%+/=-]+$/.test(s) && blobMentions(s, needle, depth - 1)) return true;
+    if (looksLikeNestedB64(f.bytes, s) && blobMentions(s, needle, depth - 1)) return true;
   }
   return false;
 }

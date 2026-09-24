@@ -7,22 +7,15 @@
 
 export const YOUTUBE_ORIGIN = 'https://www.youtube.com/*';
 
-export const KEYS = Object.freeze({
-  installWelcomeShown: 'onboarding.installWelcomeShown',
-  permissionGranted: 'onboarding.permissionGranted',
-});
-
-/** @param {string} key */
-export async function hasSeen(key) {
-  const { [key]: value } = await chrome.storage.local.get(key);
-  return value === true;
-}
-
-/** @param {string} key */
-export async function markSeen(key) {
-  await chrome.storage.local.set({ [key]: true });
-}
-
 export async function hasYouTubePermission() {
   return chrome.permissions.contains({ origins: [YOUTUBE_ORIGIN] });
+}
+
+/**
+ * Does a permissions delta (from `chrome.permissions.onAdded` / `onRemoved`) include
+ * youtube.com? The events carry whatever changed, so every listener checks for ours.
+ * @param {{ origins?: string[] } | undefined} permissions
+ */
+export function touchesYouTube(permissions) {
+  return permissions?.origins?.includes(YOUTUBE_ORIGIN) ?? false;
 }

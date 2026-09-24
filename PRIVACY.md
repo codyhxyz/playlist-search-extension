@@ -60,16 +60,14 @@ The extension declares three Chrome API permissions in `manifest.json`:
 
 - `scripting` — to dynamically register its content scripts once you grant the YouTube host permission.
 - `contextMenus` — to add a single "Save to playlist" item to the right-click menu on YouTube video links.
-- `storage` — used for non-personal operational state only:
-  - **Onboarding flags** (`chrome.storage.local`): whether you've seen the welcome page and whether host permission is currently granted.
-  - **Registration errors** (`chrome.storage.local`): an error message and timestamp when Chrome cannot register the packaged content script. This contains no playlist, search, page, or authentication data.
+- `storage` — used for two display preferences only, and to delete records that earlier versions stored (onboarding flags and a content-script registration error), which this version no longer writes:
   - **Display preferences** (`chrome.storage.local`): the sort order you last chose (for example "A → Z") and the privacy setting new playlists are created with (Private, Unlisted or Public). These are two fixed words, not playlist names, IDs or searches, and they never leave your browser.
 
 Runtime diagnostics are written only to the local DevTools console. They are not persisted, copied into the YouTube page DOM, or transmitted.
 
 Site access is `https://www.youtube.com/*` only, and is requested as an **optional host permission** that you grant explicitly via the welcome page's "Grant access" button. The extension does not run on any other site, subdomain, or scheme.
 
-A small service worker (`background.js`) registers or unregisters the content scripts, works out which video a save request refers to, opens the welcome page on first install, and stores the non-personal operational state listed above. It never sees your playlists, your cookies, or your authentication headers — those exist only inside the YouTube tab. There is no popup.
+A small service worker (`background.js`) registers or unregisters the content scripts, works out which video a save request refers to, and opens the welcome page on first install. It stores nothing. It never sees your playlists, your cookies, or your authentication headers — those exist only inside the YouTube tab. There is no popup.
 
 The extension does **not** request the `webRequest` permission. An earlier design used it to observe save requests; it was removed because Chrome cannot read the bodies of these particular requests at all, making the permission useless while still widening what the extension could see.
 

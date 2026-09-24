@@ -80,6 +80,18 @@
     }
   }
 
+  // One body-shape dispatch for both transports: returns a thunk that yields the bytes
+  // WITHOUT consuming `src` (none of these shapes is single-use, unlike a stream), or
+  // null for a shape we cannot read safely (streams, FormData, URLSearchParams, null).
+  // Only called inside the callers' try blocks, so a throw here still cannot escape.
+  function bytesOf(src) {
+    if (typeof src === 'string') return () => new TextEncoder().encode(src).buffer;
+    if (src instanceof ArrayBuffer) return () => src;
+    if (ArrayBuffer.isView(src)) return () => src.buffer.slice(src.byteOffset, src.byteOffset + src.byteLength);
+    if (typeof Blob !== 'undefined' && src instanceof Blob) return () => src.arrayBuffer();
+    return null;
+  }
+
   // --- fetch. YouTube calls fetch(new Request(...)) today; the other forms are here
   // so a client refactor degrades to "still works" rather than "silently stops".
   const origFetch = window.fetch;
@@ -92,18 +104,13 @@
       const url = typeof input === 'string' ? input : input && input.url;
       if (typeof url === 'string' && WATCHED.test(url)) {
         const src = init && init.body;
+        const getBytes = bytesOf(src);
         if (src == null && input && typeof input.clone === 'function') {
           // Request object: clone tees the body stream, leaving the original intact.
           const c = input.clone();
           readAndReport(url, () => c.arrayBuffer());
-        } else if (typeof src === 'string') {
-          readAndReport(url, () => new TextEncoder().encode(src).buffer);
-        } else if (src instanceof ArrayBuffer) {
-          readAndReport(url, () => src);
-        } else if (ArrayBuffer.isView(src)) {
-          readAndReport(url, () => src.buffer.slice(src.byteOffset, src.byteOffset + src.byteLength));
-        } else if (typeof Blob !== 'undefined' && src instanceof Blob) {
-          readAndReport(url, () => src.arrayBuffer());
+        } else if (getBytes) {
+          readAndReport(url, getBytes);
         } else if (src && !warnedUnreadable) {
           warnedUnreadable = true;
           console.warn(
@@ -130,12 +137,9 @@
   XMLHttpRequest.prototype.send = function (body) {
     try {
       if (typeof this.__plsUrl === 'string' && WATCHED.test(this.__plsUrl)) {
-        const url = this.__plsUrl;
-        if (typeof body === 'string') readAndReport(url, () => new TextEncoder().encode(body).buffer);
-        else if (body instanceof ArrayBuffer) readAndReport(url, () => body);
-        else if (ArrayBuffer.isView(body))
-          readAndReport(url, () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength));
-        else if (typeof Blob !== 'undefined' && body instanceof Blob) readAndReport(url, () => body.arrayBuffer());
+        // Unreadable shapes are ignored silently here — XHR is insurance, not a live path.
+        const getBytes = bytesOf(body);
+        if (getBytes) readAndReport(this.__plsUrl, getBytes);
       }
     } catch {}
     return xhrSend.apply(this, arguments);

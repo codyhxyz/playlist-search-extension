@@ -31,17 +31,20 @@
 //           Removing, Removed, Retry — use the same state slot: a word in the
 //           row's subtitle beside YouTube's bookmark (filled when the video is
 //           in the playlist), so colour is never the sole carrier.
-// ORDER     Three orderings, and every one of them is a *claim* the sheet can
-//           back: "Best match" (where the query lands in the title, then the
-//           shorter title, then A→Z — and plain A→Z when the field is empty,
-//           because with no query there is nothing to match on and a mystery
-//           order is not a claim), "A → Z", "Z → A". There is deliberately no
-//           "Recently updated": no playlist entry YouTube returns carries a
+// ORDER     Four orderings. "Recent" is the default, and it is the one that is
+//           not yet a claim the sheet can back: it is simply the order YouTube's
+//           response arrived in. No playlist entry YouTube returns carries a
 //           date, in either renderer generation — see the note in innertube.js,
-//           which records exactly what was checked. Membership is not one of the
-//           orderings. It is a partition — `member === true` rows are not save
-//           targets — so they group above the targets in every mode, and the
-//           cursor opens on the first row that Enter can actually act on.
+//           which records exactly what was checked — so whether that order
+//           really means recency is unverified (see the note at PLS_SORTS). The
+//           other three are claims: "Best match" (where the query lands in the
+//           title, then the shorter title, then A→Z — and plain A→Z when the
+//           field is empty, because with no query there is nothing to match on
+//           and a mystery order is not a claim), "A → Z", "Z → A". Membership is
+//           not one of the orderings. It is a partition — `member === true`
+//           rows are not save targets — so they group above the targets in
+//           every mode, and the cursor opens on the first row that Enter can
+//           actually act on.
 // VIEWPORT  "Save to..." · video title · field + count + order · list ·
 //           "New playlist". The raw video id remains diagnostic-only on the host
 //           element. The status footer exists only for a useful transient
@@ -176,7 +179,6 @@ svg.i { display: block; width: 24px; height: 24px; fill: currentColor; flex: non
   border-radius: 20px; cursor: pointer; color: var(--fg);
 }
 .x:hover { background-color: var(--line); }
-.x:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
 
 /* textarea-shape, outlined, label hidden: 8px radius, 1px rest border, 2px
    primary border on focus with the padding pulled in so nothing shifts. */
@@ -212,9 +214,12 @@ input::placeholder { color: var(--fg-2); }
 .confirm .danger { background-color: var(--filled); color: var(--on-filled); } /* filled */
 .confirm .danger:hover { background-color: var(--filled-hov); }
 .undo { color: var(--cta); }
+/* Focus rings: pills wear theirs outside; the full-bleed list items and the
+   round close button wear theirs inset, where nothing clips it. */
 :is(.sort, .priv, .confirm button, .undo, .new-btn, .create-btn):focus-visible {
   outline: 2px solid var(--fg); outline-offset: 2px;
 }
+:is(.x, .row, .create-action):focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
 /* Held to one width so cycling cannot move the query field. */
 .sl { min-width: 40px; text-align: left; }
 
@@ -246,7 +251,6 @@ input::placeholder { color: var(--fg-2); }
 /* Full-bleed and square, exactly as YouTube's own rows hover. The keyboard
    cursor wears the same wash — it is the same "you are here". */
 :where(.list:not(.kb)) .row:not(.busy,.removed):hover, .row.on { background-color: var(--hov); }
-.row:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
 
 /* yt-collection-thumbnail-view-model, small: a 56x32 thumbnail with the
    playlist's own coloured card peeking out 6px above it, both 4px-rounded and
@@ -307,7 +311,6 @@ input::placeholder { color: var(--fg-2); }
   font: 400 14px/20px var(--sans); color: var(--fg); cursor: pointer;
 }
 .create-action:hover { background-color: var(--hov); }
-.create-action:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
 .create-action.busy { opacity: .6; cursor: default; }
 
 /* The create control plus the privacy it will create with, side by side. The
@@ -363,6 +366,15 @@ function plsEl(tag, cls, text) {
   if (text != null) n.textContent = text;
   return n;
 }
+
+// Set an attribute, or drop it when there is nothing to say — an empty title
+// still draws an empty tooltip, and an empty aria-label names a control nothing.
+function plsAttr(n, name, v) {
+  if (v) n.setAttribute(name, v); else n.removeAttribute(name);
+}
+
+// "1 video", "2 videos". English-only, like every other string in the sheet.
+const plsPlural = (n, word) => word + (n === 1 ? '' : 's');
 
 function plsSvg(cls) {
   const svg = document.createElementNS(PLS_SVGNS, 'svg');
@@ -512,15 +524,16 @@ function plsWriteTitle(node, p, toks) {
 
 // ── Ordering ────────────────────────────────────────────────────────────────
 // Each mode has to be defensible if a user asks "why is this row above that
-// one?", so each one is computed from data we actually hold — the title, and
-// what they typed. Nothing here consults a date, because YouTube does not give
-// us one: neither `gridPlaylistRenderer` nor `lockupViewModel` carries a
-// timestamp, an "updated" string, or a publish time on a playlist entry, in the
-// real captures or the rendered page. `innertube.js` records the evidence.
-// The server's own response order IS available (`fetchAllPlaylists` preserves
-// it) but its meaning is not established — labelling it "Recently updated"
-// would be inventing a claim, which is the one failure mode this codebase has
-// already shipped once and written down.
+// one?", so each one is computed from data we actually hold — the title, what
+// they typed, or the order YouTube sent. Nothing here consults a date, because
+// YouTube does not give us one: neither `gridPlaylistRenderer` nor
+// `lockupViewModel` carries a timestamp, an "updated" string, or a publish time
+// on a playlist entry, in the real captures or the rendered page. `innertube.js`
+// records the evidence. "Recent" is therefore the server's response order
+// (`fetchAllPlaylists` preserves it), labelled for what it is — "YouTube order"
+// in its accessible name — and never "Recently updated", which would be
+// inventing a claim: the one failure mode this codebase has already shipped
+// once and written down.
 
 // Ties break on title, then id, so the order is total and a re-render can never
 // shuffle two rows that compare equal.
@@ -555,6 +568,38 @@ const PLS_PRIVACY = [
   { id: 'UNLISTED', label: 'Unlisted' },
   { id: 'PUBLIC', label: 'Public' },
 ];
+
+// What each row state looks like and says. Keyed by the session state in the
+// sheet's `state` map, plus `member` (a playlist YouTube says the video is
+// already in) and `idle` (a plain target) for rows the user has not touched.
+//   cls        extra class on the row
+//   busy       aria-busy: a write is in flight
+//   disabled   aria-disabled: nothing to do here until it settles
+//   mark       the trailing bookmark path; null draws the spinner instead
+//   word       the state word in the subtitle, so colour is never the sole carrier
+//   say        what the accessible name adds after the title
+//   sayCount   whether the accessible name repeats privacy and count. The removal
+//              states do not, and that is kept exactly as shipped.
+//   tip        what the tooltip adds after the title, for the failures only
+const PLS_ROW_STATES = {
+  adding: { cls: 'busy', busy: true, disabled: true, mark: null, word: 'Saving', say: ', saving', sayCount: true },
+  added: { cls: 'done', mark: PLS_BOOKMARKED, word: 'Saved', say: ', saved. Activate to remove', sayCount: true },
+  error: {
+    cls: 'fail', mark: PLS_BOOKMARK, word: 'Retry', say: ', could not be saved. Activate to try again', sayCount: true,
+    tip: ' — couldn’t be saved. Click to try again.',
+  },
+  removing: { cls: 'busy', busy: true, disabled: true, mark: null, word: 'Removing', say: ', removing', sayCount: false },
+  removed: { cls: 'removed', disabled: true, mark: PLS_BOOKMARK, word: 'Removed', say: ', removed', sayCount: false },
+  'remove-error': {
+    cls: 'fail', mark: PLS_BOOKMARKED, word: 'Retry remove', say: ', could not be removed. Activate to try again',
+    sayCount: false, tip: ' — couldn’t be removed. Click to try again.',
+  },
+  member: {
+    cls: 'mem', mark: PLS_BOOKMARKED, word: 'Already in', say: ', already in this playlist. Activate to remove',
+    sayCount: true,
+  },
+  idle: { cls: '', mark: PLS_BOOKMARK, word: '', say: '', sayCount: true },
+};
 
 const plsSortAt = (i) => PLS_SORTS[((i % PLS_SORTS.length) + PLS_SORTS.length) % PLS_SORTS.length];
 
@@ -707,7 +752,7 @@ export function createSheet({
   function setTitle(t) {
     const name = t == null ? '' : String(t).trim();
     vid.textContent = name;
-    if (name) vid.title = name; else vid.removeAttribute('title');
+    plsAttr(vid, 'title', name);
   }
   setTitle(videoTitle);
 
@@ -790,10 +835,11 @@ export function createSheet({
   let active = 0;
   let lastQ = null;
   // The status line is an aria-live region, so what it currently asserts matters
-  // beyond the pixels. `restingStatus` is the last thing the caller set, and
-  // `failureShown` records that an operation error has overwritten it.
+  // beyond the pixels. `restingStatus` is the last thing the caller set: an
+  // operation's own line (a failure, "Saved to …", a removal prompt) may
+  // overwrite it for a while; a successful create or removal, or a cancelled
+  // removal, puts it back.
   let restingStatus = '';
-  let failureShown = false;
 
   const patienceTimer = setTimeout(() => { patience = true; render(); }, PLS_LOAD_PATIENCE);
 
@@ -802,7 +848,15 @@ export function createSheet({
     const s = t == null ? '' : String(t);
     status.textContent = s;
     // The line clamps at two; the tooltip never truncates.
-    if (s) status.title = s; else status.removeAttribute('title');
+    plsAttr(status, 'title', s);
+  }
+
+  // The placeholder names the job until the library lands, then names the
+  // tool: "what is this" first, "what do I do" once there is something to do.
+  function setPlaceholder() {
+    input.placeholder = data.length
+      ? `Search ${data.length} ${plsPlural(data.length, 'playlist')}`
+      : 'Save to playlist';
   }
 
   function destroy() {
@@ -840,74 +894,31 @@ export function createSheet({
     b.append(plsThumb(p), txt, gut);
     // Only what YouTube actually reported is drawn; absent means absent.
     const n = typeof p.count === 'number' ? p.count : null;
+    const vids = n == null ? null : `${n.toLocaleString()} ${plsPlural(n, 'video')}`;
     const priv = typeof p.privacy === 'string' ? p.privacy : null;
-    const sayCount = (priv ? `, ${priv}` : '') +
-      (n == null ? '' : `, ${n.toLocaleString()} video${n === 1 ? '' : 's'}`);
+    const sayCount = (priv ? `, ${priv}` : '') + (vids ? `, ${vids}` : '');
+
+    // A session state wins; otherwise the row is a member or a plain target.
+    const rs = PLS_ROW_STATES[st] ?? PLS_ROW_STATES[known ? 'member' : 'idle'];
+    if (rs.cls) b.classList.add(rs.cls);
+    if (rs.busy) b.setAttribute('aria-busy', 'true');
+    if (rs.disabled) b.setAttribute('aria-disabled', 'true');
+
     // The subtitle reads as YouTube's does — privacy first — then the count, then
     // the state word, so every state is written down rather than left to the icon.
-    const sub = (word) => {
-      const line = plsEl('span', 'sub');
-      const facts = [];
-      if (priv) facts.push(plsEl('span', 'pv', priv));
-      if (n != null) facts.push(plsEl('span', 'cnt', `${n.toLocaleString()} video${n === 1 ? '' : 's'}`));
-      for (const f of facts) f.setAttribute('aria-hidden', 'true');
-      if (word) facts.push(plsEl('span', 'tag', word));
-      facts.forEach((f, k) => { if (k) line.append(plsEl('span', 'sep')); line.append(f); });
-      if (line.firstChild) txt.append(line);
-    };
-
-    let said = p.title + sayCount;
-    let word = '';
-    let mark = PLS_BOOKMARK;
-    if (st === 'adding') {
-      b.classList.add('busy');
-      b.setAttribute('aria-busy', 'true');
-      b.setAttribute('aria-disabled', 'true');
-      mark = null;
-      word = 'Saving';
-      said = p.title + sayCount + ', saving';
-    } else if (st === 'added') {
-      b.classList.add('done');
-      mark = PLS_BOOKMARKED;
-      word = 'Saved';
-      said = p.title + sayCount + ', saved. Activate to remove';
-    } else if (st === 'error') {
-      b.classList.add('fail');
-      word = 'Retry';
-      said = p.title + sayCount + ', could not be saved. Activate to try again';
-    } else if (st === 'removing') {
-      b.classList.add('busy');
-      b.setAttribute('aria-busy', 'true');
-      b.setAttribute('aria-disabled', 'true');
-      mark = null;
-      word = 'Removing';
-      said = p.title + ', removing';
-    } else if (st === 'removed') {
-      b.classList.add('removed');
-      b.setAttribute('aria-disabled', 'true');
-      word = 'Removed';
-      said = p.title + ', removed';
-    } else if (st === 'remove-error') {
-      b.classList.add('fail');
-      mark = PLS_BOOKMARKED;
-      word = 'Retry remove';
-      said = p.title + ', could not be removed. Activate to try again';
-    } else if (known) {
-      b.classList.add('mem');
-      mark = PLS_BOOKMARKED;
-      word = 'Already in';
-      said = p.title + sayCount + ', already in this playlist. Activate to remove';
-    }
-    sub(word);
-    gut.append(mark ? plsIcon(mark) : plsSpinner());
+    const line = plsEl('span', 'sub');
+    const facts = [];
+    if (priv) facts.push(plsEl('span', 'pv', priv));
+    if (vids) facts.push(plsEl('span', 'cnt', vids));
+    for (const f of facts) f.setAttribute('aria-hidden', 'true');
+    if (rs.word) facts.push(plsEl('span', 'tag', rs.word));
+    facts.forEach((f, k) => { if (k) line.append(plsEl('span', 'sep')); line.append(f); });
+    if (line.firstChild) txt.append(line);
+    gut.append(rs.mark ? plsIcon(rs.mark) : plsSpinner());
 
     // Names the row for assistive tech and, via the tooltip, un-truncates it.
-    b.setAttribute('aria-label', said);
-    b.title = st === 'error'
-      ? p.title + ' — couldn’t be saved. Click to try again.'
-      : st === 'remove-error'
-        ? p.title + ' — couldn’t be removed. Click to try again.'
-        : p.title;
+    b.setAttribute('aria-label', p.title + (rs.sayCount ? sayCount : '') + rs.say);
+    b.title = p.title + (rs.tip ?? '');
     b.addEventListener('click', (e) => {
       if ((e.metaKey || e.ctrlKey) && onOpen) { onOpen(p); return; }
       active = i; paint(false); pick(p);
@@ -1091,8 +1102,36 @@ export function createSheet({
   function showUndo(p) {
     undoable = p;
     undoBtn.hidden = !p || !onRemove;
-    if (p) undoBtn.setAttribute('aria-label', `Undo save to ${p.title}`);
-    else undoBtn.removeAttribute('aria-label');
+    plsAttr(undoBtn, 'aria-label', p ? `Undo save to ${p.title}` : '');
+  }
+
+  // Put the cursor on a playlist that just changed, wherever the re-render
+  // moved it to.
+  function focusRow(id) {
+    const i = shown.findIndex((x) => x.id === id);
+    if (i > -1) { active = i; paint(false); }
+  }
+
+  // The tail every optimistic write shares. `work` is the request; `done` applies
+  // its result to the model and returns the status line and the playlist to put
+  // the cursor on; `failed` marks the failure on the model and returns the line
+  // that says so. A sheet closed mid-request is left alone. `done` runs inside the
+  // try on purpose: if applying a result throws, that is reported as a failure
+  // rather than escaping as an unhandled rejection.
+  async function settle(label, key, work, done, failed) {
+    try {
+      const r = await work();
+      if (dead) return;
+      const { say, focus } = done(r);
+      setStatus(say);
+      render();
+      focusRow(focus);
+    } catch (e) {
+      console.warn(`[pls] ${label} failed`, key, e);
+      if (dead) return;
+      setStatus(failed(e));
+      render();
+    }
   }
 
   let creating = false;
@@ -1105,11 +1144,9 @@ export function createSheet({
     creating = true;
     setStatus(`Creating “${name}”…`);
     render();
-    try {
-      // Read once: the chip can be cycled while the request is in flight.
-      const chosen = PLS_PRIVACY[privIdx];
-      const created = await onCreate(name, chosen.id);
-      if (dead) return;
+    // Read once: the chip can be cycled while the request is in flight.
+    const chosen = PLS_PRIVACY[privIdx];
+    await settle('create playlist', name, () => onCreate(name, chosen.id), (created) => {
       const newPl = {
         id: created.id, title: created.title || name, member: Boolean(videoId),
         privacy: chosen.label,
@@ -1118,36 +1155,27 @@ export function createSheet({
       if (videoId) state.set(newPl.id, 'added');
       creating = false;
       input.value = '';
-      input.placeholder = data.length
-        ? `Search ${data.length} playlist${data.length === 1 ? '' : 's'}`
-        : 'Save to playlist';
-      failureShown = false;
-      setStatus(restingStatus);
-      render();
-      const i = shown.findIndex((x) => x.id === newPl.id);
-      if (i > -1) {
-        active = i;
-        paint(false);
-      }
-    } catch (e) {
-      console.warn('[pls] create playlist failed', name, e);
-      if (dead) return;
+      setPlaceholder();
+      return { say: restingStatus, focus: newPl.id };
+    }, (e) => {
       creating = false;
-      failureShown = true;
-      setStatus(`Couldn’t create “${name}”.${why(e)} Try again.`);
-      render();
-    }
+      return `Couldn’t create “${name}”.${why(e)} Try again.`;
+    });
   }
 
   function canAdd(p) {
     return p.member !== true && canPick(p);
   }
 
-  function cancelRemoval(focus = true) {
-    if (!armedRemove) return;
+  function disarm() {
     armedRemove = null;
     confirmRemove.hidden = true;
     confirmRemoveBtn.removeAttribute('aria-label');
+  }
+
+  function cancelRemoval(focus = true) {
+    if (!armedRemove) return;
+    disarm();
     setStatus(restingStatus);
     if (focus) input.focus();
   }
@@ -1164,31 +1192,19 @@ export function createSheet({
 
   async function remove(p) {
     showUndo(null);
-    armedRemove = null;
-    confirmRemove.hidden = true;
-    confirmRemoveBtn.removeAttribute('aria-label');
+    disarm();
     input.focus();
     state.set(p.id, 'removing');
     setStatus(`Removing from “${p.title}”…`);
     render();
-    try {
-      await onRemove(p);
-      if (dead) return;
+    await settle('remove', p.id, () => onRemove(p), () => {
       p.member = false;
       state.set(p.id, 'removed');
-      failureShown = false;
-      setStatus(restingStatus);
-      render();
-      const i = shown.findIndex((x) => x.id === p.id);
-      if (i > -1) { active = i; paint(false); }
-    } catch (e) {
-      console.warn('[pls] remove failed', p.id, e);
-      if (dead) return;
+      return { say: restingStatus, focus: p.id };
+    }, (e) => {
       state.set(p.id, 'remove-error');
-      render();
-      failureShown = true;
-      setStatus(`Couldn’t remove from “${p.title}”.${why(e)} Select it again to retry.`);
-    }
+      return `Couldn’t remove from “${p.title}”.${why(e)} Select it again to retry.`;
+    });
   }
 
   async function pick(p) {
@@ -1203,25 +1219,15 @@ export function createSheet({
     showUndo(null);
     state.set(p.id, 'adding');
     render();
-    try {
-      await onPick(p);
-      if (dead) return;
+    await settle('add', p.id, () => onPick(p), () => {
       p.member = true;
       state.set(p.id, 'added');
-      render();
-      failureShown = false;
-      setStatus(`Saved to “${p.title}”.`);
       showUndo(p);
-      const i = shown.findIndex((x) => x.id === p.id);
-      if (i > -1) { active = i; paint(false); }
-    } catch (e) {
-      console.warn('[pls] add failed', p.id, e);
-      if (dead) return;
+      return { say: `Saved to “${p.title}”.`, focus: p.id };
+    }, (e) => {
       state.set(p.id, 'error');
-      render();
-      failureShown = true;
-      setStatus(`Couldn’t save to “${p.title}”.${why(e)} Select it again to retry.`);
-    }
+      return `Couldn’t save to “${p.title}”.${why(e)} Select it again to retry.`;
+    });
   }
 
   input.addEventListener('input', () => { cancelRemoval(false); render(); });
@@ -1282,13 +1288,9 @@ export function createSheet({
     // and Space are its activation and the arrows are its own business — running
     // both would have made Enter on the close button save a playlist instead of
     // closing, because preventDefault here suppresses the button's click.
-    // `contains`, not `===`: the chip holds an icon and a label, and a key event
-    // retargeted from either of them is still the button's.
-    if (closeBtn.contains(/** @type {Node} */ (e.target))) return;
-    if (confirmRemove.contains(/** @type {Node} */ (e.target))) return;
-    if (undoBtn.contains(/** @type {Node} */ (e.target))) return;
-    if (newBtn?.contains(/** @type {Node} */ (e.target))) return;
-    if (/** @type {Element} */ (e.target)?.closest?.('.create-btn, .create-action, .priv')) return;
+    // `contains` / `closest`, not `===`: the chips hold an icon and a label, and a
+    // key event retargeted from either of them is still the button's.
+    // The sort button is the one exception that wants arrows: they cycle it.
     if (sortBtn.contains(/** @type {Node} */ (e.target))) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowRight') setSort(sortIdx + 1);
       else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') setSort(sortIdx - 1);
@@ -1296,6 +1298,12 @@ export function createSheet({
       e.preventDefault();
       return;
     }
+    // Every other button keeps its own keys — except the rows, which are buttons
+    // too but ARE the list: a clicked row keeps focus, and the arrows and Enter
+    // must still drive the cursor from there. The field, the list itself (it
+    // takes focus when its background is clicked) and the dialog fall through.
+    const btn = /** @type {Element} */ (e.target)?.closest?.('button');
+    if (btn && !btn.classList.contains('row')) return;
     // Home/End belong to the text caret while focus is in the query field —
     // the ARIA combobox pattern reserves them for exactly that — and Shift+
     // anything is a selection gesture, not navigation.
@@ -1336,18 +1344,13 @@ export function createSheet({
     setStatus: (t) => {
       if (dead) return;
       restingStatus = t == null ? '' : String(t);
-      failureShown = false;
       setStatus(restingStatus);
     },
     setData: (rows) => {
       data = rows;
       loaded = true;
       clearTimeout(patienceTimer);
-      // The placeholder names the job until the library lands, then names the
-      // tool: "what is this" first, "what do I do" once there is something to do.
-      input.placeholder = rows.length
-        ? `Search ${rows.length} playlist${rows.length === 1 ? '' : 's'}`
-        : 'Save to playlist';
+      setPlaceholder();
       render();
     },
     // Late membership, e.g. from the >200 tail walk. Only ever upgrades what the

@@ -457,27 +457,24 @@ export function scanPlaylists(node, out) {
     const v = node[k];
     if (typeof v !== 'string' || !PLS_ID_RE.test(v)) continue;
     const id = v.replace(/^VL/, '');
-    const title = plsFirstTitle(node) || null;
-    const count = plsEntryCount(node);
-    const privacy = plsEntryPrivacy(node);
-    const { thumb, stack } = plsEntryImage(node);
-    const prev = out.get(id);
-    if (!prev) {
-      /** @type {PlsScanEntry} */
-      const entry = { title };
-      if (count !== undefined) entry.count = count;
-      if (privacy) entry.privacy = privacy;
-      if (thumb) entry.thumb = thumb;
-      if (stack) entry.stack = stack;
-      out.set(id, entry);
-    } else {
-      // Mutate in place: Map.set on an existing key would keep the order anyway,
-      // but this makes "first mention fixes the position" obvious.
-      if (title && !prev.title) prev.title = title;
-      if (count !== undefined && prev.count === undefined) prev.count = count;
-      if (privacy && !prev.privacy) prev.privacy = privacy;
-      if (thumb && !prev.thumb) prev.thumb = thumb;
-      if (stack && !prev.stack) prev.stack = stack;
+    // Absent is `undefined` (or null for title; '' is folded into null), never a
+    // stand-in value — so `!= null` below means "this mention actually carried it",
+    // and a count of 0 is kept.
+    const found = {
+      title: plsFirstTitle(node) || null,
+      count: plsEntryCount(node),
+      privacy: plsEntryPrivacy(node),
+      ...plsEntryImage(node),
+    };
+    // The first mention creates the entry, which fixes its position in the Map;
+    // later mentions mutate it in place. It starts as `{title: null}` so `title` is
+    // always the first key, and every other key exists only once a value is found.
+    let prev = out.get(id);
+    if (!prev) out.set(id, (prev = { title: null }));
+    /** @type {Record<string, unknown>} */
+    const entry = prev;
+    for (const [k, v] of Object.entries(found)) {
+      if (v != null && entry[k] == null) entry[k] = v;
     }
     break;
   }
@@ -502,6 +499,37 @@ export function scanKey(node, key, out) {
     scanKey(v, key, out);
   }
   return out;
+}
+
+/**
+ * The continuation token of a browse page, or undefined on the last page.
+ * @param {any} data
+ * @returns {string | undefined}
+ */
+function plsNextToken(data) {
+  return scanKey(data, 'continuationCommand', []).find((c) => c?.token)?.token;
+}
+
+/**
+ * Walk a paged `browse`: yields `{data, token, page}` for the first response and
+ * each continuation, `page` counting from 1 and `token` being that page's own
+ * continuation (undefined on the last page). Stops by itself after the page with no
+ * token or after `maxPages` pages. The next page is only fetched when the consumer
+ * asks for it, so a consumer that breaks/returns out of its `for await` stops the
+ * walk without another request.
+ * @param {object} body  the first request, e.g. `{browseId}`
+ * @param {number} maxPages
+ * @param {{signal?: AbortSignal}} [opts]  passed to every plsPost
+ * @returns {AsyncGenerator<{data: any, token: string | undefined, page: number}>}
+ */
+async function* plsBrowsePages(body, maxPages, opts) {
+  let data = await plsPost('browse', body, opts);
+  for (let page = 1; ; page++) {
+    const token = plsNextToken(data);
+    yield { data, token, page };
+    if (!token || page >= maxPages) return;
+    data = await plsPost('browse', { continuation: token }, opts);
+  }
 }
 
 // ─────────────── the calls ───────────────
@@ -555,22 +583,21 @@ export function scanKey(node, key, out) {
 export async function fetchAllPlaylists() {
   /** @type {Map<string, PlsScanEntry>} */
   const found = new Map();
-  let data = await plsPost('browse', { browseId: 'FEplaylist_aggregation' });
-  let page = 0;
-  while (true) {
-    page++;
+  const maxPages = 60;
+  let pages = 0;
+  for await (const { data, token, page } of plsBrowsePages({ browseId: 'FEplaylist_aggregation' }, maxPages)) {
+    pages = page;
     const before = found.size;
     scanPlaylists(data, found);
-    const token = scanKey(data, 'continuationCommand', []).find((c) => c?.token)?.token;
     console.log(
       `[pls] page ${page}: +${found.size - before} new, running total ${found.size}, continuation ${token ? 'yes' : 'NO'}`
     );
-    if (!token || page >= 60) break;
-    if (found.size === before && page > 1) {
+    // Only worth saying when there WOULD have been a next page; on the last one the
+    // generator stops by itself.
+    if (token && page < maxPages && page > 1 && found.size === before) {
       console.warn('[pls] a page added nothing new — stopping');
       break;
     }
-    data = await plsPost('browse', { continuation: token });
   }
   const list = [...found].map(([id, { title, ...rest }]) => {
     /** @type {PlsPlaylist} */
@@ -578,7 +605,7 @@ export async function fetchAllPlaylists() {
     return row;
   });
   const counted = list.filter((p) => p.count !== undefined).length;
-  console.log(`[pls] fetched ${list.length} playlists in ${page} pages (${counted} with a video count)`);
+  console.log(`[pls] fetched ${list.length} playlists in ${pages} pages (${counted} with a video count)`);
   return list;
 }
 
@@ -592,19 +619,15 @@ export async function fetchAllPlaylists() {
  * @returns {Map<string, boolean>}
  */
 export function parseMembership(data) {
+  /** @type {Map<string, boolean>} */
   const map = new Map();
-  const walk = (n) => {
-    if (!n || typeof n !== 'object') return;
-    if (Array.isArray(n)) return n.forEach(walk);
-    const o = n.playlistAddToOptionRenderer;
+  for (const o of scanKey(data, 'playlistAddToOptionRenderer', [])) {
     if (o && typeof o.playlistId === 'string' && typeof o.containsSelectedVideos === 'string') {
       // With a single videoId the enum is only ever ALL or NONE. SOME is the
       // multi-video case, which we never ask for; treat it as "contains" anyway.
       map.set(o.playlistId, o.containsSelectedVideos !== 'NONE');
     }
-    Object.values(n).forEach(walk);
-  };
-  walk(data);
+  }
   return map;
 }
 
@@ -671,16 +694,17 @@ export async function fetchMembership(videoId) {
 export async function resolveMembershipTail(videoId, playlistIds, onResolved, concurrency = 6, signal) {
   const map = new Map();
   const queue = [...playlistIds];
-  const opts = { signal };
-  /** @returns {Promise<boolean | undefined>} undefined = aborted, unknown */
+  /**
+   * At most 12 pages; a playlist longer than that is reported as not containing it.
+   * Returning out of the `for await` is what stops the walk before its next fetch.
+   * @param {string} playlistId
+   * @returns {Promise<boolean | undefined>} undefined = aborted, unknown
+   */
   const contains = async (playlistId) => {
-    let data = await plsPost('browse', { browseId: 'VL' + playlistId }, opts);
-    for (let page = 0; page < 12; page++) {
+    for await (const { data, token } of plsBrowsePages({ browseId: 'VL' + playlistId }, 12, { signal })) {
       if (scanKey(data, 'videoId', []).includes(videoId)) return true;
-      const token = scanKey(data, 'continuationCommand', []).find((c) => c?.token)?.token;
       if (!token) return false;
       if (signal?.aborted) return undefined;
-      data = await plsPost('browse', { continuation: token }, opts);
     }
     return false;
   };
@@ -741,19 +765,30 @@ export async function fetchVideoTitle(videoId) {
 }
 
 /**
+ * One `edit_playlist` call carrying a single action. addVideo and removeVideo differ
+ * only in the action object and the word they log, so both go through here.
+ *
+ * A response WITHOUT a `status` field is let through (and logged as such); only an
+ * explicit non-success status is treated as a rejection.
+ * @param {string} playlistId
+ * @param {Record<string, string>} action
+ * @param {'add' | 'remove'} verb  for the log line and the error message only
+ */
+async function plsEditPlaylist(playlistId, action, verb) {
+  const data = await plsPost('browse/edit_playlist', { playlistId, actions: [action] });
+  console.log(`[pls] ${verb}`, playlistId, '->', data?.status ?? '(no status field)');
+  if (data?.status && data.status !== 'STATUS_SUCCEEDED') {
+    throw plsError('rejected', `edit_playlist ${verb} ${playlistId} -> ${data.status}`);
+  }
+  return data;
+}
+
+/**
  * @param {string} playlistId
  * @param {string} videoId
  */
 export async function addVideo(playlistId, videoId) {
-  const data = await plsPost('browse/edit_playlist', {
-    playlistId,
-    actions: [{ action: 'ACTION_ADD_VIDEO', addedVideoId: videoId }],
-  });
-  console.log('[pls] add', playlistId, '->', data?.status ?? '(no status field)');
-  if (data?.status && data.status !== 'STATUS_SUCCEEDED') {
-    throw plsError('rejected', `edit_playlist add ${playlistId} -> ${data.status}`);
-  }
-  return data;
+  return plsEditPlaylist(playlistId, { action: 'ACTION_ADD_VIDEO', addedVideoId: videoId }, 'add');
 }
 
 /**
@@ -764,15 +799,11 @@ export async function addVideo(playlistId, videoId) {
  * @param {string} videoId
  */
 export async function removeVideo(playlistId, videoId) {
-  const data = await plsPost('browse/edit_playlist', {
+  return plsEditPlaylist(
     playlistId,
-    actions: [{ action: 'ACTION_REMOVE_VIDEO_BY_VIDEO_ID', removedVideoId: videoId }],
-  });
-  console.log('[pls] remove', playlistId, '->', data?.status ?? '(no status field)');
-  if (data?.status && data.status !== 'STATUS_SUCCEEDED') {
-    throw plsError('rejected', `edit_playlist remove ${playlistId} -> ${data.status}`);
-  }
-  return data;
+    { action: 'ACTION_REMOVE_VIDEO_BY_VIDEO_ID', removedVideoId: videoId },
+    'remove'
+  );
 }
 
 /**

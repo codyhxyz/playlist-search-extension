@@ -17,8 +17,10 @@ import {
   resolveMembershipTail,
 } from './lib/innertube.js';
 
+// The open sheet and the video it was opened for, or null. One slot, so the two can
+// never disagree about which sheet is current.
+/** @type {{ sheet: ReturnType<typeof createSheet>, videoId: string } | null} */
 let plsCurrent = null;
-let plsCurrentVideoId = null;
 // Two display preferences, remembered across page loads: the sort order and the
 // privacy new playlists are created with. They are the ONLY things this extension
 // persists about how you use it — two enum strings, no playlist ids, titles or
@@ -48,10 +50,6 @@ function plsSavePref(key, value) {
     console.warn('[pls] could not save preference', key, e);
   }
 }
-
-// Aborts the >200 membership walk for whichever sheet is open. That walk can be a
-// hundred-odd requests; a closed sheet must not keep spending them.
-let plsTailAbort = null;
 
 // ─────────────── L1 relay: MAIN world -> service worker ───────────────
 // intent-hook.js cannot use chrome.* APIs, and the service worker cannot see page
@@ -116,22 +114,17 @@ function plsOnNavigation(reason) {
   // the channel it started on and silently lists the wrong library.
   resetConfigCache();
   if (plsCurrent) {
-    console.log(`[pls] ${reason}: destroying the sheet for ${plsCurrentVideoId}, it belonged to the previous page`);
+    console.log(`[pls] ${reason}: destroying the sheet for ${plsCurrent.videoId}, it belonged to the previous page`);
     plsDestroyCurrent();
   }
 }
 
+// destroy() fires the sheet's onClose exactly once, and onClose is what aborts the
+// membership tail — so tearing the sheet down is the whole job.
 function plsDestroyCurrent() {
-  plsTailAbort?.abort();
-  plsTailAbort = null;
-  const s = plsCurrent;
+  const s = plsCurrent?.sheet;
   plsCurrent = null;
-  plsCurrentVideoId = null;
   if (!s) return;
-  if (typeof s.destroy !== 'function') {
-    console.warn('[pls] the sheet has no destroy() — the old sheet may linger on screen');
-    return;
-  }
   try {
     s.destroy();
   } catch (e) {
@@ -146,26 +139,28 @@ async function plsHandleIntent(videoId, source) {
   // Catch up on any navigation whose event we missed before deciding what's stale.
   plsOnNavigation('late-detected navigation');
 
-  if (plsCurrent?.dead) {
+  if (plsCurrent?.sheet.dead) {
     // The sheet closed without telling us. Don't let a corpse block every future save.
     console.warn('[pls] previous sheet was dead but still referenced — clearing');
     plsDestroyCurrent();
   }
   if (plsCurrent) {
-    if (plsCurrentVideoId === videoId) {
+    if (plsCurrent.videoId === videoId) {
       console.log('[pls] sheet already open for this video, ignoring duplicate intent', { videoId, source });
       return;
     }
     // A different video: replace rather than silently drop. Dropping is how a user
     // ends up clicking Save and getting nothing.
-    console.log(`[pls] intent for ${videoId} while ${plsCurrentVideoId} was open — replacing`);
+    console.log(`[pls] intent for ${videoId} while ${plsCurrent.videoId} was open — replacing`);
     plsDestroyCurrent();
   }
 
   console.log(`[pls] SAVE_INTENT ${videoId} via ${source}`);
 
+  // Aborts the >200 membership walk below. That walk can be a hundred-odd requests;
+  // a closed sheet must not keep spending them, so onClose — which every teardown
+  // path reaches, including plsDestroyCurrent() — aborts it.
   const tail = new AbortController();
-  plsTailAbort = tail;
   const sheet = createSheet({
     videoId,
     sort: plsPrefs.sort,
@@ -181,16 +176,11 @@ async function plsHandleIntent(videoId, source) {
     ),
     onClose: () => {
       tail.abort();
-      if (plsTailAbort === tail) plsTailAbort = null;
-      if (plsCurrent === sheet) {
-        plsCurrent = null;
-        plsCurrentVideoId = null;
-      }
+      if (plsCurrent?.sheet === sheet) plsCurrent = null;
       console.log('[pls] sheet destroyed, no state retained');
     },
   });
-  plsCurrent = sheet;
-  plsCurrentVideoId = videoId;
+  plsCurrent = { sheet, videoId };
   sheet.setStatus('Loading your playlists…');
 
   // Deliberately NOT awaited and not part of the Promise.all below: the sheet is
@@ -198,7 +188,7 @@ async function plsHandleIntent(videoId, source) {
   // arrives, and if it never does the header simply stays empty — a label is not
   // worth delaying the thing the user actually came to do.
   fetchVideoTitle(videoId).then((t) => {
-    if (t && !sheet.dead && plsCurrentVideoId === videoId) sheet.setTitle(t);
+    if (t && !sheet.dead && plsCurrent?.sheet === sheet) sheet.setTitle(t);
   });
 
   try {
