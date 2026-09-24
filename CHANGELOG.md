@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.5
+
+- **Only playlists you can save to.** Liked videos, mixes, and playlists you saved from other channels no longer appear in the save sheet — adding to them could never work. With 200 or fewer playlists this follows YouTube's own picker exactly; past 200, playlists showing another channel's name are hidden, and only when YouTube's labels are in English, so no real playlist is hidden in other languages.
+- **Recent is YouTube's order.** The default sort now follows the order YouTube's own Save picker returns, Watch Later included. **Changed:** in Recent, playlists the video is already in are no longer pulled to the top — they sit where YouTube puts them. The other sorts still group them first, and the cursor still starts on the first playlist you can add to.
+- **Opens instantly.** The sheet shows your last playlist list immediately and refreshes it in the background. The list is kept in memory only (`chrome.storage.session`, cleared when the browser quits), per account; membership is always fetched fresh, and a save made before it arrives never adds a video twice. The privacy policy is updated.
+- **Find a playlist.** Alt+P anywhere on YouTube, or the toolbar icon / Alt+S on a YouTube page with no video, opens the same sheet to search every playlist you have; Enter opens it, Ctrl/⌘+Enter opens it in a new tab. **Changed:** the toolbar icon on a YouTube page without a video used to open the welcome page.
+- **Undo walks back.** Undo now covers every save and removal in the sheet, newest first, and names what it will undo. Ctrl/⌘+Z undoes too while the search field is empty.
+- A save moves that playlist to the front of the cached order until the next refresh brings YouTube's real order (an assumption about YouTube's ranking, not verified live).
+- Tests no longer gate building, publishing or CI. Not verified against live YouTube.
+
 ## 2.0.4
 
 - **Stores less.** The extension no longer writes onboarding flags or a content-script registration error to `chrome.storage`; nothing read them. Existing copies are deleted on update. The two display preferences (sort order, new-playlist privacy) are now the only thing it stores. The privacy policy is updated to match.

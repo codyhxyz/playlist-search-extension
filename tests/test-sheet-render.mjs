@@ -182,8 +182,9 @@ const PAGE = `<!doctype html>
   window.__createPrivacy = [];
   window.__privacy = [];
   window.__opens = [];
+  window.__openTabs = [];
   window.__closes = 0;
-  const makeSheet = () => createSheet({
+  const makeSheet = (over = {}) => createSheet({
     videoId: "dQw4w9WgXcQ",
     videoTitle: ${JSON.stringify(VIDEO_TITLE)},
     onPick: (p) => {
@@ -210,7 +211,8 @@ const PAGE = `<!doctype html>
     },
     onClose: () => { window.__closes++; },
     onPrivacy: (v) => { window.__privacy.push(v); },
-    onOpen: (p) => { window.__opens.push(p.id); },
+    onOpen: (p, newTab) => { window.__opens.push(p.id); window.__openTabs.push(newTab); },
+    ...over,
   });
   window.__sheet = makeSheet();
 
@@ -444,6 +446,18 @@ const PAGE = `<!doctype html>
       return { notCancelled, picks: window.__picks.slice(), open: !!$('dialog').open };
     },
     focusInput() { $('input').focus(); return this.focusedInSheet(); },
+    undoLabel() { const b = $('button.undo'); return b && !b.hidden ? b.getAttribute("aria-label") : null; },
+    heading: () => ($('h2') || {}).textContent || null,
+    placeholder: () => $('input').placeholder,
+    marks: () => rows().reduce((n, r) => n + r.querySelectorAll('.gut svg').length, 0),
+    hasNewButton: () => !!$('button.new-btn'),
+    async modKey(k, mods = { ctrlKey: true }) {
+      const input = $('input');
+      input.focus();
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, composed: true, cancelable: true, ...mods }));
+      await new Promise((r) => setTimeout(r, 220));
+      return this.snapshot();
+    },
     snapshot() {
       const dlg = $('dialog');
       const active = $('input') ? $('input').getAttribute("aria-activedescendant") : null;
@@ -480,10 +494,17 @@ const PAGE = `<!doctype html>
   };
   // Dismissal is tested twice (Escape, then outside-click) and each needs a live
   // sheet, so the harness can build a fresh one on demand.
-  window.__reopen = (rows = PLAYLISTS) => {
-    window.__sheet = makeSheet();
+  window.__reopen = (rows = PLAYLISTS, over) => {
+    window.__sheet = makeSheet(over);
     window.__sheet.setData(rows);
   };
+  // Three rows with the member in the MIDDLE, so Recent (keep the given order)
+  // can be told apart from a member-first sort.
+  window.__three = () => [
+    { id: "PLalpha", title: "Alpha", member: false },
+    { id: "PLbravo", title: "Bravo", member: true },
+    { id: "PLcharlie", title: "Charlie", member: undefined },
+  ];
   window.__booted = true;
 </script>
 </body></html>`;
@@ -735,7 +756,7 @@ try {
   // rendered list can be pinned title-for-title with no row cap in the way.
   const MEMBERS = ["Deep Focus Instrumentals", "Focus — Rain & Thunder"];
   const recentRest = await run("return window.h.titles();");
-  check("Recently added is the default and preserves YouTube's supplied order", () => {
+  check("Recent is the default and preserves the order it was handed", () => {
     assert.match(ctl.label, /recently added/i);
     assert.deepEqual(recentRest, PLAYLISTS.slice(0, 200).map((p) => p.title));
   });
@@ -979,8 +1000,10 @@ try {
     assert.match(undone.listText, /Filler playlist 20\s*Removed/);
     assert.equal(undone.picks.length, beforeSave + 1, "undo must not add");
   });
-  const undoGone = await run("return { visible: window.h.undoVisible() };");
-  check("Undo disappears once used", () => assert.equal(undoGone.visible, false));
+  const undoNext = await run("return { label: window.h.undoLabel() };");
+  check("Undo then offers the action before it, not nothing", () =>
+    // The removal of "Focus — Rain & Thunder" in section 4 is the previous write.
+    assert.equal(undoNext.label, "Undo removal from Focus — Rain & Thunder"));
   await run("return window.h.clickTitle('Filler playlist 21');");
   const reclick = await run("return window.h.clickTitle('Filler playlist 21');");
   check("clicking a just-saved row again never adds twice — it arms removal", () => {
@@ -1171,6 +1194,114 @@ try {
   const firstCreate = await run("return window.h.type('My First');");
   check("…and typing a name there offers to create it", () =>
     assert.match(firstCreate.listText, /Create playlist “My First”/));
+  await run("return window.h.key('Escape');");
+
+  // ── Recent is YouTube's order ─────────────────────────────────────────────
+  console.log("\nRecent keeps the given order");
+  const yt = await run("window.__reopen(window.__three()); await new Promise((r) => setTimeout(r, 60)); return { t: window.h.titles(), at: window.h.activeTitle() };");
+  check("Recent keeps the order it was handed, members included (no member-first grouping)", () =>
+    assert.deepEqual(yt.t, ["Alpha", "Bravo", "Charlie"]));
+  check("…and the cursor still rests on the first row Enter can add to", () =>
+    assert.equal(yt.at, "Alpha"));
+  const ytOther = await run("await window.h.cycleSort(); return window.h.titles();");
+  check("the other sorts still group members first", () =>
+    assert.deepEqual(ytOther, ["Bravo", "Alpha", "Charlie"]));
+  // Back to Recent, so the rest of the file sees the default order.
+  await run("await window.h.cycleSort(3); return null;");
+  await run("return window.h.key('Escape');");
+
+  // ── Undo is a stack ───────────────────────────────────────────────────────
+  console.log("\nUndo walks back");
+  await run("window.__reopen(window.__three()); return null;");
+  const u0 = (await run("return { n: window.__removes.length, p: window.__picks.length };"));
+  await run("return window.h.clickTitle('Alpha');");
+  await run("return window.h.clickTitle('Charlie');");
+  const u1 = await run("return { label: window.h.undoLabel() };");
+  check("Undo names the newest save", () => assert.equal(u1.label, "Undo save to Charlie"));
+  const typedZ = await run("await window.h.type('x'); return window.h.modKey('z');");
+  check("Ctrl+Z with text in the field is the field's own undo, not a write", () =>
+    assert.equal(typedZ.removes.length, u0.n));
+  await run("return window.h.type('');");
+  const z1 = await run("return window.h.modKey('z');");
+  check("Ctrl+Z with an empty field undoes the newest save", () => {
+    assert.deepEqual(z1.removes.slice(u0.n), ["PLcharlie"]);
+    assert.match(z1.statusText, /Removed from “Charlie”/);
+  });
+  const u2 = await run("return { label: window.h.undoLabel() };");
+  check("…and exposes the save before it", () => assert.equal(u2.label, "Undo save to Alpha"));
+  const z2 = await run("return window.h.clickControl('Undo');");
+  check("Undo reverses that one too", () => assert.deepEqual(z2.removes.slice(u0.n), ["PLcharlie", "PLalpha"]));
+  const u3 = await run("return { label: window.h.undoLabel() };");
+  check("Undo is gone once the stack is empty", () => assert.equal(u3.label, null));
+  await run("return window.h.clickTitle('Bravo');");
+  await run("return window.h.clickControl('Remove');");
+  const rmv = await run("return { label: window.h.undoLabel() };");
+  check("a confirmed removal is undoable", () =>
+    assert.equal(rmv.label, "Undo removal from Bravo"));
+  const back = await run("return window.h.clickControl('Undo');");
+  check("undoing a removal saves the video back, without a second confirmation", () => {
+    assert.deepEqual(back.picks.slice(u0.p), ["PLalpha", "PLcharlie", "PLbravo"]);
+    assert.match(back.statusText, /Saved to “Bravo” again/);
+  });
+
+  // ── A refreshed list keeps what the user did ──────────────────────────────
+  console.log("\nBackground refresh");
+  await run("window.__sheet.setData(window.__three()); await new Promise((r) => setTimeout(r, 60)); return null;");
+  const kept = await run("return { bravo: window.h.rowText('Bravo'), alpha: window.h.rowText('Alpha') };");
+  check("a stale list cannot erase a save made in this sheet", () => assert.match(kept.bravo, /Saved/));
+  check("…nor resurrect membership this sheet removed", () => assert.match(kept.alpha, /Removed/));
+  const noDouble = await run("return window.h.clickTitle('Bravo');");
+  check("a refreshed saved row still arms removal instead of adding twice", () => {
+    assert.equal(noDouble.picks.slice(u0.p).length, 3);
+    assert.match(noDouble.statusText, /Remove from “Bravo”/);
+  });
+  await run("return window.h.key('Escape');");
+
+  // ── Already there after all ───────────────────────────────────────────────
+  console.log("\nAlready in, found late");
+  const lateHit = await run(`
+    window.__reopen(window.__three(), { onPick: () => Promise.resolve({ already: true }) });
+    await new Promise((r) => setTimeout(r, 60));
+    const s = await window.h.clickTitle('Charlie');
+    return { ...s, row: window.h.rowText('Charlie'), undo: window.h.undoLabel() };`);
+  check("a save the data layer reports as already there says so", () => {
+    assert.match(lateHit.statusText, /Already in “Charlie”/);
+    assert.match(lateHit.row, /Already in/);
+  });
+  check("…and offers no Undo, because nothing was written", () => assert.equal(lateHit.undo, null));
+  await run("return window.h.key('Escape');");
+
+  // ── Finder: the same sheet, opening instead of saving ─────────────────────
+  console.log("\nFinder");
+  const fnd = await run(`
+    window.__reopen(window.__three(), { onPick: undefined, videoId: undefined, videoTitle: undefined });
+    await new Promise((r) => setTimeout(r, 60));
+    return { heading: window.h.heading(), ph: window.h.placeholder(), marks: window.h.marks(),
+      newBtn: window.h.hasNewButton(), t: window.h.titles(), text: window.h.snapshot().listText };`);
+  check("the finder names its job", () => {
+    assert.equal(fnd.heading, "Your playlists");
+    assert.equal(fnd.ph, "Search 3 playlists");
+  });
+  check("the finder draws no save state: no bookmarks, no 'Already in', no New playlist", () => {
+    assert.equal(fnd.marks, 0);
+    assert.doesNotMatch(fnd.text, /Already in/);
+    assert.equal(fnd.newBtn, false);
+  });
+  const o0 = (await run("return { n: window.__opens.length, p: window.__picks.length };"));
+  const fEnter = await run("await window.h.type('char'); await window.h.key('Enter'); return { opens: window.__opens.slice(), tabs: window.__openTabs.slice(), picks: window.__picks.length };");
+  check("Enter in the finder opens the playlist in this tab", () => {
+    assert.deepEqual(fEnter.opens.slice(o0.n), ["PLcharlie"]);
+    assert.equal(fEnter.tabs[fEnter.tabs.length - 1], false);
+    assert.equal(fEnter.picks, o0.p, "the finder never saves");
+  });
+  const fCtrl = await run("await window.h.ctrlEnter(); return { tabs: window.__openTabs.slice() };");
+  check("Ctrl/⌘+Enter in the finder opens it in a new tab", () =>
+    assert.equal(fCtrl.tabs[fCtrl.tabs.length - 1], true));
+  const fClick = await run("await window.h.clickTitle('Charlie'); return { opens: window.__opens.slice(), picks: window.__picks.length };");
+  check("clicking a finder row opens it and never saves", () => {
+    assert.equal(fClick.opens[fClick.opens.length - 1], "PLcharlie");
+    assert.equal(fClick.picks, o0.p);
+  });
   await run("return window.h.key('Escape');");
 
   // ── 11. Nothing threw along the way ───────────────────────────────────────

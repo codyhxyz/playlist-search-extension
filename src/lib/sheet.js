@@ -66,6 +66,7 @@ const PLS_LOAD_PATIENCE = 8000;
 const PLS_SVGNS = 'http://www.w3.org/2000/svg';
 const PLS_PAD = 8; // the scroll margin the cursor keeps
 const PLS_MIN_HL = 2; // shortest query worth marking inside a title
+const PLS_UNDO_KEY = /Mac|iP(hone|ad)/.test(globalThis.navigator?.platform ?? '') ? '⌘Z' : 'Ctrl+Z';
 // YouTube's own 24px icons, copied from the paths it renders (2026-09).
 const PLS_BOOKMARK = 'M19 2H5a2 2 0 00-2 2v16.887c0 1.266 1.382 2.048 2.469 1.399L12 18.366l6.531 3.919c1.087.652 2.469-.131 2.469-1.397V4a2 2 0 00-2-2ZM5 20.233V4h14v16.233l-6.485-3.89-.515-.309-.515.309L5 20.233Z';
 const PLS_BOOKMARKED = 'M19 2H5a2 2 0 00-2 2v16.887c0 1.266 1.382 2.048 2.469 1.399L12 18.366l6.531 3.919c1.087.652 2.469-.131 2.469-1.397V4a2 2 0 00-2-2Z';
@@ -541,9 +542,11 @@ const plsAZ = (a, b) =>
   a.title.localeCompare(b.title) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 const PLS_SORTS = [
-  // ponytail: recency assumes YouTube's response order; replace with an explicit
-  // server sort or timestamps when verified. Live verification waived for 2.0.1.
-  { id: 'recent', label: 'Recent', say: 'recently added, YouTube order', cmp: (x, y) => x.i - y.i },
+  // YouTube's order: content.js hands the rows over in the order YouTube's picker
+  // endpoint returns them (innertube.js orderLikePicker). Familiarity is the point,
+  // so this mode does not regroup members either. (That YouTube's popover draws
+  // rows in exactly that order, ungrouped, is believed, not verified live.)
+  { id: 'recent', label: 'Recent', say: 'recently added, YouTube order', cmp: (x, y) => x.i - y.i, asGiven: true },
   {
     id: 'match',
     // Short on screen, complete in the accessible name — the header stays compact
@@ -606,12 +609,13 @@ const plsSortAt = (i) => PLS_SORTS[((i % PLS_SORTS.length) + PLS_SORTS.length) %
 /**
  * Order the rows that survived the filter.
  *
- * Membership groups FIRST in every mode, and it is not itself a mode: a
- * `member === true` row is not a save target (`pick()` returns early), so this
+ * Membership groups FIRST in every mode but Recent, and it is not itself a mode:
+ * a `member === true` row is not a save target (`pick()` returns early), so this
  * is a partition of facts from targets rather than an ordering of peers. The
  * comparison is `=== true` on both sides, so `false` and `undefined` land in
  * the same group — the tri-state promise holds through sorting, and an unmarked
- * row still claims nothing.
+ * row still claims nothing. Recent is YouTube's order verbatim, members where
+ * YouTube puts them; the cursor still opens on the first row Enter can add to.
  *
  * @param {Array<{id: string, title: string, member?: boolean}>} rows
  * @param {number} sortIdx
@@ -625,7 +629,7 @@ function plsOrder(rows, sortIdx, q) {
   const dec = rows.map((p, i) => ({ p, i, pos: q.length ? plsFolded(p).s.indexOf(q[0]) : -1 }));
   dec.sort(
     (x, y) =>
-      Number(y.p.member === true) - Number(x.p.member === true) ||
+      (mode.asGiven ? 0 : Number(y.p.member === true) - Number(x.p.member === true)) ||
       mode.cmp(x, y, q) ||
       x.i - y.i,
   );
@@ -633,23 +637,32 @@ function plsOrder(rows, sortIdx, q) {
 }
 
 // onPick(playlist) -> Promise. onClose() fires exactly once.
+//
+// Two jobs, one sheet. With `onPick` it saves a video (the Save sheet). Without it
+// it is a finder: the same search, list, ordering and keyboard, but a row OPENS its
+// playlist — Enter or a click in this tab, Ctrl/⌘ or middle-click in a new one —
+// and there is no membership, bookmark, undo or create.
 /**
  * @param {object} opts
- * @param {string} opts.videoId              diagnostic only; never rendered
+ * @param {string} [opts.videoId]            diagnostic only; never rendered
  * @param {string} [opts.videoTitle]         the video's name, if known yet
- * @param {(p: any) => Promise<any>} opts.onPick
- * @param {(p: any) => Promise<any>} opts.onRemove
+ * @param {(p: any) => Promise<any>} [opts.onPick]  resolve `{already: true}` when the
+ *                                           video turned out to be in it already
+ * @param {(p: any) => Promise<any>} [opts.onRemove]
  * @param {() => void} [opts.onClose]        fires exactly once
  * @param {(title: string, privacy: string) => Promise<any>} [opts.onCreate]
  * @param {string} [opts.sort]               initial ordering: recent (default) | match | az | za
  * @param {(id: string) => void} [opts.onSort]  fires when the user changes it
  * @param {string} [opts.privacy]            privacy for new playlists: PRIVATE (default) | UNLISTED | PUBLIC
  * @param {(privacy: string) => void} [opts.onPrivacy]  fires when the user changes it
- * @param {(p: any) => void} [opts.onOpen]   Ctrl/⌘-click, middle-click or Ctrl/⌘+Enter on a row
+ * @param {(p: any, newTab: boolean) => void} [opts.onOpen]  Ctrl/⌘-click, middle-click or
+ *                                           Ctrl/⌘+Enter on a row (newTab); any pick in a finder
  */
 export function createSheet({
   videoId, videoTitle, onPick, onRemove, onCreate, onClose, sort, onSort, privacy, onPrivacy, onOpen,
 }) {
+  const finding = !onPick;
+  if (finding) { onRemove = undefined; onCreate = undefined; }
   const uid = 'pls' + Math.random().toString(36).slice(2, 8);
   const host = document.createElement('pls-save-sheet');
   const shadow = host.attachShadow({ mode: 'closed' });
@@ -689,11 +702,12 @@ export function createSheet({
 
   const dlg = document.createElement('dialog');
   // The field is the title, so the name lives on the dialog itself.
-  dlg.setAttribute('aria-label', 'Save to playlist');
+  const job = finding ? 'Open a playlist' : 'Save to playlist';
+  dlg.setAttribute('aria-label', job);
 
   const input = document.createElement('input');
   input.type = 'text';
-  input.placeholder = 'Save to playlist';
+  input.placeholder = job;
   input.autocomplete = 'off';
   input.spellcheck = false;
   input.setAttribute('aria-label', 'Search playlists');
@@ -712,7 +726,7 @@ export function createSheet({
 
   const head = plsEl('header', 'head');
   // YouTube's own heading for this sheet, word for word.
-  const ttl = plsEl('h2', 'ttl', 'Save to...');
+  const ttl = plsEl('h2', 'ttl', finding ? 'Your playlists' : 'Save to...');
 
   const list = plsEl('div', 'list');
   list.id = uid + '-l';
@@ -776,7 +790,8 @@ export function createSheet({
     // the change is spoken without hijacking the status line's live region —
     // that region is reserved for what happened to the user's playlists.
     sortBtn.setAttribute('aria-label', `Sort order: ${s.say}. Activate to change.`);
-    sortBtn.title = `Sort: ${s.say}. Playlists you’re already in stay at the top.`;
+    sortBtn.title = `Sort: ${s.say}.` +
+      (s.asGiven || finding ? '' : ' Playlists you’re already in stay at the top.');
   }
 
   function setSort(next) {
@@ -825,7 +840,13 @@ export function createSheet({
   let data = [];                 // {id, title, member}
   const state = new Map();       // id -> add/remove pending, success, or error
   let armedRemove = null;
-  let undoable = null;           // the playlist the footer's Undo would remove from
+  // Every save and removal this sheet made, newest last. Undo (the footer button,
+  // or Ctrl/⌘+Z while the query is empty) reverses the newest and exposes the one
+  // before it, so a run of saves can be walked back one at a time. Entries hold
+  // ids, not row objects: a background refresh replaces the objects.
+  /** @type {Array<{kind: 'add' | 'remove', id: string}>} */
+  const undoStack = [];
+  let steered = false;           // the user has put the cursor somewhere themselves
   let privIdx = Math.max(0, PLS_PRIVACY.findIndex((x) => x.id === privacy));
   let dead = false;
   let loaded = false;
@@ -856,7 +877,7 @@ export function createSheet({
   function setPlaceholder() {
     input.placeholder = data.length
       ? `Search ${data.length} ${plsPlural(data.length, 'playlist')}`
-      : 'Save to playlist';
+      : job;
   }
 
   function destroy() {
@@ -914,20 +935,21 @@ export function createSheet({
     if (rs.word) facts.push(plsEl('span', 'tag', rs.word));
     facts.forEach((f, k) => { if (k) line.append(plsEl('span', 'sep')); line.append(f); });
     if (line.firstChild) txt.append(line);
-    gut.append(rs.mark ? plsIcon(rs.mark) : plsSpinner());
+    // A finder's row is a link to the playlist, not a save target: no bookmark.
+    if (!finding) gut.append(rs.mark ? plsIcon(rs.mark) : plsSpinner());
 
     // Names the row for assistive tech and, via the tooltip, un-truncates it.
     b.setAttribute('aria-label', p.title + (rs.sayCount ? sayCount : '') + rs.say);
     b.title = p.title + (rs.tip ?? '');
     b.addEventListener('click', (e) => {
-      if ((e.metaKey || e.ctrlKey) && onOpen) { onOpen(p); return; }
-      active = i; paint(false); pick(p);
+      if ((e.metaKey || e.ctrlKey) && onOpen) { onOpen(p, true); return; }
+      active = i; steered = true; paint(false); pick(p);
     });
     // Middle-click opens, as it does on any link. mousedown's default for the
     // middle button is autoscroll, which would otherwise fire alongside.
     if (onOpen) {
       b.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); });
-      b.addEventListener('auxclick', (e) => { if (e.button === 1) { e.preventDefault(); onOpen(p); } });
+      b.addEventListener('auxclick', (e) => { if (e.button === 1) { e.preventDefault(); onOpen(p, true); } });
     }
     return b;
   }
@@ -1077,6 +1099,7 @@ export function createSheet({
   function move(delta) {
     if (!shown.length) return;
     cancelRemoval(false);
+    steered = true;
     active = Math.max(0, Math.min(shown.length - 1, active + delta));
     if (active >= nodes.length - 1) grow(active + 2);
     list.classList.add('kb');
@@ -1099,10 +1122,27 @@ export function createSheet({
     return m ? ' ' + m : '';
   }
 
-  function showUndo(p) {
-    undoable = p;
-    undoBtn.hidden = !p || !onRemove;
-    plsAttr(undoBtn, 'aria-label', p ? `Undo save to ${p.title}` : '');
+  const byId = (id) => data.find((x) => x.id === id);
+
+  // The footer's Undo always names what it would reverse.
+  function paintUndo() {
+    const top = undoStack[undoStack.length - 1];
+    const p = top && byId(top.id);
+    undoBtn.hidden = !p || !onRemove || !onPick;
+    plsAttr(undoBtn, 'aria-label', p ? (top.kind === 'add' ? `Undo save to ${p.title}` : `Undo removal from ${p.title}`) : '');
+    plsAttr(undoBtn, 'title', p ? `${undoBtn.getAttribute('aria-label')} (${PLS_UNDO_KEY})` : '');
+  }
+
+  // Reverse the newest entry. No confirmation either way: it puts back exactly
+  // what the user changed a moment ago, which is the opposite of a surprise.
+  function undo() {
+    if (armedRemove) cancelRemoval(false);
+    const top = undoStack.pop();
+    paintUndo();
+    const p = top && byId(top.id);
+    if (!p) return;
+    if (top.kind === 'add') remove(p, true);
+    else add(p, true);
   }
 
   // Put the cursor on a playlist that just changed, wherever the re-render
@@ -1140,7 +1180,6 @@ export function createSheet({
     const name = (title || '').trim();
     if (!name || !onCreate || creating) return;
     cancelRemoval(false);
-    showUndo(null);
     creating = true;
     setStatus(`Creating “${name}”…`);
     render();
@@ -1152,7 +1191,13 @@ export function createSheet({
         privacy: chosen.label,
       };
       data.unshift(newPl);
-      if (videoId) state.set(newPl.id, 'added');
+      if (videoId) {
+        state.set(newPl.id, 'added');
+        // Undo takes the video back out; the (now empty) playlist stays, because
+        // deleting a playlist is not something a sheet should do on one keypress.
+        undoStack.push({ kind: 'add', id: newPl.id });
+        paintUndo();
+      }
       creating = false;
       input.value = '';
       setPlaceholder();
@@ -1182,7 +1227,6 @@ export function createSheet({
 
   function armRemoval(p) {
     if (armedRemove === p) return;
-    showUndo(null);
     armedRemove = p;
     confirmRemove.hidden = false;
     confirmRemoveBtn.setAttribute('aria-label', `Remove from ${p.title}`);
@@ -1190,8 +1234,9 @@ export function createSheet({
     cancelRemoveBtn.focus();
   }
 
-  async function remove(p) {
-    showUndo(null);
+  // `undoing`: this write reverses an Undo entry, so it says so and does not push
+  // a new one — Undo walks back, it does not ping-pong.
+  async function remove(p, undoing = false) {
     disarm();
     input.focus();
     state.set(p.id, 'removing');
@@ -1200,14 +1245,39 @@ export function createSheet({
     await settle('remove', p.id, () => onRemove(p), () => {
       p.member = false;
       state.set(p.id, 'removed');
-      return { say: restingStatus, focus: p.id };
+      if (!undoing) undoStack.push({ kind: 'remove', id: p.id });
+      paintUndo();
+      return { say: undoing ? `Removed from “${p.title}”.` : restingStatus, focus: p.id };
     }, (e) => {
       state.set(p.id, 'remove-error');
       return `Couldn’t remove from “${p.title}”.${why(e)} Select it again to retry.`;
     });
   }
 
+  async function add(p, undoing = false) {
+    cancelRemoval(false);
+    state.set(p.id, 'adding');
+    render();
+    await settle('add', p.id, () => onPick(p), (r) => {
+      p.member = true;
+      // The caller found the video already there (its membership answer landed
+      // after the sheet drew the row): nothing was written, so nothing to undo.
+      if (r?.already) {
+        state.delete(p.id);
+        return { say: `Already in “${p.title}”.`, focus: p.id };
+      }
+      state.set(p.id, 'added');
+      if (!undoing) undoStack.push({ kind: 'add', id: p.id });
+      paintUndo();
+      return { say: `Saved to “${p.title}”${undoing ? ' again' : ''}.`, focus: p.id };
+    }, (e) => {
+      state.set(p.id, 'error');
+      return `Couldn’t save to “${p.title}”.${why(e)} Select it again to retry.`;
+    });
+  }
+
   async function pick(p) {
+    if (finding) { onOpen?.(p, false); return; }
     if (!canPick(p)) return;
     const cur = state.get(p.id);
     if (p.member === true) {
@@ -1215,32 +1285,18 @@ export function createSheet({
       else armRemoval(p);
       return;
     }
-    cancelRemoval(false);
-    showUndo(null);
-    state.set(p.id, 'adding');
-    render();
-    await settle('add', p.id, () => onPick(p), () => {
-      p.member = true;
-      state.set(p.id, 'added');
-      showUndo(p);
-      return { say: `Saved to “${p.title}”.`, focus: p.id };
-    }, (e) => {
-      state.set(p.id, 'error');
-      return `Couldn’t save to “${p.title}”.${why(e)} Select it again to retry.`;
-    });
+    await add(p);
   }
 
-  input.addEventListener('input', () => { cancelRemoval(false); render(); });
+  input.addEventListener('input', () => { cancelRemoval(false); steered = false; render(); });
   list.addEventListener('pointermove', () => list.classList.remove('kb'), { passive: true });
+  // Scrolling by hand is steering too: a list refresh must not yank it to the top.
+  list.addEventListener('wheel', () => { steered = true; }, { passive: true });
   closeBtn.addEventListener('click', () => dlg.close());
   sortBtn.addEventListener('click', () => setSort(sortIdx + 1));
   cancelRemoveBtn.addEventListener('click', () => cancelRemoval());
   confirmRemoveBtn.addEventListener('click', () => { if (armedRemove) remove(armedRemove); });
-  undoBtn.addEventListener('click', () => {
-    const p = undoable;
-    if (p && state.get(p.id) === 'added') remove(p);
-    else showUndo(null);
-  });
+  undoBtn.addEventListener('click', undo);
   // Scrolling reaches every match: the next page is built before the end arrives.
   list.addEventListener('scroll', () => {
     if (nodes.length < shown.length &&
@@ -1250,7 +1306,16 @@ export function createSheet({
     // Ctrl/⌘+Enter opens the cursor's playlist, as Ctrl/⌘-click does. Only from
     // the query field: on a focused button, Enter is that button's activation.
     if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'Enter' && e.target === input) {
-      if (shown[active] && onOpen && !e.isComposing) { onOpen(shown[active]); e.preventDefault(); }
+      if (shown[active] && onOpen && !e.isComposing) { onOpen(shown[active], true); e.preventDefault(); }
+      return;
+    }
+    // Ctrl/⌘+Z undoes the last save or removal — but only while the query is
+    // empty. With text in the field it is the field's own undo, and taking that
+    // away to reverse a write would be the more surprising of the two.
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'z' &&
+        !input.value && undoStack.length) {
+      undo();
+      e.preventDefault();
       return;
     }
     if (e.altKey || e.ctrlKey || e.metaKey) return;
@@ -1346,12 +1411,31 @@ export function createSheet({
       restingStatus = t == null ? '' : String(t);
       setStatus(restingStatus);
     },
+    // May be called more than once: a cached list first, then the fresh one. A later
+    // call must not undo what the user did in between — a write this session made
+    // outranks a list fetched before it landed — and it keeps the cursor on the
+    // same playlist once the user has steered; until then the cursor re-rests on
+    // the first add target of the new list (membership may have just arrived).
     setData: (rows) => {
+      if (dead) return;
+      // A finder has no video, so "already in" means nothing there.
+      if (finding) rows = rows.map(({ member, ...p }) => p);
+      for (const p of rows) {
+        const st = state.get(p.id);
+        if (st === 'added' || st === 'removing' || st === 'remove-error') p.member = true;
+        else if (st === 'removed' || st === 'adding' || st === 'error') p.member = false;
+      }
+      if (armedRemove) {
+        const again = rows.find((x) => x.id === armedRemove.id);
+        if (again) armedRemove = again; else cancelRemoval(false);
+      }
       data = rows;
+      if (!steered) lastQ = null;
       loaded = true;
       clearTimeout(patienceTimer);
       setPlaceholder();
       render();
+      paintUndo();
     },
     // Late membership, e.g. from the >200 tail walk. Only ever upgrades what the
     // sheet shows: a row the user has acted on this session keeps its own state,

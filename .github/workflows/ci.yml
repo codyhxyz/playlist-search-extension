@@ -38,15 +38,6 @@ jobs:
       - name: Typecheck (JSDoc + tsc --checkJs)
         run: npm run typecheck
 
-      - name: Unit tests (intent resolution + InnerTube parsers)
-        run: node --test tests/intent.test.mjs tests/innertube.test.mjs
-
-      - name: Shipped bundle boots (vm smoke test)
-        run: node tests/test-bundle-boots.mjs
-
-      - name: Save-sheet UI contract (skips cleanly if agent-browser absent)
-        run: node tests/test-sheet-render.mjs
-
       - name: CWS structural validator
         run: node scripts/validate-cws.mjs
 

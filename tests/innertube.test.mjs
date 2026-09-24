@@ -14,6 +14,10 @@ import assert from "node:assert/strict";
 import {
   cfgFrom,
   parseMembership,
+  parsePicker,
+  orderLikePicker,
+  saveTargets,
+  PLS_PICKER_CAP,
   scanKey,
   scanPlaylists,
   parseCreateResponse,
@@ -285,7 +289,7 @@ const libraryLockup = (id, parts, { sources, stackColor } = {}) => ({
   },
 });
 
-test("a library lockup yields the thumbnail, stack colour and privacy YouTube's sheet shows", () => {
+test("a library lockup yields its thumbnail, stack colour and privacy", () => {
   const out = scan({ contents: [libraryLockup("PLlook0001", ["Private", "Playlist"])] });
   assert.deepEqual(out.get("PLlook0001"), {
     title: "Title PLlook0001",
@@ -306,6 +310,10 @@ test("privacy is only ever Public, Private or Unlisted — a saved playlist's ch
   assert.equal(out.get("PLpub00001").privacy, "Public");
   assert.equal(out.get("PLunl00001").privacy, "Unlisted");
   assert.equal("privacy" in out.get("PLsaved001"), false);
+  // …but it is recorded that something else sat there: on an English page, the
+  // owning channel's name, which is what marks a playlist you cannot save to.
+  assert.equal(out.get("PLsaved001").other, true);
+  assert.equal("other" in out.get("PLpub00001"), false);
 });
 
 test("thumbnail sources are kept only from YouTube's image CDN, in the order sent", () => {
@@ -332,6 +340,67 @@ test("the legacy grid renderer's thumbnails are read too; a missing stack colour
     title: "Old",
     thumb: [{ url: "https://i.ytimg.com/vi/b/hqdefault.jpg", width: 480, height: 270 }],
   });
+});
+
+// ─── YouTube's order, and what can actually be saved to ─────────────────────
+
+test("parsePicker keeps the response order and each row's title, dropping repeats", () => {
+  const rows = parsePicker({ x: [
+    option("WL", "NONE", "Watch later"),
+    option("PLrecent1", "ALL", "Recent one"),
+    option("PLolder02", "NONE", "Older"),
+    option("PLrecent1", "ALL", "Recent one"),
+  ] });
+  assert.deepEqual(rows, [
+    { id: "WL", title: "Watch later", member: false },
+    { id: "PLrecent1", title: "Recent one", member: true },
+    { id: "PLolder02", title: "Older", member: false },
+  ]);
+});
+
+const pl = (id, extra = {}) => ({ id, title: id, ...extra });
+
+test("orderLikePicker: picker rows in picker order, then the rest in library order", () => {
+  const library = [pl("PLa"), pl("PLb"), pl("PLc"), pl("PLd")];
+  const out = orderLikePicker(library, [{ id: "PLc", title: "PLc" }, { id: "PLa", title: "PLa" }]);
+  assert.deepEqual(out.map((p) => p.id), ["PLc", "PLa", "PLb", "PLd"]);
+  // The library's row (with its thumbnail, count…) is the one kept, not the picker's.
+  assert.equal(out[0], library[2]);
+});
+
+test("saveTargets: a picker under its cap is the whole answer — Liked and saved-from-others drop out", () => {
+  const library = [pl("WL"), pl("LL"), pl("PLmine", { privacy: "Private" }), pl("PLtheirs", { other: true }), pl("PLmine2")];
+  const picker = [{ id: "WL" }, { id: "PLmine" }, { id: "PLmine2" }];
+  assert.deepEqual(saveTargets(library, picker).map((p) => p.id), ["WL", "PLmine", "PLmine2"]);
+});
+
+test("saveTargets past the cap: the tail keeps owned playlists, drops Liked, mixes and other channels'", () => {
+  const picker = Array.from({ length: PLS_PICKER_CAP }, (_, i) => ({ id: `PLp${i}` }));
+  const library = [
+    ...picker.map((r) => pl(r.id, { privacy: "Private" })),
+    pl("PLtailMine", { privacy: "Public" }),
+    pl("PLtailLegacy"), // legacy renderer: no metadata at all — kept
+    pl("PLtailTheirs", { other: true }),
+    pl("LL"), pl("RDmix"), pl("UUuploads"),
+  ];
+  const tail = saveTargets(library, picker).slice(PLS_PICKER_CAP).map((p) => p.id);
+  assert.deepEqual(tail, ["PLtailMine", "PLtailLegacy"]);
+});
+
+test("saveTargets never hides a playlist on a page whose privacy words it cannot read", () => {
+  // A German page says "Privat": nothing reads as a privacy word, so EVERY owned
+  // playlist carries `other`. Trusting that would hide the user's whole tail.
+  const picker = Array.from({ length: PLS_PICKER_CAP }, (_, i) => ({ id: `PLp${i}` }));
+  const library = [...picker.map((r) => pl(r.id, { other: true })), pl("PLtail", { other: true })];
+  assert.ok(saveTargets(library, picker).some((p) => p.id === "PLtail"));
+});
+
+test("saveTargets does not trust a failed or delegation-less picker to be complete", () => {
+  const library = [pl("WL"), pl("PLmine"), pl("PLtheirs", { other: true }), pl("LL")];
+  // <=1 row is the missing-brand-delegation canary; [] is a failed call.
+  for (const picker of [[], [{ id: "WL" }]]) {
+    assert.deepEqual(saveTargets(library, picker).map((p) => p.id), ["WL", "PLmine", "PLtheirs"]);
+  }
 });
 
 // ─── parseMembership: tri-state, and the tail must stay unknown ──────────────
@@ -577,7 +646,7 @@ test("scanPlaylists preserves the server's response order", () => {
   assert.deepEqual([...out.keys()], ["PLthird01", "PLfirst02", "PLsecond3"]);
 });
 
-test("parseMembership reads the live get_add_to_playlist shape", () => {
+test("parseMembership reads the get_add_to_playlist fixture (hand-reduced, ids scrubbed — not a verbatim capture)", () => {
   const data = fixture("add-to-playlist-panel.json");
   const map = parseMembership(data);
   assert.equal(map.get("PLexampleContains001"), true);

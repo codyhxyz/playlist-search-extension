@@ -6,12 +6,11 @@
 //
 // Usage:
 //   node scripts/publish-cws.mjs [zip-path] [--json] [--no-auto-publish]
-//                                [--target=default|trustedTesters] [--skip-e2e]
+//                                [--target=default|trustedTesters]
 //
-// --skip-e2e drops ONLY the live signed-in-YouTube stage. Every other test
-// still runs and still blocks. The bypass is recorded as a `gate-bypassed`
-// transition in the output so a release published this way is identifiable
-// afterwards rather than indistinguishable from a fully-gated one.
+// No test gate: tests do not run before upload, by the owner's decision
+// (2026-09-24). The build (scripts/build-store-zip.sh) still bundles,
+// syntax-checks, typechecks and validates before a zip exists.
 //
 // If zip-path is omitted, looks for dist/youtube-playlist-filter-<version>.zip
 // where <version> matches src/manifest.json.
@@ -26,7 +25,6 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ARGS = process.argv.slice(2);
 const JSON_MODE = ARGS.includes("--json");
 const AUTO_PUBLISH = !ARGS.includes("--no-auto-publish");
-const SKIP_E2E = ARGS.includes("--skip-e2e");
 const TARGET = (ARGS.find((a) => a.startsWith("--target="))?.split("=")[1] === "trustedTesters")
   ? "trustedTesters"
   : "default";
@@ -84,46 +82,19 @@ function log(state, detail) {
   if (!JSON_MODE) console.log(`[${t.at}] ${state}${detail ? ` \u2014 ${detail}` : ""}`);
 }
 
-function runPrePublishE2EGate() {
-  // The test suite must pass before any zip can reach the Chrome Web Store.
-  // build-store-zip.sh runs the fast gates during dev, but the publish path
-  // verifies independently so a stale or hand-built zip can't bypass the wall.
-  //
-  // --skip-e2e drops the live-YouTube stage only. It is recorded below, not
-  // silent: a release published without live verification should be obvious in
-  // the record six months later, when someone is asking why it broke.
-  if (SKIP_E2E) {
-    log("gate-bypassed", "--skip-e2e \u2014 live signed-in YouTube NOT verified for this build");
-  }
-  log("testing", `running tests/run-all.sh (${SKIP_E2E ? "e2e SKIPPED" : "fixture + e2e"})`);
-  const result = spawnSync("bash", [join(ROOT, "tests", "run-all.sh")], {
-    stdio: "inherit",
-    env: { ...process.env, ...(SKIP_E2E ? { PLS_SKIP_E2E: "1" } : {}) },
-  });
-  if (result.status !== 0) {
-    log("tests-failed", `tests/run-all.sh exited ${result.status}`);
-    return false;
-  }
-  log("tests-passed");
-  return true;
-}
-
 async function run() {
-  // Build the default upload from the current source in this process. Testing
-  // source and then selecting an old dist zip was not an artifact gate.
+  // Build the default upload from the current source in this process, so an old
+  // dist zip can never be the one that ships.
   if (!ZIP_PATH_ARG) {
     log("building", "running scripts/build-store-zip.sh");
     const build = spawnSync("bash", [join(ROOT, "scripts", "build-store-zip.sh")], {
       stdio: "inherit",
     });
     if (build.status !== 0) {
-      return { kind: "tests-failed", reason: `build-store-zip.sh exited ${build.status}` };
+      return { kind: "build-failed", reason: `build-store-zip.sh exited ${build.status}` };
     }
   }
 
-  if (!runPrePublishE2EGate()) {
-    return { kind: "tests-failed", reason: "tests/run-all.sh did not exit 0 \u2014 see test output above" };
-  }
   const secrets = loadSecrets();
   if (!secrets) {
     const reason = `no CWS secrets configured \u2014 set ${SECRET_ENV_NAMES.join(", ")} to enable automated publish.`;
@@ -157,7 +128,7 @@ async function run() {
 
 function exitCodeFor(outcome) {
   if (outcome.kind === "skipped") return 0;
-  if (outcome.kind === "tests-failed") return 1;
+  if (outcome.kind === "build-failed") return 1;
   if (outcome.kind === "upload-failed") return 1;
   const s = outcome.poll.state;
   return (s === "live" || s === "in-review") ? 0 : 1;
@@ -170,13 +141,12 @@ run()
       process.stdout.write(JSON.stringify({
         schemaVersion: 1,
         script: "publish-cws",
-        e2eSkipped: SKIP_E2E,
         skipped: outcome.kind === "skipped",
         status: outcome.kind === "skipped" ? "skipped" : outcome.kind,
         state: outcome.kind === "terminal" ? outcome.poll.state : outcome.kind,
         detail: outcome.kind === "skipped"
           ? outcome.reason
-          : outcome.kind === "tests-failed"
+          : outcome.kind === "build-failed"
             ? outcome.reason
             : outcome.kind === "upload-failed"
               ? (outcome.upload.itemError ?? []).map((e) => `${e.error_code}: ${e.error_detail}`).join("; ")

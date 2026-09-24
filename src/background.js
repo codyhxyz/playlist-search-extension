@@ -220,6 +220,23 @@ async function dispatchIntent({ tabId, source, path, body = {}, linkUrl, srcUrl,
     );
 }
 
+/**
+ * Open the finder — the same sheet, searching every playlist, where a pick opens the
+ * playlist. For the entrypoints that have no video to save: the toolbar icon or
+ * Alt+S on a YouTube page without one, and the dedicated Alt+P anywhere on YouTube.
+ * @param {{id?: number} | undefined} tab
+ * @param {string} source
+ */
+function dispatchFind(tab, source) {
+  if (typeof tab?.id !== 'number') return;
+  console.log(`[pls][sw] FIND_INTENT — source=${source}`);
+  chrome.tabs
+    .sendMessage(tab.id, { type: 'FIND_INTENT', source })
+    .catch((e) => console.warn(`[pls][sw] the tab has no content script to open the finder (reload it?) — ${e.message}`));
+}
+
+const isYouTube = (url) => typeof url === 'string' && url.startsWith('https://www.youtube.com/');
+
 // ═══════════════ entrypoint 1: the MAIN-world hook, relayed by content.js ═══════════
 // Primary. This is the only path that can read YouTube's request bodies.
 
@@ -276,10 +293,12 @@ async function onActionClicked(tab) {
     await openOrFocusWelcome();
     return;
   }
-  // Clicked somewhere with no video in the URL. Opening the welcome page is the
-  // honest answer; doing nothing would read as a broken extension.
+  // No video in the URL. On YouTube, there is still something to do: find a
+  // playlist. Anywhere else, the welcome page is the honest answer; doing nothing
+  // would read as a broken extension.
   if (!videoIdFromUrl(tab?.url)) {
-    await openOrFocusWelcome();
+    if (isYouTube(tab?.url)) dispatchFind(tab, 'toolbar');
+    else await openOrFocusWelcome();
     return;
   }
   await dispatchIntent({ tabId: tab.id, source: 'toolbar', tabUrl: tab.url });
@@ -320,9 +339,13 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 });
 
 chrome.commands?.onCommand.addListener(async (command) => {
-  if (command !== 'open-save-sheet') return;
+  if (command !== 'open-save-sheet' && command !== 'find-playlist') return;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab) return;
+  if (command === 'find-playlist' || (!videoIdFromUrl(tab.url) && isYouTube(tab.url))) {
+    if (isYouTube(tab.url)) dispatchFind(tab, 'hotkey');
+    return;
+  }
   // The accelerator is global, so it fires on tabs with no video — and on tabs
   // that aren't YouTube at all. That is not a coverage gap, and routing it into
   // dispatchIntent would log one, poisoning the single signal reserved for real
@@ -372,6 +395,13 @@ chrome.permissions.onRemoved.addListener((permissions) => {
 chrome.tabs.onRemoved.addListener((id) => {
   for (const key of recent.keys()) if (key.startsWith(id + ':')) recent.delete(key);
 });
+
+// The content script keeps the last playlist library in storage.session so the
+// sheet opens instantly in any tab. That area is RAM-only and cleared when the
+// browser quits, and content scripts may only reach it once the worker says so.
+chrome.storage.session
+  .setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' })
+  .catch((e) => console.warn('[pls][sw] session storage not shared with content scripts — the sheet will load uncached', e));
 
 void reconcileContentScripts().catch(() => {});
 void refreshActionAffordance();

@@ -52,7 +52,7 @@ The extension reads the following from YouTube:
 - **The video ID you are trying to save**, from one of: YouTube's own save request (see "How the extension knows you clicked Save"), the URL of the tab, or the URL of a link you right-clicked.
 - **YouTube's client configuration** (`INNERTUBE_CONTEXT`, the brand-channel session ID if you are acting as a channel, and which of your signed-in Google accounts the page is using), read from the page's own configuration script. This is what makes an API call from your session valid, and is the same configuration YouTube's own code uses. It is sent only back to YouTube.
 
-All searching and filtering happens locally in your browser, over an in-memory list. No playlist data, search text, or video IDs are written to `chrome.storage`, `localStorage`, cookies, or any other persistent storage, and none of it survives closing the sheet: the extension keeps no playlist cache at all in this version. The only thing it remembers about how you use it is two display preferences, listed under Permissions below.
+All searching and filtering happens locally in your browser. So that the playlist picker opens instantly, the extension keeps the last list of your playlists (titles, video counts, privacy, thumbnail addresses, and the order YouTube lists them in) for the signed-in account in `chrome.storage.session`. That storage is held in memory only: it is never written to disk, never leaves your browser, and is erased when you quit the browser. It never includes which videos are in which playlist, your searches, or video IDs, and it is replaced by a fresh copy from YouTube every time the picker opens. Nothing about your playlists is written to `chrome.storage.local`, `localStorage`, cookies, or any other persistent storage. The only thing written to disk is two display preferences, listed under Permissions below.
 
 ## Permissions
 
@@ -60,14 +60,15 @@ The extension declares three Chrome API permissions in `manifest.json`:
 
 - `scripting` — to dynamically register its content scripts once you grant the YouTube host permission.
 - `contextMenus` — to add a single "Save to playlist" item to the right-click menu on YouTube video links.
-- `storage` — used for two display preferences only, and to delete records that earlier versions stored (onboarding flags and a content-script registration error), which this version no longer writes:
+- `storage` — used for the in-memory playlist list described above, for two display preferences, and to delete records that earlier versions stored (onboarding flags and a content-script registration error), which this version no longer writes:
+  - **Playlist list** (`chrome.storage.session`, memory only, cleared when the browser quits): the last list of your playlists for one signed-in account, so the picker opens without waiting.
   - **Display preferences** (`chrome.storage.local`): the sort order you last chose (for example "A → Z") and the privacy setting new playlists are created with (Private, Unlisted or Public). These are two fixed words, not playlist names, IDs or searches, and they never leave your browser.
 
 Runtime diagnostics are written only to the local DevTools console. They are not persisted, copied into the YouTube page DOM, or transmitted.
 
 Site access is `https://www.youtube.com/*` only, and is requested as an **optional host permission** that you grant explicitly via the welcome page's "Grant access" button. The extension does not run on any other site, subdomain, or scheme.
 
-A small service worker (`background.js`) registers or unregisters the content scripts, works out which video a save request refers to, and opens the welcome page on first install. It stores nothing. It never sees your playlists, your cookies, or your authentication headers — those exist only inside the YouTube tab. There is no popup.
+A small service worker (`background.js`) registers or unregisters the content scripts, works out which video a save request refers to, and opens the welcome page on first install. It stores nothing itself; it only allows the YouTube tab to use the in-memory `chrome.storage.session` area described above. It never sees your playlists, your cookies, or your authentication headers — those exist only inside the YouTube tab. There is no popup.
 
 The extension does **not** request the `webRequest` permission. An earlier design used it to observe save requests; it was removed because Chrome cannot read the bodies of these particular requests at all, making the permission useless while still widening what the extension could see.
 

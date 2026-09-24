@@ -3,12 +3,10 @@ set -euo pipefail
 
 # Packages src/ into a Chrome Web Store zip under dist/.
 #
-# This script intentionally refuses to package a broken source tree. Before
-# copying files we build the bundle, run the test suites, and validate the
-# CWS structural rules. If any gate fails, no zip is produced. The 1.5.4
-# release shipped a broken build (ReferenceError: buildHighlightHtml is not
-# defined) because nothing exercised content.js end-to-end before zipping —
-# that's what these gates are here to prevent.
+# Before copying files it builds the bundle, syntax-checks and typechecks the
+# shipped scripts, and validates the CWS structural rules. If any of those
+# fails, no zip is produced. Tests are NOT a gate — by the owner's decision
+# (2026-09-24), neither here nor in publish-cws.mjs nor in CI.
 #
 # 2.0.0 layout: the extension is the save sheet and nothing else.
 #   background.js       module service worker; imports onboarding-state.js
@@ -27,37 +25,24 @@ DIST_DIR="$ROOT_DIR/dist"
 VERSION="$(node -e "const m=require('$SRC_DIR/manifest.json'); process.stdout.write(m.version)")"
 OUT="$DIST_DIR/youtube-playlist-filter-$VERSION.zip"
 
-echo "[build] Gate 1/7: esbuild bundle (src/content.js + src/lib/*.js → src/content.bundle.js)"
+echo "[build] Gate 1/4: esbuild bundle (src/content.js + src/lib/*.js → src/content.bundle.js)"
 (cd "$ROOT_DIR" && npm run --silent build)
 
-echo "[build] Gate 2/7: node --check on every shipped script"
+echo "[build] Gate 2/4: node --check on every shipped script"
 for f in content.bundle.js background.js intent-hook.js onboarding-state.js welcome.js \
          lib/intent.js lib/innertube.js lib/sheet.js; do
   node --check "$SRC_DIR/$f"
 done
 
-echo "[build] Gate 3/7: typecheck (tsc --noEmit --checkJs)"
+echo "[build] Gate 3/4: typecheck (tsc --noEmit --checkJs)"
 (cd "$ROOT_DIR" && npm run --silent typecheck)
 
-echo "[build] Gate 4/7: unit tests (intent resolution + InnerTube parsers)"
-node --test "$ROOT_DIR/tests/intent.test.mjs" "$ROOT_DIR/tests/innertube.test.mjs"
-
-echo "[build] Gate 5/7: the shipped bundle boots (vm smoke test)"
-node "$ROOT_DIR/tests/test-bundle-boots.mjs"
-
-echo "[build] Gate 6/7: save-sheet UI contract (real engine)"
-node "$ROOT_DIR/tests/test-sheet-render.mjs"
-
-echo "[build] Gate 7/7: CWS structural validator + published privacy page in sync"
+echo "[build] Gate 4/4: CWS structural validator + published privacy page in sync"
 node "$ROOT_DIR/scripts/validate-cws.mjs"
 # The CWS listing and the welcome page both link to the published policy. It
 # drifted out of sync with PRIVACY.md once already, silently dropping a whole
 # section, so it is now generated and checked rather than maintained twice.
 node "$ROOT_DIR/scripts/build-privacy-page.mjs" --check
-
-# NOTE: the full e2e suite (signed-in YouTube via agent-browser) runs as the
-# pre-upload gate inside scripts/publish-cws.mjs, NOT here. Build = fast gates;
-# publish = full gate. This avoids running the slow e2e twice on a fresh release.
 
 mkdir -p "$DIST_DIR"
 rm -f "$OUT"

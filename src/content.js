@@ -7,27 +7,29 @@
 
 import { createSheet } from './lib/sheet.js';
 import {
+  accountKey,
   addVideo,
   removeVideo,
   createPlaylist,
   fetchAllPlaylists,
-  fetchMembership,
+  fetchPicker,
   fetchVideoTitle,
+  orderLikePicker,
   resetConfigCache,
   resolveMembershipTail,
+  saveTargets,
 } from './lib/innertube.js';
 
 // The open sheet and the video it was opened for, or null. One slot, so the two can
 // never disagree about which sheet is current.
-/** @type {{ sheet: ReturnType<typeof createSheet>, videoId: string } | null} */
+/** @type {{ sheet: ReturnType<typeof createSheet>, videoId: string | null } | null} */
 let plsCurrent = null;
 // Two display preferences, remembered across page loads: the sort order and the
-// privacy new playlists are created with. They are the ONLY things this extension
-// persists about how you use it — two enum strings, no playlist ids, titles or
-// queries — and PRIVACY.md lists them by name. (A sort preference, unlike a
-// playlist cache, cannot go stale wrongly: the sheet re-derives every order from
-// the rows it was just handed.) Read once at startup; a sheet opened in the few
-// milliseconds before the read lands just gets the defaults.
+// privacy new playlists are created with. They are the only things this extension
+// writes to disk — two enum strings, no playlist ids, titles or queries — and
+// PRIVACY.md lists them by name. (The library cache below lives in memory only.)
+// Read once at startup; a sheet opened in the few milliseconds before the read
+// lands just gets the defaults.
 const PLS_PREFS_KEY = 'plsPrefs';
 /** @type {{sort?: string, privacy?: string}} */
 let plsPrefs = {};
@@ -49,6 +51,67 @@ function plsSavePref(key, value) {
   } catch (e) {
     console.warn('[pls] could not save preference', key, e);
   }
+}
+
+// ─────────────── the library cache ───────────────
+// The sheet opens on the last library this account loaded and refreshes it in the
+// background — a picker used a dozen times a day must not make you watch a
+// spinner every time. Fetching everything costs ~800 ms on 256 playlists; this
+// costs one in-memory read.
+//
+// Held in `chrome.storage.session`, which is RAM-only and cleared when the browser
+// quits, so a new tab gets it instantly too; mirrored in a variable for this tab.
+// One account at a time, keyed by accountKey() so a list is never shown to a
+// different identity. What it holds is the library as fetched (titles, counts,
+// thumbnails) and YouTube's picker ORDER (ids and titles) — never per-video
+// membership, which is fetched fresh on every open because it is the one thing
+// that must not be stale: it decides whether a row can add.
+const PLS_LIB_KEY = 'plsLibrary';
+/** @typedef {{account: string, library: any[], picker: Array<{id: string, title: string | null}>}} PlsCache */
+/** @type {PlsCache | null} */
+let plsMem = null;
+
+/** @param {string | null} account @returns {Promise<PlsCache | null>} */
+async function plsCacheRead(account) {
+  if (!account) return null;
+  if (plsMem?.account === account) return plsMem;
+  try {
+    const c = (await chrome.storage.session.get(PLS_LIB_KEY))?.[PLS_LIB_KEY];
+    if (c?.account === account && Array.isArray(c.library) && Array.isArray(c.picker)) return (plsMem = c);
+  } catch (e) {
+    console.warn('[pls] library cache unreadable (loading fresh)', e);
+  }
+  return null;
+}
+
+/** @param {PlsCache} c */
+function plsCacheWrite(c) {
+  plsMem = c;
+  try {
+    chrome.storage.session.set({ [PLS_LIB_KEY]: c })
+      .catch((e) => console.warn('[pls] could not cache the library', e));
+  } catch (e) {
+    console.warn('[pls] could not cache the library', e);
+  }
+}
+
+/**
+ * After a save, move that playlist to the front of the cached order, keeping Watch
+ * Later first if it was first — so "recently used" holds on the very next open.
+ * This ASSUMES YouTube's picker ranks by recent use with Watch Later pinned; that
+ * is the common reading and is NOT verified here. It is only a placeholder: every
+ * open fetches YouTube's real order and replaces this with it.
+ * @param {string | null} account
+ * @param {{id: string, title?: string}} p
+ * @param {any} [created]  a playlist made just now, to add to the library too
+ */
+function plsCacheTouch(account, p, created) {
+  if (!account || plsMem?.account !== account) return;
+  const picker = plsMem.picker.filter((r) => r.id !== p.id);
+  const at = picker[0]?.id === 'WL' && p.id !== 'WL' ? 1 : 0;
+  picker.splice(at, 0, { id: p.id, title: p.title ?? null });
+  const library = created ? [created, ...plsMem.library.filter((x) => x.id !== p.id)] : plsMem.library;
+  plsCacheWrite({ account, library, picker });
 }
 
 // ─────────────── L1 relay: MAIN world -> service worker ───────────────
@@ -91,6 +154,7 @@ setTimeout(() => {
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type === 'SAVE_INTENT') plsHandleIntent(msg.videoId, msg.source);
+  if (msg?.type === 'FIND_INTENT') plsHandleIntent(null, msg.source);
   // no async response; don't return true
 });
 
@@ -135,6 +199,13 @@ function plsDestroyCurrent() {
 document.addEventListener('yt-navigate-finish', () => plsOnNavigation('SPA navigation'));
 window.addEventListener('popstate', () => plsOnNavigation('history navigation'));
 
+/**
+ * One path for both jobs. With a videoId it is the Save sheet; with null it is the
+ * finder — the same sheet, the same cache and ordering, but a row opens its
+ * playlist instead of taking the video.
+ * @param {string | null} videoId
+ * @param {string} source
+ */
 async function plsHandleIntent(videoId, source) {
   // Catch up on any navigation whose event we missed before deciding what's stale.
   plsOnNavigation('late-detected navigation');
@@ -146,110 +217,167 @@ async function plsHandleIntent(videoId, source) {
   }
   if (plsCurrent) {
     if (plsCurrent.videoId === videoId) {
-      console.log('[pls] sheet already open for this video, ignoring duplicate intent', { videoId, source });
+      console.log('[pls] sheet already open for this, ignoring duplicate intent', { videoId, source });
       return;
     }
-    // A different video: replace rather than silently drop. Dropping is how a user
+    // Something else: replace rather than silently drop. Dropping is how a user
     // ends up clicking Save and getting nothing.
-    console.log(`[pls] intent for ${videoId} while ${plsCurrent.videoId} was open — replacing`);
+    console.log(`[pls] intent for ${videoId ?? 'the finder'} while ${plsCurrent.videoId ?? 'the finder'} was open — replacing`);
     plsDestroyCurrent();
   }
 
-  console.log(`[pls] SAVE_INTENT ${videoId} via ${source}`);
+  const finding = !videoId;
+  console.log(`[pls] ${finding ? 'FIND_INTENT' : `SAVE_INTENT ${videoId}`} via ${source}`);
+  const account = accountKey();
 
   // Aborts the >200 membership walk below. That walk can be a hundred-odd requests;
   // a closed sheet must not keep spending them, so onClose — which every teardown
   // path reaches, including plsDestroyCurrent() — aborts it.
   const tail = new AbortController();
+
+  // Started before the sheet exists: membership (~180 ms) decides whether a row can
+  // add, so it has the head start. The finder has no video and needs none of it.
+  /** @type {Promise<Array<{id: string, title: string | null, member: boolean}> | null>} */
+  const pickerP = finding
+    ? Promise.resolve(null)
+    : fetchPicker(videoId).catch((e) => {
+      console.warn('[pls] membership hints failed (non-fatal)', e);
+      return null;
+    });
+
+  const openUrl = (p) => `https://www.youtube.com/playlist?list=${encodeURIComponent(p.id)}`;
   const sheet = createSheet({
-    videoId,
+    videoId: videoId ?? undefined,
     sort: plsPrefs.sort,
     onSort: (mode) => plsSavePref('sort', mode),
     privacy: plsPrefs.privacy,
     onPrivacy: (privacy) => plsSavePref('privacy', privacy),
-    onPick: (p) => addVideo(p.id, videoId),
+    onPick: finding ? undefined : async (p) => {
+      // A row drawn from the cache before membership landed has `member`
+      // undefined. If YouTube says the video is already there, adding would put
+      // it in twice (YouTube allows duplicates), so don't.
+      if (p.member === undefined && (await pickerP)?.find((r) => r.id === p.id)?.member) {
+        return { already: true };
+      }
+      const r = await addVideo(p.id, videoId);
+      plsCacheTouch(account, p);
+      return r;
+    },
     onRemove: (p) => removeVideo(p.id, videoId),
-    onCreate: (title, privacy) => createPlaylist(title, privacy || 'PRIVATE', videoId),
-    // A new tab, like any link: the sheet stays open for the next save.
-    onOpen: (p) => window.open(
-      `https://www.youtube.com/playlist?list=${encodeURIComponent(p.id)}`, '_blank', 'noopener',
-    ),
+    onCreate: async (title, privacy) => {
+      const made = await createPlaylist(title, privacy || 'PRIVATE', videoId);
+      plsCacheTouch(account, made, { id: made.id, title: made.title });
+      return made;
+    },
+    // Ctrl/⌘/middle-click open a new tab, like any link, and the sheet stays open
+    // for the next save. A finder's plain pick goes there in this tab.
+    onOpen: (p, newTab) => {
+      if (newTab) window.open(openUrl(p), '_blank', 'noopener');
+      else location.assign(openUrl(p));
+    },
     onClose: () => {
       tail.abort();
       if (plsCurrent?.sheet === sheet) plsCurrent = null;
-      console.log('[pls] sheet destroyed, no state retained');
+      console.log('[pls] sheet destroyed');
     },
   });
   plsCurrent = { sheet, videoId };
-  sheet.setStatus('Loading your playlists…');
 
-  // Deliberately NOT awaited and not part of the Promise.all below: the sheet is
-  // already on screen and typing must work immediately. The name arrives when it
-  // arrives, and if it never does the header simply stays empty — a label is not
-  // worth delaying the thing the user actually came to do.
-  fetchVideoTitle(videoId).then((t) => {
-    if (t && !sheet.dead && plsCurrent?.sheet === sheet) sheet.setTitle(t);
+  if (!finding) {
+    // Deliberately NOT awaited: the sheet is already on screen and typing must
+    // work immediately. The name arrives when it arrives, and if it never does
+    // the header simply stays empty.
+    fetchVideoTitle(videoId).then((t) => {
+      if (t && !sheet.dead && plsCurrent?.sheet === sheet) sheet.setTitle(t);
+    });
+  }
+
+  // What the sheet shows is recomputed from whatever has arrived so far — cache,
+  // membership, fresh library — each time one of them lands.
+  /** @type {any[] | null} */ let library = null;
+  /** @type {Array<{id: string, title: string | null, member: boolean}> | null} */ let picker = null;
+  /** @type {Array<{id: string, title: string | null}>} */ let lastOrder = [];
+  const draw = () => {
+    if (sheet.dead || !library) return;
+    // YouTube's order: the picker's, else the order it last had, else the library's.
+    const order = picker ?? lastOrder;
+    const ordered = orderLikePicker(library, order);
+    if (finding) { sheet.setData(ordered.map((p) => ({ ...p }))); return; }
+    const member = new Map((picker ?? []).map((r) => [r.id, r.member]));
+    // `member` is deliberately tri-state: true / false / undefined ("we don't
+    // know"). get_add_to_playlist reports at most 200 playlists, so on a larger
+    // library the tail is unknowable until resolveMembershipTail settles it, and
+    // claiming `false` would be inventing an answer.
+    sheet.setData(saveTargets(ordered, order).map((p) => ({
+      ...p,
+      member: member.has(p.id) ? member.get(p.id) : undefined,
+    })));
+  };
+
+  const cached = await plsCacheRead(account);
+  if (sheet.dead) return;
+  if (cached) {
+    library = cached.library;
+    lastOrder = cached.picker;
+    draw();
+  } else {
+    sheet.setStatus('Loading your playlists…');
+  }
+
+  pickerP.then((rows) => {
+    if (!rows || sheet.dead) return;
+    picker = rows;
+    draw();
   });
 
   try {
-    // The full list is the point; membership is an enhancement, so it is allowed to
-    // fail on its own without taking the sheet down with it.
-    const [list, membership] = await Promise.all([
-      fetchAllPlaylists(),
-      fetchMembership(videoId).catch((e) => {
-        console.warn('[pls] membership hints failed (non-fatal)', e);
-        return new Map();
-      }),
-    ]);
+    const [list] = await Promise.all([fetchAllPlaylists(), pickerP]);
     if (sheet.dead) return;
-
-    // `member` is deliberately tri-state: true / false / undefined ("we don't know").
-    // get_add_to_playlist reports at most 200 playlists — a hard server cap, the same
-    // 200 for every video — so on a larger library the tail is genuinely unknowable
-    // and YouTube's own picker is equally blind there. Absence must stay `undefined`;
-    // claiming `false` would be inventing an answer.
-    // Handed over in the order the server returned them, unsorted. Ordering is the
-    // sheet's job now that the user can change it — a session layer that pre-sorted
-    // would just be an order the UI had to undo. Recent preserves this order;
-    // its recency meaning remains unverified (live verification waived for 2.0.1).
-    const rows = list.map((p) => ({
-      ...p,
-      member: membership.has(p.id) ? membership.get(p.id) : undefined,
-    }));
-    sheet.setData(rows);
-    sheet.setStatus('');
-
-    // Past the 200 that get_add_to_playlist reports, membership is unknown. Settle
-    // it in the background by walking those playlists' own contents — correct but
-    // slow (~9 s for 56 playlists), so it never blocks the sheet: rows gain their
-    // "Already in" mark as answers arrive, and the sheet keeps its cursor on the
-    // same playlist while they move. Skipped when the fast path failed outright,
-    // or answered with <=1 row (the missing-delegation canary in fetchMembership):
-    // then nearly EVERY row is unknown, and walking a whole library is not a
-    // refinement, it is a crawl.
-    const unknown = rows.filter((r) => r.member === undefined).map((r) => r.id);
-    if (membership.size > 1 && unknown.length && !tail.signal.aborted) {
-      console.log(`[pls] membership tail: checking ${unknown.length} playlist(s) past the 200 YouTube reports`);
-      resolveMembershipTail(
-        videoId,
-        unknown,
-        (id, hit) => { if (!tail.signal.aborted) sheet.setMember(id, hit); },
-        6,
-        tail.signal,
-      ).catch((e) => console.warn('[pls] membership tail failed (non-fatal)', e));
+    library = list;
+    if (account) {
+      plsCacheWrite({
+        account,
+        library: list,
+        picker: (picker ?? lastOrder).map(({ id, title }) => ({ id, title })),
+      });
     }
+    draw();
+    sheet.setStatus('');
   } catch (e) {
     console.error('[pls] load failed — failing closed, no DOM fallback', e);
     if (sheet.dead) return;
+    const why = e?.userMessage ?? e?.message ?? String(e);
+    if (library) {
+      // The cached list stays usable; say it could not be brought up to date.
+      sheet.setStatus('Couldn’t refresh your playlists. ' + why);
+      return;
+    }
     // setData BEFORE setStatus. Without it the sheet is still in its loading
     // state, so it shows shimmering skeletons under a footer that already says
-    // the load failed — two contradictory claims at once, and the list never
-    // resolves. An empty result is the honest render for "we have nothing".
+    // the load failed — two contradictory claims at once.
     sheet.setData([]);
-    // The data layer attaches a plain-language reason (offline, signed out…)
-    // when it can tell; otherwise the raw message is still better than nothing.
-    sheet.setStatus('Couldn’t load your playlists. ' + (e?.userMessage ?? e?.message ?? String(e)));
+    sheet.setStatus('Couldn’t load your playlists. ' + why);
+    return;
   }
+
+  // Past the 200 that get_add_to_playlist reports, membership is unknown. Settle
+  // it in the background by walking those playlists' own contents — correct but
+  // slow (~9 s for 56 playlists), so it never blocks the sheet: rows gain their
+  // "Already in" mark as answers arrive. Skipped when the fast path failed, or
+  // answered with <=1 row (the missing-delegation canary): then nearly EVERY row
+  // is unknown, and walking a whole library is not a refinement, it is a crawl.
+  if (finding || !picker || picker.length <= 1 || tail.signal.aborted) return;
+  const known = new Set(picker.map((r) => r.id));
+  const unknown = saveTargets(library, picker).map((p) => p.id).filter((id) => !known.has(id));
+  if (!unknown.length) return;
+  console.log(`[pls] membership tail: checking ${unknown.length} playlist(s) past the 200 YouTube reports`);
+  resolveMembershipTail(
+    videoId,
+    unknown,
+    (id, hit) => { if (!tail.signal.aborted) sheet.setMember(id, hit); },
+    6,
+    tail.signal,
+  ).catch((e) => console.warn('[pls] membership tail failed (non-fatal)', e));
 }
 
 console.log('[pls] content script ready on', location.pathname);

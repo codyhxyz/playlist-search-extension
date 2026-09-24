@@ -82,6 +82,9 @@ export function cfgFrom(text) {
       // normalise to a string because it only ever goes into a header. The
       // lookbehind stops a longer key ending in _SESSION_INDEX from matching.
       sessionIndex: text.match(/(?<![\w])"?SESSION_INDEX"?\s*:\s*"?(\d+)"?/)?.[1] ?? null,
+      // Who is signed in, as YouTube's own client keys its local data: distinct per
+      // Google account and per brand channel. Only ever used as a cache key.
+      datasyncId: text.match(/"DATASYNC_ID":"([^"]+)"/)?.[1] ?? null,
     };
   } catch (e) {
     console.warn('[pls] INNERTUBE_CONTEXT parse failed, trying next source', e);
@@ -95,8 +98,8 @@ function plsCfg() {
   for (const s of document.scripts) if ((hit = cfgFrom(s.textContent))) break;
   // Last resort: the whole serialized document (slow, so only if the scripts miss).
   if (!hit && (hit = cfgFrom(document.documentElement.innerHTML))) how = 'scraped-from-innerHTML';
-  const { context, apiKey, delegatedSessionId, sessionIndex } =
-    hit ?? { context: PLS_FALLBACK_CTX, apiKey: null, delegatedSessionId: null, sessionIndex: null };
+  const { context, apiKey, delegatedSessionId, sessionIndex, datasyncId } =
+    hit ?? { context: PLS_FALLBACK_CTX, apiKey: null, delegatedSessionId: null, sessionIndex: null, datasyncId: null };
   if (!hit) how = 'HARDCODED FALLBACK — regex is broken, look at this';
 
   // Acting as a brand channel: the delegation must be stated explicitly.
@@ -110,8 +113,20 @@ function plsCfg() {
     delegatedTo: delegatedSessionId ?? 'none (personal account)',
     authUser: sessionIndex ?? '0 (default — SESSION_INDEX not found)',
   });
-  plsCfgCache = { context, apiKey, delegatedSessionId, sessionIndex };
+  plsCfgCache = { context, apiKey, delegatedSessionId, sessionIndex, datasyncId };
   return plsCfgCache;
+}
+
+/**
+ * Which library this tab is looking at — the Google account, the brand channel it
+ * acts as, and the signed-in slot. content.js keys its library cache on this so a
+ * cached list can never be shown to a different identity. Null when signed out.
+ * @returns {string | null}
+ */
+export function accountKey() {
+  if (!/(?:^|;\s*)(?:SAPISID|__Secure-[13]PAPISID)=/.test(document.cookie)) return null;
+  const { datasyncId, delegatedSessionId, sessionIndex } = plsCfg();
+  return [datasyncId ?? '', delegatedSessionId ?? '', sessionIndex ?? '0'].join('|');
 }
 
 /**
@@ -420,20 +435,27 @@ function plsEntryImage(entry) {
   return out;
 }
 
-/** @param {any} entry @returns {string | undefined} */
-function plsEntryPrivacy(entry) {
+/**
+ * Privacy when the first metadata part is one of the three words; `other` when it
+ * is something else — on an English page, the name of the channel that owns a
+ * playlist the user merely saved (see saveTargets for why "English" matters).
+ * @param {any} entry
+ * @returns {{privacy?: string, other?: true}}
+ */
+function plsEntryOwner(entry) {
   const rows = entry?.metadata?.lockupMetadataViewModel?.metadata?.contentMetadataViewModel?.metadataRows;
   const first = Array.isArray(rows) ? rows[0]?.metadataParts?.[0]?.text?.content : undefined;
-  return typeof first === 'string' && PLS_PRIVACY_WORDS.has(first) ? first : undefined;
+  if (typeof first !== 'string' || !first) return {};
+  return PLS_PRIVACY_WORDS.has(first) ? { privacy: first } : { other: true };
 }
 
 /**
- * @typedef {{title: string|null, count?: number, privacy?: string,
+ * @typedef {{title: string|null, count?: number, privacy?: string, other?: true,
  *   thumb?: PlsThumbSource[], stack?: {light: string, dark: string}}} PlsScanEntry
  */
 
 /**
- * @typedef {{id: string, title: string, count?: number, privacy?: string,
+ * @typedef {{id: string, title: string, count?: number, privacy?: string, other?: true,
  *   thumb?: PlsThumbSource[], stack?: {light: string, dark: string}}} PlsPlaylist
  */
 
@@ -463,7 +485,7 @@ export function scanPlaylists(node, out) {
     const found = {
       title: plsFirstTitle(node) || null,
       count: plsEntryCount(node),
-      privacy: plsEntryPrivacy(node),
+      ...plsEntryOwner(node),
       ...plsEntryImage(node),
     };
     // The first mention creates the entry, which fixes its position in the Map;
@@ -619,16 +641,96 @@ export async function fetchAllPlaylists() {
  * @returns {Map<string, boolean>}
  */
 export function parseMembership(data) {
-  /** @type {Map<string, boolean>} */
-  const map = new Map();
+  return new Map(parsePicker(data).map((r) => [r.id, r.member]));
+}
+
+/**
+ * The rows of YouTube's own Save picker, IN YOUTUBE'S ORDER: `{id, title, member}`.
+ * That order is the one users know from YouTube's popover, so it is the order the
+ * sheet shows by default — whatever YouTube's ranking means (recency is the common
+ * reading, unverified here), emulating it beats inventing one.
+ * Pure — exported for tests.
+ * @param {any} data
+ * @returns {Array<{id: string, title: string | null, member: boolean}>}
+ */
+export function parsePicker(data) {
+  const out = [];
+  const seen = new Set();
   for (const o of scanKey(data, 'playlistAddToOptionRenderer', [])) {
-    if (o && typeof o.playlistId === 'string' && typeof o.containsSelectedVideos === 'string') {
-      // With a single videoId the enum is only ever ALL or NONE. SOME is the
-      // multi-video case, which we never ask for; treat it as "contains" anyway.
-      map.set(o.playlistId, o.containsSelectedVideos !== 'NONE');
-    }
+    if (!o || typeof o.playlistId !== 'string' || typeof o.containsSelectedVideos !== 'string') continue;
+    if (seen.has(o.playlistId)) continue;
+    seen.add(o.playlistId);
+    // With a single videoId the enum is only ever ALL or NONE. SOME is the
+    // multi-video case, which we never ask for; treat it as "contains" anyway.
+    out.push({ id: o.playlistId, title: plsText(o.title), member: o.containsSelectedVideos !== 'NONE' });
   }
-  return map;
+  return out;
+}
+
+/** get_add_to_playlist never reports more than this many playlists. */
+export const PLS_PICKER_CAP = 200;
+
+/**
+ * The library, reordered the way YouTube's picker orders it: the playlists the
+ * picker reported, in its order, then everything it did not (the >200 tail, and
+ * anything that is not a save target) in library order. A picker row missing from
+ * the library (not observed; handled so it could not silently vanish) is kept,
+ * under the picker's own title.
+ * Pure — exported for tests.
+ * @param {PlsPlaylist[]} library
+ * @param {Array<{id: string, title: string | null}>} picker
+ * @returns {PlsPlaylist[]}
+ */
+export function orderLikePicker(library, picker) {
+  const byId = new Map(library.map((p) => [p.id, p]));
+  const out = [];
+  const placed = new Set();
+  for (const r of picker) {
+    if (placed.has(r.id)) continue;
+    const p = byId.get(r.id) ?? (r.title ? { id: r.id, title: r.title } : null);
+    if (!p) continue;
+    out.push(p);
+    placed.add(r.id);
+  }
+  for (const p of library) if (!placed.has(p.id)) out.push(p);
+  return out;
+}
+
+// Library entries that can never take a video: Liked videos (the like button owns
+// it), mixes, a channel's uploads, albums. YouTube's picker never offers them.
+const PLS_NOT_TARGET_RE = /^(LL|LM|RD|UU|OL)/;
+
+/**
+ * Only the playlists a video can actually be saved to — what YouTube's own picker
+ * would offer. Three layers, strongest first:
+ *
+ *  1. Whatever the picker reported IS a save target; that is YouTube saying so.
+ *  2. If the picker reported fewer than its cap, it listed EVERY save target the
+ *     account has, so anything else in the library is not one (a playlist saved
+ *     from another channel, Liked videos). Language-independent. `pickerComplete`
+ *     is false when the picker failed or answered with <=1 row (the missing brand
+ *     delegation canary) — then it proves nothing.
+ *  3. Past the cap: drop the kinds that are never targets by id, and playlists
+ *     whose metadata names another channel where the privacy word would be. That
+ *     last test reads English words, so it only runs when the library shows
+ *     English privacy words at all — on any other language every owned playlist
+ *     would look foreign, and a wrongly hidden playlist is worse than a stray one.
+ *
+ * Pure — exported for tests.
+ * @param {PlsPlaylist[]} library
+ * @param {Array<{id: string}>} picker
+ * @returns {PlsPlaylist[]}
+ */
+export function saveTargets(library, picker) {
+  const reported = new Set(picker.map((r) => r.id));
+  const pickerComplete = picker.length > 1 && picker.length < PLS_PICKER_CAP;
+  const english = library.some((p) => p.privacy);
+  return library.filter((p) => {
+    if (reported.has(p.id)) return true;
+    if (pickerComplete) return false;
+    if (PLS_NOT_TARGET_RE.test(p.id)) return false;
+    return !(english && p.other);
+  });
 }
 
 /**
@@ -651,21 +753,23 @@ export function parseMembership(data) {
  * server actually reported — an absent key means **unknown**, which content.js maps
  * to `undefined`, never to `false`. resolveMembershipTail() can settle the rest.
  *
+ * Returns the picker's rows in YouTube's order (see parsePicker).
+ *
  * @param {string} videoId
- * @returns {Promise<Map<string, boolean>>}
+ * @returns {Promise<Array<{id: string, title: string | null, member: boolean}>>}
  */
-export async function fetchMembership(videoId) {
+export async function fetchPicker(videoId) {
   const data = await plsPost('playlist/get_add_to_playlist', { videoIds: [videoId] });
-  const map = parseMembership(data);
-  const known = [...map.values()].filter(Boolean).length;
-  console.log(`[pls] membership: ${map.size} playlist(s) reported, ${known} contain ${videoId}`);
-  if (map.size <= 1) {
+  const rows = parsePicker(data);
+  const known = rows.filter((r) => r.member).length;
+  console.log(`[pls] membership: ${rows.length} playlist(s) reported, ${known} contain ${videoId}`);
+  if (rows.length <= 1) {
     console.warn(
       '[pls] get_add_to_playlist reported <=1 playlist. On a brand account that means ' +
         'context.user.onBehalfOfUser is missing — check plsCfg()/DELEGATED_SESSION_ID.'
     );
   }
-  return map;
+  return rows;
 }
 
 /**
