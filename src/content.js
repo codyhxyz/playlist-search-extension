@@ -9,22 +9,49 @@ import { createSheet } from './lib/sheet.js';
 import {
   addVideo,
   removeVideo,
+  createPlaylist,
   fetchAllPlaylists,
   fetchMembership,
   fetchVideoTitle,
   resetConfigCache,
+  resolveMembershipTail,
 } from './lib/innertube.js';
 
 let plsCurrent = null;
 let plsCurrentVideoId = null;
-// The ordering the user last chose, remembered for the life of this page and no
-// longer. Deliberately NOT written to chrome.storage: PRIVACY.md states that this
-// extension persists nothing about your playlists or your searching, and a sort
-// preference is not worth making that sentence false. Re-picking it after a full
-// page load is a smaller cost than a privacy policy that no longer describes the
-// product. (It is also, unlike a playlist cache, state that cannot go stale
-// wrongly — the sheet re-derives every order from the rows it was just handed.)
-let plsSortMode;
+// Two display preferences, remembered across page loads: the sort order and the
+// privacy new playlists are created with. They are the ONLY things this extension
+// persists about how you use it — two enum strings, no playlist ids, titles or
+// queries — and PRIVACY.md lists them by name. (A sort preference, unlike a
+// playlist cache, cannot go stale wrongly: the sheet re-derives every order from
+// the rows it was just handed.) Read once at startup; a sheet opened in the few
+// milliseconds before the read lands just gets the defaults.
+const PLS_PREFS_KEY = 'plsPrefs';
+/** @type {{sort?: string, privacy?: string}} */
+let plsPrefs = {};
+// Guarded, because this runs at module scope: a throw here would take the whole
+// content script down with it, and a preference is not worth a dead extension.
+try {
+  chrome.storage.local.get(PLS_PREFS_KEY)
+    .then((r) => { plsPrefs = { ...r?.[PLS_PREFS_KEY], ...plsPrefs }; })
+    .catch((e) => console.warn('[pls] could not read preferences (using defaults)', e));
+} catch (e) {
+  console.warn('[pls] chrome.storage unavailable — preferences will not persist', e);
+}
+
+function plsSavePref(key, value) {
+  plsPrefs = { ...plsPrefs, [key]: value };
+  try {
+    chrome.storage.local.set({ [PLS_PREFS_KEY]: plsPrefs })
+      .catch((e) => console.warn('[pls] could not save preference', key, e));
+  } catch (e) {
+    console.warn('[pls] could not save preference', key, e);
+  }
+}
+
+// Aborts the >200 membership walk for whichever sheet is open. That walk can be a
+// hundred-odd requests; a closed sheet must not keep spending them.
+let plsTailAbort = null;
 
 // ─────────────── L1 relay: MAIN world -> service worker ───────────────
 // intent-hook.js cannot use chrome.* APIs, and the service worker cannot see page
@@ -95,6 +122,8 @@ function plsOnNavigation(reason) {
 }
 
 function plsDestroyCurrent() {
+  plsTailAbort?.abort();
+  plsTailAbort = null;
   const s = plsCurrent;
   plsCurrent = null;
   plsCurrentVideoId = null;
@@ -152,13 +181,24 @@ async function plsHandleIntent(videoId, source) {
   console.log(`[pls] SAVE_INTENT ${videoId} via ${source}`);
   plsDismissHostDialog();
 
+  const tail = new AbortController();
+  plsTailAbort = tail;
   const sheet = createSheet({
     videoId,
-    sort: plsSortMode,
-    onSort: (mode) => { plsSortMode = mode; },
+    sort: plsPrefs.sort,
+    onSort: (mode) => plsSavePref('sort', mode),
+    privacy: plsPrefs.privacy,
+    onPrivacy: (privacy) => plsSavePref('privacy', privacy),
     onPick: (p) => addVideo(p.id, videoId),
     onRemove: (p) => removeVideo(p.id, videoId),
+    onCreate: (title, privacy) => createPlaylist(title, privacy || 'PRIVATE', videoId),
+    // A new tab, like any link: the sheet stays open for the next save.
+    onOpen: (p) => window.open(
+      `https://www.youtube.com/playlist?list=${encodeURIComponent(p.id)}`, '_blank', 'noopener',
+    ),
     onClose: () => {
+      tail.abort();
+      if (plsTailAbort === tail) plsTailAbort = null;
       if (plsCurrent === sheet) {
         plsCurrent = null;
         plsCurrentVideoId = null;
@@ -197,16 +237,34 @@ async function plsHandleIntent(videoId, source) {
     // claiming `false` would be inventing an answer.
     // Handed over in the order the server returned them, unsorted. Ordering is the
     // sheet's job now that the user can change it — a session layer that pre-sorted
-    // would just be an order the UI had to undo. Note this array's order is not
-    // meaningless, it is *unverified*: it is whatever FEplaylist_aggregation shipped,
-    // and nobody has established what that ordering represents. The sheet therefore
-    // never offers it as a named mode, and neither should anything else.
+    // would just be an order the UI had to undo. Recent preserves this order;
+    // its recency meaning remains unverified (live verification waived for 2.0.1).
     const rows = list.map((p) => ({
       ...p,
       member: membership.has(p.id) ? membership.get(p.id) : undefined,
     }));
     sheet.setData(rows);
     sheet.setStatus('');
+
+    // Past the 200 that get_add_to_playlist reports, membership is unknown. Settle
+    // it in the background by walking those playlists' own contents — correct but
+    // slow (~9 s for 56 playlists), so it never blocks the sheet: rows gain their
+    // "Already in" mark as answers arrive, and the sheet keeps its cursor on the
+    // same playlist while they move. Skipped when the fast path failed outright,
+    // or answered with <=1 row (the missing-delegation canary in fetchMembership):
+    // then nearly EVERY row is unknown, and walking a whole library is not a
+    // refinement, it is a crawl.
+    const unknown = rows.filter((r) => r.member === undefined).map((r) => r.id);
+    if (membership.size > 1 && unknown.length && !tail.signal.aborted) {
+      console.log(`[pls] membership tail: checking ${unknown.length} playlist(s) past the 200 YouTube reports`);
+      resolveMembershipTail(
+        videoId,
+        unknown,
+        (id, hit) => { if (!tail.signal.aborted) sheet.setMember(id, hit); },
+        6,
+        tail.signal,
+      ).catch((e) => console.warn('[pls] membership tail failed (non-fatal)', e));
+    }
   } catch (e) {
     console.error('[pls] load failed — failing closed, no DOM fallback', e);
     if (sheet.dead) return;
@@ -215,7 +273,9 @@ async function plsHandleIntent(videoId, source) {
     // the load failed — two contradictory claims at once, and the list never
     // resolves. An empty result is the honest render for "we have nothing".
     sheet.setData([]);
-    sheet.setStatus('Couldn’t load your playlists: ' + (e?.message ?? String(e)));
+    // The data layer attaches a plain-language reason (offline, signed out…)
+    // when it can tell; otherwise the raw message is still better than nothing.
+    sheet.setStatus('Couldn’t load your playlists. ' + (e?.userMessage ?? e?.message ?? String(e)));
   }
 }
 

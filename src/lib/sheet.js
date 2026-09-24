@@ -14,19 +14,21 @@
 //           exactly two places: jade when a save lands, red when one fails.
 //           Depth is a 1px inset sheen and a three-stop shadow — no glass, no
 //           glow, no gradient. Restraint is the whole aesthetic.
-// SEARCH    The matched run of every title is marked. In a palette this is the
-//           difference between a filter and a search: you see *why* a row
-//           survived. Marking is achromatic (a foreground wash), built from
-//           text nodes and spans, held back until the query is two characters
-//           (one matches everything, so the marks become confetti), and skipped
-//           whenever the index maths is not provably safe — case-folding that
-//           changes length, or a boundary that would split a surrogate pair.
+// SEARCH    A query is words; a title matches when it holds all of them, in any
+//           order, ignoring case and accents. The matched run of every word is
+//           marked — in a palette this is the difference between a filter and a
+//           search: you see *why* a row survived. Marking is achromatic (a
+//           foreground wash), built from text nodes and spans, held back for
+//           one-character words (they match everything, so the marks become
+//           confetti), and mapped back through the fold per code point, so it
+//           can neither drift nor split a surrogate pair.
 // STATE     `member` is tri-state and mostly unknown — YouTube stops telling us
 //           past ~200 playlists. So `undefined` and `false` render identically
 //           and bare: an unmarked row claims nothing, it is simply a target.
 //           Only `member === true` earns a mark and a removal path. Removal
 //           requires a separate confirmation button so a double-click or key
-//           repeat cannot delete anything. Session events — Saving, Saved,
+//           repeat cannot delete anything — except Undo, which reverses the
+//           save the user made a moment ago. Session events — Saving, Saved,
 //           Removing, Removed, Retry — use the same state slot. Every state
 //           carries a word as well as a mark, so colour is never the sole carrier.
 // ORDER     Three orderings, and every one of them is a *claim* the sheet can
@@ -43,7 +45,8 @@
 // VIEWPORT  Video title · field + count + order + close · hairline · list.
 //           The title is elided above the query, and the raw video id remains
 //           diagnostic-only on the host element. The footer exists only for a
-//           useful transient status or removal confirmation. Top-anchored, so
+//           useful transient status, Undo, or removal confirmation. Rows carry a
+//           video count when YouTube reported one. Top-anchored, so
 //           the sheet grows down to a ceiling and shrinks with the query.
 // MOTION    One entrance (@starting-style, 220ms), one payoff (the check draws
 //           itself in 360ms while the row's field flashes jade and settles), one
@@ -53,13 +56,19 @@
 //           clipped title under the arrow keys is a defect, not a flourish.
 // ────────────────────────────────────────────────────────────────────────────
 
-const PLS_MAX_ROWS = 200;
+// Rows are built a page at a time, not capped: the first page renders with the
+// query, and the next is appended as the list scrolls (or the cursor walks) near
+// the end. Every match is reachable by scrolling alone; typing is faster, not
+// required. Keeps a 5,000-playlist library from building 5,000 buttons per keystroke.
+const PLS_PAGE = 200;
+const PLS_GROW_MARGIN = 600; // px from the bottom at which the next page is built
 const PLS_LOAD_PATIENCE = 8000;
 const PLS_SVGNS = 'http://www.w3.org/2000/svg';
 const PLS_PAD = 8; // .list padding, and the scroll margin the cursor keeps
 const PLS_MIN_HL = 2; // shortest query worth marking inside a title
 const PLS_CHECK = 'M3.6 7.35 5.95 9.75 10.5 4.35';
 const PLS_CROSS = 'M4.3 4.3 9.7 9.7M9.7 4.3 4.3 9.7';
+const PLS_PLUS = 'M7 2.5v9M2.5 7h9';
 // Three descending rules. One glyph for all three orderings on purpose — the
 // mode is carried by the word beside it, the same way every other state in this
 // sheet carries a word rather than leaning on a shape.
@@ -184,7 +193,7 @@ dialog ::selection { background: var(--sel); }
 
 /* ── header ──────────────────────────────────────────────────────────────── */
 .head {
-  flex: none; display: grid; grid-template-columns: minmax(0,1fr) auto auto auto;
+  flex: none; display: grid; grid-template-columns: minmax(0,1fr) auto auto auto auto;
   align-items: center; gap: 8px 12px;
   padding: 15px 20px 14px; border-bottom: 1px solid var(--line);
 }
@@ -242,11 +251,12 @@ input::placeholder { color: var(--fg-3); letter-spacing: -.008em; }
   transition: background-color .13s ease, color .13s ease;
 }
 .row:nth-child(even) { background-color: var(--alt); }
-/* In-flight and completed session events are terminal. Known member rows remain
-   actionable, but activation only opens the separate removal confirmation. */
+/* In-flight events and a completed removal are terminal. Known members and rows
+   saved this session stay actionable, but activation only opens the separate
+   removal confirmation — it never adds twice. */
 .row.done { background-color: var(--f-ok); }
 .row.fail { background-color: var(--f-bad); }
-.row.done, .row.busy, .row.removed { cursor: default; }
+.row.busy, .row.removed { cursor: default; }
 :where(.list:not(.kb)) .row:not(.on,.done,.busy,.removed):hover { background-color: var(--hov); }
 /* The cursor is simply the brightest field on screen, layered per state so it
    never argues with the state colour underneath it. */
@@ -301,8 +311,71 @@ input::placeholder { color: var(--fg-3); letter-spacing: -.008em; }
            font-size: 14px; font-weight: 500; color: var(--fg-2); }
 .note .s { display: block; }
 .note .q { color: var(--fg); font-weight: 500; overflow-wrap: anywhere; }
-.more { padding: 13px 12px 7px; color: var(--fg-3);
-        font-size: 11.5px; font-variant-numeric: tabular-nums; }
+
+.create-btn {
+  all: initial; box-sizing: border-box;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  margin-top: 12px; padding: 7px 14px; border-radius: 8px;
+  background-color: var(--hov); color: var(--fg);
+  font: 500 13px/1 var(--sans); cursor: pointer;
+  border: 1px solid var(--line);
+  transition: background-color .13s ease, border-color .13s ease;
+}
+.create-btn:hover { background-color: var(--act); border-color: var(--edge); }
+.create-btn:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.create-btn.busy { opacity: .6; cursor: default; }
+.create-btn .mark { stroke-width: 1.6; }
+
+.create-action {
+  all: initial; box-sizing: border-box;
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; min-height: var(--row-h); padding: 8px 12px; border-radius: 8px;
+  font: 500 13px/1.35 var(--sans); letter-spacing: -.004em;
+  color: var(--fg-2); cursor: pointer; background-color: transparent;
+  border-top: 1px solid var(--line); margin-top: 4px;
+  transition: background-color .13s ease, color .13s ease;
+}
+.create-action:hover { background-color: var(--hov); color: var(--fg); }
+.create-action:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.create-action.busy { opacity: .6; cursor: default; }
+.create-action .mark { stroke-width: 1.6; }
+
+.new-btn {
+  all: initial; box-sizing: border-box; flex: none;
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 22px; padding: 0 8px; margin: 0 2px 0 0; border-radius: 7px;
+  font: 500 11.5px/1 var(--sans); letter-spacing: .01em;
+  color: var(--fg-3); cursor: pointer;
+  transition: color .13s ease, background-color .13s ease;
+}
+.new-btn:hover { color: var(--fg); background-color: var(--hov); }
+.new-btn:active { background-color: var(--act); }
+.new-btn:focus-visible { color: var(--fg); outline: 2px solid var(--ring); outline-offset: -2px; }
+.new-btn .mark { stroke-width: 1.6; }
+/* Video count: a quiet fact beside the state column. It is also what tells two
+   identically-titled playlists apart. */
+.cnt { flex: none; min-width: 2ch; text-align: right;
+       font: 400 11.5px/1 var(--sans); font-variant-numeric: tabular-nums;
+       color: var(--fg-3); }
+
+/* Create button plus the privacy it will create with, side by side. The privacy
+   chip is a real, separately focusable button: nesting it inside the create
+   button would be invalid, and hiding the choice would make "Private" a secret. */
+.create-row { display: flex; align-items: center; gap: 6px; }
+.create-row .create-action { flex: 1 1 auto; margin-top: 0; }
+.create-wrap { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; }
+.note .create-row { justify-content: center; margin-top: 12px; }
+.note .create-row .create-btn { margin-top: 0; }
+.priv {
+  all: initial; box-sizing: border-box; flex: none;
+  display: inline-flex; align-items: center; height: 26px; padding: 0 9px;
+  border-radius: 7px; border: 1px solid var(--line);
+  font: 500 11.5px/1 var(--sans); letter-spacing: .01em;
+  color: var(--fg-2); cursor: pointer;
+  transition: color .13s ease, background-color .13s ease;
+}
+.priv:hover { color: var(--fg); background-color: var(--hov); }
+.priv:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 
 /* Same height as a real row, so the list resolves into place instead of popping.
    The resting opacity is declared, not implied by the keyframes — otherwise
@@ -325,7 +398,7 @@ input::placeholder { color: var(--fg-3); letter-spacing: -.008em; }
   padding: 10px 20px 11px; border-top: 1px solid var(--line);
   font: 400 11.5px/1.5 var(--sans); color: var(--fg-3);
 }
-.foot:has(.status:empty) { display: none; }
+.foot:has(.status:empty):not(:has(.undo:not([hidden]))) { display: none; }
 .status { flex: 1 1 auto; min-width: 0; overflow: hidden;
           display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .confirm { flex: none; display: flex; gap: 8px; }
@@ -336,6 +409,12 @@ input::placeholder { color: var(--fg-3); letter-spacing: -.008em; }
 .confirm button:hover { background-color: var(--hov); color: var(--fg); }
 .confirm button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 .confirm .danger { color: var(--bad); }
+.undo {
+  all: initial; box-sizing: border-box; flex: none; padding: 5px 9px; border-radius: 7px;
+  font: 600 11.5px/1 var(--sans); color: var(--fg); cursor: pointer;
+}
+.undo:hover { background-color: var(--hov); }
+.undo:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 
 /* The header's order control cycles through the three supported modes. */
 .sort {
@@ -423,36 +502,76 @@ function plsWriteRun(node, text) {
   if (last < text.length) node.append(text.slice(last));
 }
 
-const plsIsLowSurrogate = (s, i) => {
-  const c = s.charCodeAt(i);
-  return c >= 0xdc00 && c <= 0xdfff;
+// ── Matching ────────────────────────────────────────────────────────────────
+// A query is words, and a title matches when it contains every one of them, in
+// any order: "lofi study" finds "Study — Lofi". Case and accents fold away, so
+// "cafe" finds "Café". Folding is per code point and remembers where each folded
+// unit came from, so a highlight maps back onto the ORIGINAL title exactly —
+// even when folding changes length ("ﬁ" → "fi", "İ" → "i̇") — and a boundary can
+// never land inside a surrogate pair, because it is only ever a code point edge.
+
+/** @param {string} text */
+function plsFold(text) {
+  let s = '';
+  /** @type {number[]} */ const from = [];
+  /** @type {number[]} */ const to = [];
+  let i = 0;
+  for (const ch of text) {
+    const f = ch.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+    for (let k = 0; k < f.length; k++) { from.push(i); to.push(i + ch.length); }
+    s += f;
+    i += ch.length;
+  }
+  return { s, from, to };
+}
+
+// Titles are folded once per row object, not once per keystroke.
+/** @type {WeakMap<object, ReturnType<typeof plsFold>>} */
+const plsFoldCache = new WeakMap();
+function plsFolded(p) {
+  let f = plsFoldCache.get(p);
+  if (!f || f.title !== p.title) {
+    f = Object.assign(plsFold(p.title), { title: p.title });
+    plsFoldCache.set(p, f);
+  }
+  return f;
+}
+
+/** @param {string} raw */
+const plsTokens = (raw) => plsFold(raw).s.split(/\s+/).filter(Boolean);
+
+/** @param {{title: string}} p @param {string[]} toks */
+const plsMatches = (p, toks) => {
+  const s = plsFolded(p).s;
+  return toks.every((t) => s.includes(t));
 };
 
-// Mark the run the query matched. Skipped whenever the arithmetic is not
-// provably safe: case-folding that changes length, or a boundary that would
-// split a surrogate pair. A wrong highlight is worse than none.
-function plsWriteTitle(node, text, q) {
-  let a = -1;
-  let b = -1;
-  // One character matches nearly every row, so the marks stop being information
-  // and become confetti. Two is where a highlight starts telling you something.
-  if (q && q.length >= PLS_MIN_HL) {
-    const lower = text.toLowerCase();
-    if (lower.length === text.length) {
-      a = lower.indexOf(q);
-      b = a + q.length;
-      if (a > -1 && (plsIsLowSurrogate(text, a) || plsIsLowSurrogate(text, b))) a = -1;
-    }
+// Mark every run the query matched, each word separately, merged where they
+// overlap. Words shorter than two characters are not marked: one character
+// matches nearly every row, so the marks stop being information and become
+// confetti. Two is where a highlight starts telling you something.
+function plsWriteTitle(node, p, toks) {
+  const text = p.title;
+  /** @type {Array<[number, number]>} */
+  const spans = [];
+  const f = toks.length ? plsFolded(p) : null;
+  for (const t of toks) {
+    if (!f || t.length < PLS_MIN_HL) continue;
+    const a = f.s.indexOf(t);
+    if (a > -1) spans.push([f.from[a], f.to[a + t.length - 1]]);
   }
-  if (a < 0) {
-    plsWriteRun(node, text);
-  } else {
-    if (a > 0) plsWriteRun(node, text.slice(0, a));
+  spans.sort((x, y) => x[0] - y[0]);
+  let at = 0;
+  for (const [a0, b] of spans) {
+    const a = Math.max(a0, at);
+    if (b <= a) continue;
+    if (a > at) plsWriteRun(node, text.slice(at, a));
     const hit = plsEl('span', 'hit');
     plsWriteRun(hit, text.slice(a, b));
     node.append(hit);
-    if (b < text.length) plsWriteRun(node, text.slice(b));
+    at = b;
   }
+  if (at < text.length) plsWriteRun(node, text.slice(at));
   if (!node.firstChild) node.textContent = text;
 }
 
@@ -474,6 +593,9 @@ const plsAZ = (a, b) =>
   a.title.localeCompare(b.title) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 const PLS_SORTS = [
+  // ponytail: recency assumes YouTube's response order; replace with an explicit
+  // server sort or timestamps when verified. Live verification waived for 2.0.1.
+  { id: 'recent', label: 'Recent', say: 'recently added, YouTube order', cmp: (x, y) => x.i - y.i },
   {
     id: 'match',
     // Short on screen, complete in the accessible name — the header stays compact
@@ -484,10 +606,19 @@ const PLS_SORTS = [
     // than to an order nobody could explain.
     say: 'best match, closest to the start of the title first',
     cmp: (x, y, q) =>
-      (q ? x.pos - y.pos || x.p.title.length - y.p.title.length : 0) || plsAZ(x.p, y.p),
+      (q.length ? x.pos - y.pos || x.p.title.length - y.p.title.length : 0) || plsAZ(x.p, y.p),
   },
   { id: 'az', label: 'A → Z', say: 'A to Z', cmp: (x, y) => plsAZ(x.p, y.p) },
   { id: 'za', label: 'Z → A', say: 'Z to A', cmp: (x, y) => -plsAZ(x.p, y.p) },
+];
+
+// Privacy for a playlist created from the sheet. Private is the default because
+// it is the choice nobody regrets: a playlist made public by accident has already
+// been seen. The chip beside every create control says which one is live.
+const PLS_PRIVACY = [
+  { id: 'PRIVATE', label: 'Private' },
+  { id: 'UNLISTED', label: 'Unlisted' },
+  { id: 'PUBLIC', label: 'Public' },
 ];
 
 const plsSortAt = (i) => PLS_SORTS[((i % PLS_SORTS.length) + PLS_SORTS.length) % PLS_SORTS.length];
@@ -504,13 +635,14 @@ const plsSortAt = (i) => PLS_SORTS[((i % PLS_SORTS.length) + PLS_SORTS.length) %
  *
  * @param {Array<{id: string, title: string, member?: boolean}>} rows
  * @param {number} sortIdx
- * @param {string} q lowercased query, or ''
+ * @param {string[]} q folded query words, or []
  */
 function plsOrder(rows, sortIdx, q) {
   const mode = plsSortAt(sortIdx);
   // Decorate once: the match position is O(title) to compute and a sort would
-  // otherwise ask for it O(n log n) times.
-  const dec = rows.map((p, i) => ({ p, i, pos: q ? p.title.toLowerCase().indexOf(q) : -1 }));
+  // otherwise ask for it O(n log n) times. Ranked by where the FIRST word lands —
+  // the word typed first is the one the user is leading with.
+  const dec = rows.map((p, i) => ({ p, i, pos: q.length ? plsFolded(p).s.indexOf(q[0]) : -1 }));
   dec.sort(
     (x, y) =>
       Number(y.p.member === true) - Number(x.p.member === true) ||
@@ -528,10 +660,16 @@ function plsOrder(rows, sortIdx, q) {
  * @param {(p: any) => Promise<any>} opts.onPick
  * @param {(p: any) => Promise<any>} opts.onRemove
  * @param {() => void} [opts.onClose]        fires exactly once
- * @param {string} [opts.sort]               initial ordering: match | az | za
+ * @param {(title: string, privacy: string) => Promise<any>} [opts.onCreate]
+ * @param {string} [opts.sort]               initial ordering: recent (default) | match | az | za
  * @param {(id: string) => void} [opts.onSort]  fires when the user changes it
+ * @param {string} [opts.privacy]            privacy for new playlists: PRIVATE (default) | UNLISTED | PUBLIC
+ * @param {(privacy: string) => void} [opts.onPrivacy]  fires when the user changes it
+ * @param {(p: any) => void} [opts.onOpen]   Ctrl/⌘-click, middle-click or Ctrl/⌘+Enter on a row
  */
-export function createSheet({ videoId, videoTitle, onPick, onRemove, onClose, sort, onSort }) {
+export function createSheet({
+  videoId, videoTitle, onPick, onRemove, onCreate, onClose, sort, onSort, privacy, onPrivacy, onOpen,
+}) {
   const uid = 'pls' + Math.random().toString(36).slice(2, 8);
   const host = document.createElement('pls-save-sheet');
   const shadow = host.attachShadow({ mode: 'closed' });
@@ -616,6 +754,11 @@ export function createSheet({ videoId, videoTitle, onPick, onRemove, onClose, so
   const confirmRemove = plsEl('div', 'confirm');
   confirmRemove.hidden = true;
   confirmRemove.append(cancelRemoveBtn, confirmRemoveBtn);
+  // Undo for the most recent save. No confirmation: it reverses the user's own
+  // action of a moment ago, which is the opposite of a surprise.
+  const undoBtn = plsEl('button', 'undo', 'Undo');
+  undoBtn.type = 'button';
+  undoBtn.hidden = true;
 
   // The id is diagnostic, not user-facing: it goes on the host element where
   // console-poking and e2e specs can still reach it, and never on screen.
@@ -666,10 +809,28 @@ export function createSheet({ videoId, videoTitle, onPick, onRemove, onClose, so
   }
   paintSort();
 
-  head.append(vid, input, readout, sortBtn, closeBtn);
+  const newBtn = onCreate ? plsEl('button', 'new-btn') : null;
+  if (newBtn) {
+    newBtn.type = 'button';
+    newBtn.setAttribute('aria-label', 'Create new playlist');
+    newBtn.title = 'Create a new playlist';
+    newBtn.append(plsIcon(PLS_PLUS), plsEl('span', null, 'New'));
+    newBtn.addEventListener('click', () => {
+      cancelRemoval(false);
+      const raw = input.value.trim();
+      if (raw) {
+        create(raw);
+      } else {
+        input.focus();
+        setStatus('Type a playlist name and press Enter to create.');
+      }
+    });
+  }
+
+  head.append(vid, input, readout, sortBtn, ...(newBtn ? [newBtn] : []), closeBtn);
 
   const foot = plsEl('div', 'foot');
-  foot.append(status, confirmRemove);
+  foot.append(status, confirmRemove, undoBtn);
 
   dlg.append(head, list, foot);
   shadow.append(dlg);
@@ -678,11 +839,13 @@ export function createSheet({ videoId, videoTitle, onPick, onRemove, onClose, so
   let data = [];                 // {id, title, member}
   const state = new Map();       // id -> add/remove pending, success, or error
   let armedRemove = null;
+  let undoable = null;           // the playlist the footer's Undo would remove from
+  let privIdx = Math.max(0, PLS_PRIVACY.findIndex((x) => x.id === privacy));
   let dead = false;
   let loaded = false;
   let patience = false;          // load took long enough to stop promising rows
   let shown = [];                // playlists currently rendered
-  let nodes = [];                // row elements, parallel to `shown`
+  let nodes = [];                // row elements for shown[0 .. nodes.length - 1]
   let active = 0;
   let lastQ = null;
   // The status line is an aria-live region, so what it currently asserts matters
@@ -709,7 +872,7 @@ export function createSheet({ videoId, videoTitle, onPick, onRemove, onClose, so
     onClose?.();
   }
 
-  function rowNode(p, i, q) {
+  function rowNode(p, i, toks) {
     const st = state.get(p.id);
     // Tri-state: only an explicit `true` is a claim. `false` and `undefined`
     // both render bare — we will not draw an affordance for an answer we do
@@ -728,30 +891,37 @@ export function createSheet({ videoId, videoTitle, onPick, onRemove, onClose, so
     b.tabIndex = -1;
 
     const t = plsEl('span', 't');
-    plsWriteTitle(t, p.title, q);
+    plsWriteTitle(t, p, toks);
     const gut = plsEl('span', 'gut');
     const cell = plsEl('span', 'state');
     b.append(t, cell);
+    // Only a count YouTube actually reported is drawn; absent means absent.
+    const n = typeof p.count === 'number' ? p.count : null;
+    if (n != null) {
+      const c = plsEl('span', 'cnt', n.toLocaleString());
+      c.setAttribute('aria-hidden', 'true');
+      cell.append(c);
+    }
+    const sayCount = n == null ? '' : `, ${n.toLocaleString()} video${n === 1 ? '' : 's'}`;
 
-    let said = p.title;
+    let said = p.title + sayCount;
     if (st === 'adding') {
       b.classList.add('busy');
       b.setAttribute('aria-busy', 'true');
       b.setAttribute('aria-disabled', 'true');
       gut.append(plsSpinner());
       cell.append(plsEl('span', 'tag', 'Saving'));
-      said = p.title + ', saving';
+      said = p.title + sayCount + ', saving';
     } else if (st === 'added') {
       b.classList.add('done');
-      b.setAttribute('aria-disabled', 'true');
       gut.append(plsIcon(PLS_CHECK));
       cell.append(plsEl('span', 'tag', 'Saved'));
-      said = p.title + ', saved';
+      said = p.title + sayCount + ', saved. Activate to remove';
     } else if (st === 'error') {
       b.classList.add('fail');
       gut.append(plsIcon(PLS_CROSS));
       cell.append(plsEl('span', 'tag', 'Retry'));
-      said = p.title + ', could not be saved. Activate to try again';
+      said = p.title + sayCount + ', could not be saved. Activate to try again';
     } else if (st === 'removing') {
       b.classList.add('busy');
       b.setAttribute('aria-busy', 'true');
@@ -773,7 +943,7 @@ export function createSheet({ videoId, videoTitle, onPick, onRemove, onClose, so
       b.classList.add('mem');
       gut.append(plsIcon(PLS_CHECK));
       cell.append(plsEl('span', 'tag', 'Already in'));
-      said = p.title + ', already in this playlist. Activate to remove';
+      said = p.title + sayCount + ', already in this playlist. Activate to remove';
     }
     cell.append(gut);
 
@@ -784,7 +954,16 @@ export function createSheet({ videoId, videoTitle, onPick, onRemove, onClose, so
       : st === 'remove-error'
         ? p.title + ' — couldn’t be removed. Click to try again.'
         : p.title;
-    b.addEventListener('click', () => { active = i; paint(false); pick(p); });
+    b.addEventListener('click', (e) => {
+      if ((e.metaKey || e.ctrlKey) && onOpen) { onOpen(p); return; }
+      active = i; paint(false); pick(p);
+    });
+    // Middle-click opens, as it does on any link. mousedown's default for the
+    // middle button is autoscroll, which would otherwise fire alongside.
+    if (onOpen) {
+      b.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); });
+      b.addEventListener('auxclick', (e) => { if (e.button === 1) { e.preventDefault(); onOpen(p); } });
+    }
     return b;
   }
 
@@ -796,7 +975,10 @@ export function createSheet({ videoId, videoTitle, onPick, onRemove, onClose, so
     const h = plsEl('span', 'h');
     h.append(...(Array.isArray(headKids) ? headKids : [headKids]));
     n.append(h);
-    if (sub) n.append(plsEl('span', 's', sub));
+    if (sub) {
+      if (typeof sub === 'string') n.append(plsEl('span', 's', sub));
+      else n.append(sub);
+    }
     return n;
   }
 
@@ -809,53 +991,105 @@ export function createSheet({ videoId, videoTitle, onPick, onRemove, onClose, so
     });
   }
 
+  // A create control plus the privacy chip that says what it will create. Used by
+  // both the empty/no-match note and the trailing action under a result list.
+  function createControls(raw, cls) {
+    const btn = plsEl('button', cls);
+    btn.type = 'button';
+    btn.tabIndex = -1;
+    if (creating) { btn.disabled = true; btn.classList.add('busy'); }
+    btn.append(plsIcon(PLS_PLUS), plsEl('span', cls === 'create-action' ? 't' : null, `Create playlist “${raw}”`));
+    btn.addEventListener('click', () => create(raw));
+    const priv = plsEl('button', 'priv', PLS_PRIVACY[privIdx].label);
+    priv.type = 'button';
+    priv.setAttribute('aria-label', `New playlist privacy: ${PLS_PRIVACY[privIdx].label}. Activate to change.`);
+    priv.title = 'Who can see the new playlist. Click to change.';
+    priv.addEventListener('click', () => {
+      privIdx = (privIdx + 1) % PLS_PRIVACY.length;
+      onPrivacy?.(PLS_PRIVACY[privIdx].id);
+      render();
+      /** @type {HTMLElement | null} */ (shadow.querySelector('.priv'))?.focus();
+    });
+    const row = plsEl('div', 'create-row');
+    row.append(btn, priv);
+    return row;
+  }
+
   function render() {
     if (dead) return;
     const raw = input.value.trim();
-    const q = raw.toLowerCase();
+    const toks = plsTokens(raw);
+    const q = toks.join(' ');
     const fresh = q !== lastQ;
     const keepScroll = fresh ? 0 : list.scrollTop;
+    // A re-render that is not a new query (a save landing, membership arriving
+    // late) can move rows. The cursor follows the PLAYLIST, not the index —
+    // otherwise Enter could act on whichever row slid under it.
+    const activeId = fresh ? null : shown[active]?.id;
+    const keepRendered = fresh ? 0 : nodes.length;
     lastQ = q;
 
     const matches = plsOrder(
-      q ? data.filter((p) => p.title.toLowerCase().includes(q)) : data,
+      toks.length ? data.filter((p) => plsMatches(p, toks)) : data,
       sortIdx,
-      q,
+      toks,
     );
-    // Ordering happens BEFORE the cap, so the 200 rows that survive are the 200
-    // best under the current mode rather than the 200 that happened to arrive
-    // first. On a 253-playlist library that is the difference between the cap
-    // being a scroll limit and the cap hiding the row you were looking for.
-    shown = matches.slice(0, PLS_MAX_ROWS);
-    nodes = shown.map((p, i) => rowNode(p, i, q));
+    // Ordering happens BEFORE paging, so the first page is the best rows under
+    // the current mode rather than the ones that happened to arrive first.
+    shown = matches;
+    nodes = shown.slice(0, Math.max(PLS_PAGE, keepRendered)).map((p, i) => rowNode(p, i, toks));
 
     const kids = [...nodes];
     if (!loaded && !patience) kids.push(...skeletons());
     else if (!loaded) {
       kids.push(note('Still waiting on YouTube.', 'Your playlists haven’t arrived yet.'));
     } else if (!data.length) {
-      kids.push(note('No playlists yet.', 'Create one on YouTube and it will show up here.'));
+      if (onCreate && raw) {
+        kids.push(note('No playlists yet.', createControls(raw, 'create-btn')));
+      } else {
+        kids.push(note(
+          'No playlists yet.',
+          onCreate ? 'Type a name above to create your first playlist.' : 'Create one on YouTube and it will show up here.',
+        ));
+      }
     } else if (!matches.length) {
       kids.push(note(
         ['No playlist matches ', plsEl('span', 'q', '“' + raw + '”')],
-        'Try a shorter word.',
+        onCreate ? createControls(raw, 'create-btn') : 'Try a shorter word.',
       ));
-    } else if (matches.length > shown.length) {
-      const more = plsEl('div', 'more',
-        `${matches.length - shown.length} more — keep typing to narrow`);
-      more.setAttribute('role', 'presentation');
-      kids.push(more);
+    } else if (raw && onCreate) {
+      const wrap = plsEl('div', 'create-wrap');
+      wrap.append(createControls(raw, 'create-action'));
+      kids.push(wrap);
     }
     list.replaceChildren(...kids);
 
-    readout.textContent = q && loaded ? `${matches.length} of ${data.length}` : '';
+    readout.textContent = toks.length && loaded ? `${matches.length} of ${data.length}` : '';
 
     input.setAttribute('aria-expanded', shown.length ? 'true' : 'false');
     // Rest on the first add target. Removal remains reachable with the arrows,
     // but Enter at rest must not arm a destructive action without navigation.
-    active = fresh ? shown.findIndex(canAdd) : Math.min(active, Math.max(0, shown.length - 1));
+    if (fresh) active = shown.findIndex(canAdd);
+    else {
+      const j = activeId ? shown.findIndex((x) => x.id === activeId) : -1;
+      active = j > -1 ? j : Math.min(active, Math.max(0, shown.length - 1));
+    }
+    if (active >= nodes.length) grow(active + 1);
     list.scrollTop = keepScroll;
     paint(false);
+  }
+
+  // Build rows up to index `to` (exclusive), a page at a time, and splice them in
+  // directly after the last row already on screen.
+  function grow(to) {
+    const end = Math.min(shown.length, Math.max(to, nodes.length + PLS_PAGE));
+    if (end <= nodes.length) return;
+    const toks = plsTokens(input.value.trim());
+    const more = [];
+    for (let i = nodes.length; i < end; i++) more.push(rowNode(shown[i], i, toks));
+    const after = nodes[nodes.length - 1];
+    if (after) after.after(...more); else list.prepend(...more);
+    nodes.push(...more);
   }
 
   function paint(scroll) {
@@ -879,13 +1113,72 @@ export function createSheet({ videoId, videoTitle, onPick, onRemove, onClose, so
     if (!shown.length) return;
     cancelRemoval(false);
     active = Math.max(0, Math.min(shown.length - 1, active + delta));
+    if (active >= nodes.length - 1) grow(active + 2);
     list.classList.add('kb');
     paint(true);
   }
 
+  // A saved row stays pickable: picking it arms removal, exactly like a row that
+  // was already a member when the sheet opened. `member` is set on success, so the
+  // add path can never see it again.
   function canPick(p) {
     const cur = state.get(p.id);
-    return cur !== 'adding' && cur !== 'added' && cur !== 'removing' && cur !== 'removed';
+    return cur !== 'adding' && cur !== 'removing' && cur !== 'removed';
+  }
+
+  // A failure line: what failed, then why when the data layer knows (offline,
+  // signed out, rate-limited…), then what to do. The sheet does not interpret
+  // errors — it only relays a `userMessage` if one was attached.
+  function why(e) {
+    const m = e && typeof e.userMessage === 'string' ? e.userMessage.trim() : '';
+    return m ? ' ' + m : '';
+  }
+
+  function showUndo(p) {
+    undoable = p;
+    undoBtn.hidden = !p || !onRemove;
+    if (p) undoBtn.setAttribute('aria-label', `Undo save to ${p.title}`);
+    else undoBtn.removeAttribute('aria-label');
+  }
+
+  let creating = false;
+
+  async function create(title) {
+    const name = (title || '').trim();
+    if (!name || !onCreate || creating) return;
+    cancelRemoval(false);
+    showUndo(null);
+    creating = true;
+    setStatus(`Creating “${name}”…`);
+    render();
+    try {
+      const created = await onCreate(name, PLS_PRIVACY[privIdx].id);
+      if (dead) return;
+      const newPl = { id: created.id, title: created.title || name, member: Boolean(videoId) };
+      data.unshift(newPl);
+      if (videoId) state.set(newPl.id, 'added');
+      creating = false;
+      input.value = '';
+      input.placeholder = data.length
+        ? `Search ${data.length} playlist${data.length === 1 ? '' : 's'}`
+        : 'Save to playlist';
+      failureShown = false;
+      setStatus(restingStatus);
+      render();
+      const i = shown.findIndex((x) => x.id === newPl.id);
+      if (i > -1) {
+        active = i;
+        paint(false);
+        nodes[i]?.classList.add('flash');
+      }
+    } catch (e) {
+      console.warn('[pls] create playlist failed', name, e);
+      if (dead) return;
+      creating = false;
+      failureShown = true;
+      setStatus(`Couldn’t create “${name}”.${why(e)} Try again.`);
+      render();
+    }
   }
 
   function canAdd(p) {
@@ -903,6 +1196,7 @@ export function createSheet({ videoId, videoTitle, onPick, onRemove, onClose, so
 
   function armRemoval(p) {
     if (armedRemove === p) return;
+    showUndo(null);
     armedRemove = p;
     confirmRemove.hidden = false;
     confirmRemoveBtn.setAttribute('aria-label', `Remove from ${p.title}`);
@@ -911,6 +1205,7 @@ export function createSheet({ videoId, videoTitle, onPick, onRemove, onClose, so
   }
 
   async function remove(p) {
+    showUndo(null);
     armedRemove = null;
     confirmRemove.hidden = true;
     confirmRemoveBtn.removeAttribute('aria-label');
@@ -934,7 +1229,7 @@ export function createSheet({ videoId, videoTitle, onPick, onRemove, onClose, so
       state.set(p.id, 'remove-error');
       render();
       failureShown = true;
-      setStatus(`Couldn’t remove from “${p.title}”. Select it again to retry.`);
+      setStatus(`Couldn’t remove from “${p.title}”.${why(e)} Select it again to retry.`);
     }
   }
 
@@ -947,6 +1242,7 @@ export function createSheet({ videoId, videoTitle, onPick, onRemove, onClose, so
       return;
     }
     cancelRemoval(false);
+    showUndo(null);
     state.set(p.id, 'adding');
     render();
     try {
@@ -955,19 +1251,18 @@ export function createSheet({ videoId, videoTitle, onPick, onRemove, onClose, so
       p.member = true;
       state.set(p.id, 'added');
       render();
-      if (failureShown) {
-        failureShown = false;
-        setStatus(restingStatus);
-      }
+      failureShown = false;
+      setStatus(`Saved to “${p.title}”.`);
+      showUndo(p);
       const i = shown.findIndex((x) => x.id === p.id);
-      if (i > -1) { active = i; paint(false); nodes[i].classList.add('flash'); }
+      if (i > -1) { active = i; paint(false); nodes[i]?.classList.add('flash'); }
     } catch (e) {
       console.warn('[pls] add failed', p.id, e);
       if (dead) return;
       state.set(p.id, 'error');
       render();
       failureShown = true;
-      setStatus(`Couldn’t save to “${p.title}”. Select it again to retry.`);
+      setStatus(`Couldn’t save to “${p.title}”.${why(e)} Select it again to retry.`);
     }
   }
 
@@ -977,7 +1272,23 @@ export function createSheet({ videoId, videoTitle, onPick, onRemove, onClose, so
   sortBtn.addEventListener('click', () => setSort(sortIdx + 1));
   cancelRemoveBtn.addEventListener('click', () => cancelRemoval());
   confirmRemoveBtn.addEventListener('click', () => { if (armedRemove) remove(armedRemove); });
+  undoBtn.addEventListener('click', () => {
+    const p = undoable;
+    if (p && state.get(p.id) === 'added') remove(p);
+    else showUndo(null);
+  });
+  // Scrolling reaches every match: the next page is built before the end arrives.
+  list.addEventListener('scroll', () => {
+    if (nodes.length < shown.length &&
+        list.scrollTop + list.clientHeight > list.scrollHeight - PLS_GROW_MARGIN) grow(nodes.length + PLS_PAGE);
+  }, { passive: true });
   dlg.addEventListener('keydown', (e) => {
+    // Ctrl/⌘+Enter opens the cursor's playlist, as Ctrl/⌘-click does. Only from
+    // the query field: on a focused button, Enter is that button's activation.
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'Enter' && e.target === input) {
+      if (shown[active] && onOpen && !e.isComposing) { onOpen(shown[active]); e.preventDefault(); }
+      return;
+    }
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     // An IME owns the arrows and Enter while a candidate window is open: those
     // keys are picking a character, not a playlist. Acting on them would both
@@ -1017,6 +1328,9 @@ export function createSheet({ videoId, videoTitle, onPick, onRemove, onClose, so
     // retargeted from either of them is still the button's.
     if (closeBtn.contains(/** @type {Node} */ (e.target))) return;
     if (confirmRemove.contains(/** @type {Node} */ (e.target))) return;
+    if (undoBtn.contains(/** @type {Node} */ (e.target))) return;
+    if (newBtn?.contains(/** @type {Node} */ (e.target))) return;
+    if (/** @type {Element} */ (e.target)?.closest?.('.create-btn, .create-action, .priv')) return;
     if (sortBtn.contains(/** @type {Node} */ (e.target))) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowRight') setSort(sortIdx + 1);
       else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') setSort(sortIdx - 1);
@@ -1032,7 +1346,14 @@ export function createSheet({ videoId, videoTitle, onPick, onRemove, onClose, so
     else if (e.key === 'ArrowUp') move(-1);
     else if (e.key === 'PageDown') move(8);
     else if (e.key === 'PageUp') move(-8);
-    else if (e.key === 'Enter') { if (shown[active]) pick(shown[active]); }
+    else if (e.key === 'Enter') {
+      if (shown[active]) {
+        pick(shown[active]);
+      } else if (!shown.length) {
+        const raw = input.value.trim();
+        if (raw && onCreate) create(raw);
+      }
+    }
     else return;
     e.preventDefault();
   });
@@ -1069,6 +1390,16 @@ export function createSheet({ videoId, videoTitle, onPick, onRemove, onClose, so
       input.placeholder = rows.length
         ? `Search ${rows.length} playlist${rows.length === 1 ? '' : 's'}`
         : 'Save to playlist';
+      render();
+    },
+    // Late membership, e.g. from the >200 tail walk. Only ever upgrades what the
+    // sheet shows: a row the user has acted on this session keeps its own state,
+    // and `undefined` is never written (that would erase an answer we had).
+    setMember: (id, member) => {
+      if (dead || typeof member !== 'boolean') return;
+      const p = data.find((x) => x.id === id);
+      if (!p || state.has(p.id) || p.member === member) return;
+      p.member = member;
       render();
     },
     destroy,

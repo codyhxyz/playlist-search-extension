@@ -4,9 +4,9 @@
 // no proxy, no backend, cookies attach automatically. Three endpoints, small enough to
 // read in one sitting — which is also the CWS review story.
 //
-// The parsing functions (cfgFrom / scanPlaylists / parseMembership) are pure and
-// exported separately from the calls that use them, so tests/innertube.test.mjs can
-// pin the response shapes without a network or a browser.
+// The parsing functions (cfgFrom / scanPlaylists / parseVideoCount / parseMembership /
+// classifyHttp) are pure and exported separately from the calls that use them, so
+// tests/innertube.test.mjs can pin the response shapes without a network or a browser.
 //
 // The core insight this whole module exists to exploit: **the native Save dialog's
 // 200-playlist cap was never our bug to fix, because we should never have been
@@ -52,7 +52,8 @@ function plsBalancedJson(text, from) {
 }
 
 /**
- * Extract the InnerTube context + api key + brand delegation from a script body.
+ * Extract the InnerTube context + api key + brand delegation + Google session index
+ * from a script body.
  * Pure — exported for tests.
  * @param {string | null | undefined} text
  */
@@ -75,6 +76,12 @@ export function cfgFrom(text) {
       // membership silently collapses to a single row. Verified 2026-08-28:
       // 2 playlists without it, 256 with it.
       delegatedSessionId: text.match(/"DELEGATED_SESSION_ID":"(\d+)"/)?.[1] ?? null,
+      // Multiple signed-in Google accounts: which one this tab is. YouTube's own
+      // client echoes it as `X-Goog-AuthUser` on every InnerTube call (see plsPost).
+      // Seen both quoted ("1") and bare (1) in ytcfg blobs, so tolerate both, and
+      // normalise to a string because it only ever goes into a header. The
+      // lookbehind stops a longer key ending in _SESSION_INDEX from matching.
+      sessionIndex: text.match(/(?<![\w])"?SESSION_INDEX"?\s*:\s*"?(\d+)"?/)?.[1] ?? null,
     };
   } catch (e) {
     console.warn('[pls] INNERTUBE_CONTEXT parse failed, trying next source', e);
@@ -88,8 +95,8 @@ function plsCfg() {
   for (const s of document.scripts) if ((hit = cfgFrom(s.textContent))) break;
   // Last resort: the whole serialized document (slow, so only if the scripts miss).
   if (!hit && (hit = cfgFrom(document.documentElement.innerHTML))) how = 'scraped-from-innerHTML';
-  const { context, apiKey, delegatedSessionId } =
-    hit ?? { context: PLS_FALLBACK_CTX, apiKey: null, delegatedSessionId: null };
+  const { context, apiKey, delegatedSessionId, sessionIndex } =
+    hit ?? { context: PLS_FALLBACK_CTX, apiKey: null, delegatedSessionId: null, sessionIndex: null };
   if (!hit) how = 'HARDCODED FALLBACK — regex is broken, look at this';
 
   // Acting as a brand channel: the delegation must be stated explicitly.
@@ -101,8 +108,9 @@ function plsCfg() {
     clientVersion: context.client?.clientVersion,
     apiKey: apiKey ? 'found' : 'none',
     delegatedTo: delegatedSessionId ?? 'none (personal account)',
+    authUser: sessionIndex ?? '0 (default — SESSION_INDEX not found)',
   });
-  plsCfgCache = { context, apiKey };
+  plsCfgCache = { context, apiKey, delegatedSessionId, sessionIndex };
   return plsCfgCache;
 }
 
@@ -130,7 +138,7 @@ async function plsAuth() {
     const hit = document.cookie.match(re)?.[1];
     if (hit) { value = hit; scheme = label; break; }
   }
-  if (!value) throw new Error('no SAPISID cookie — signed out?');
+  if (!value) throw plsError('auth', 'no SAPISID cookie — signed out?');
   const ts = Math.floor(Date.now() / 1000);
   const digest = await crypto.subtle.digest(
     'SHA-1',
@@ -140,22 +148,118 @@ async function plsAuth() {
   return `${scheme} ${ts}_${hex}`;
 }
 
-async function plsPost(path, body) {
-  const { context, apiKey } = plsCfg();
+/**
+ * @param {string} path
+ * @param {object} body
+ * @param {{signal?: AbortSignal}} [opts]
+ */
+async function plsPost(path, body, { signal } = {}) {
+  const { context, apiKey, delegatedSessionId, sessionIndex } = plsCfg();
   const url =
     `${PLS_ORIGIN}/youtubei/v1/${path}?prettyPrint=false` + (apiKey ? `&key=${apiKey}` : '');
-  const res = await fetch(url, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: await plsAuth(),
-      'X-Origin': PLS_ORIGIN,
-    },
-    body: JSON.stringify({ context, ...body }),
-  });
-  if (!res.ok) throw new Error(`${path} -> ${res.status} ${res.statusText}`);
-  return res.json();
+  // `navigator.onLine === false` is reliable (true is not — it only means "has a
+  // network interface"), so it is worth failing fast on before hashing anything.
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    throw plsError('offline', `${path} -> not sent, navigator.onLine is false`);
+  }
+  /** @type {Record<string, string>} */
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: await plsAuth(),
+    'X-Origin': PLS_ORIGIN,
+    // Which of the signed-in Google accounts this call is for. YouTube's own web
+    // client sends this on every InnerTube call; "0" is the first/default account,
+    // which is also what the server assumes when the header is absent. Without it,
+    // a tab on account #2 could have its calls answered for account #0.
+    // NOT YET LIVE-VERIFIED with two signed-in accounts — mirrored from YouTube's
+    // own requests, not from a failure we have reproduced.
+    'X-Goog-AuthUser': sessionIndex ?? '0',
+  };
+  // Brand channel: YouTube's client also names the delegated page in a header.
+  // context.user.onBehalfOfUser (plsCfg) stays — that is the one proven to matter
+  // (2 vs 256 playlists); this header is belt-and-braces, same pending caveat.
+  if (delegatedSessionId) headers['X-Goog-PageId'] = delegatedSessionId;
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      credentials: 'include',
+      headers,
+      body: JSON.stringify({ context, ...body }),
+      signal,
+    });
+  } catch (e) {
+    // A cancellation the caller asked for is not a failure: rethrow the AbortError
+    // untouched (no `kind`) so callers can tell it apart and stay quiet about it.
+    if (signal?.aborted) throw e;
+    // fetch() only rejects on a network-level failure (TypeError) — no HTTP response
+    // at all. Offline is by far the likeliest cause; a blocking extension or a
+    // dropped connection look identical from here, and are reported the same way.
+    throw plsError('offline', `${path} -> network failure: ${e?.message ?? e}`, e);
+  }
+  if (!res.ok) {
+    const kind = classifyHttp(res.status) ?? 'http';
+    throw plsError(kind, `${path} -> ${res.status} ${res.statusText}`);
+  }
+  try {
+    return await res.json();
+  } catch (e) {
+    // A 2xx whose body is not JSON is YouTube misbehaving, not the user.
+    throw plsError('server', `${path} -> ${res.status} but the body was not JSON`, e);
+  }
+}
+
+// ─────────────── classified errors ───────────────
+// Every error that leaves this module's network calls carries `kind` (for code) and
+// `userMessage` (for people). `message` stays the descriptive, path-and-status string
+// the `[pls]` logs have always printed. The UI composes
+//   "Couldn’t save to “X”. " + userMessage
+// so each userMessage is one sentence ending in exactly one full stop.
+
+/** @typedef {'offline'|'auth'|'rate'|'server'|'http'|'rejected'} PlsErrorKind */
+
+/** @type {Record<PlsErrorKind, string>} */
+export const PLS_USER_MESSAGES = {
+  offline: 'You’re offline.',
+  auth: 'You’re signed out of YouTube — sign in and try again.',
+  rate: 'YouTube is rate-limiting requests — wait a moment.',
+  server: 'YouTube had a problem — try again.',
+  http: 'YouTube rejected the request.',
+  rejected: 'YouTube rejected the change.',
+};
+
+/**
+ * Build a classified error. Pure — exported for tests and for callers that want
+ * to raise the same shape.
+ * @param {PlsErrorKind} kind
+ * @param {string} message  descriptive, for the console
+ * @param {unknown} [cause]
+ * @returns {Error & {kind: PlsErrorKind, userMessage: string}}
+ */
+export function plsError(kind, message, cause) {
+  const err = /** @type {Error & {kind: PlsErrorKind, userMessage: string}} */ (
+    new Error(message, cause === undefined ? undefined : { cause })
+  );
+  err.name = 'PlsError';
+  err.kind = kind;
+  err.userMessage = PLS_USER_MESSAGES[kind];
+  return err;
+}
+
+/**
+ * HTTP status -> error kind; null for a success status. Pure — exported for tests.
+ * 401/403 are what an expired or missing SAPISIDHASH gets, so they read as
+ * "signed out" — the one thing the user can actually fix.
+ * @param {number} status
+ * @returns {PlsErrorKind | null}
+ */
+export function classifyHttp(status) {
+  if (status >= 200 && status < 300) return null;
+  if (status === 401 || status === 403) return 'auth';
+  if (status === 429) return 'rate';
+  if (status >= 500 && status < 600) return 'server';
+  return 'http';
 }
 
 // ─────────────── deep scans ───────────────
@@ -191,13 +295,75 @@ function plsFirstTitle(node, depth = 0) {
   return null;
 }
 
+// ─────────────── video counts ───────────────
+// Where the count lives, per generation — read from the entry that owns the id,
+// never from elsewhere in the response (the MrBeast capture's page header carries
+// "978 videos" for the whole CHANNEL; a loose scan would pin that on a playlist):
+//
+//   gridPlaylistRenderer (legacy)  videoCountText    {runs: ["42", " videos"]}
+//                                  videoCountShortText {simpleText: "42"}
+//   lockupViewModel (current)      …thumbnailBadgeViewModel.text  "12 videos"
+//
+// Evidence: the REAL capture `real-channel-playlists-mrbeast.json` badges read
+// "4 episodes", "9 episodes", "8 episodes", "9 episodes", "25 episodes" — a channel's
+// podcast-style playlists say "episodes", not "videos", so both nouns are accepted.
+// The legacy shape is only covered by the synthetic fixtures.
+//
+// Deliberately strict. Only English, only whole numbers: "1,234 videos", "1 video",
+// "No videos", or a bare "42". Anything else — "1.234" (a German thousands separator,
+// or a decimal?), "1,2K", "1 234", "12 vidéos", a "Mix" badge — is undefined. A
+// missing count renders as nothing; a wrong one renders as a lie.
+
+const PLS_COUNT_RE = /^(\d{1,3}(?:,\d{3})+|\d+)(?:\s+(?:videos?|episodes?))?$/i;
+const PLS_NO_COUNT_RE = /^no\s+(?:videos|episodes)$/i;
+
 /**
- * Collect `id -> title` for every playlist mentioned anywhere in a browse response.
- * Pre-order: the outermost object that *directly* owns a playlist id wins, so the
- * renderer/viewModel claims it before its own nested watchEndpoint does.
+ * Parse a YouTube count label into an integer, or undefined when unsure.
+ * Pure — exported for tests.
+ * @param {unknown} label  a string or an InnerTube text object
+ * @returns {number | undefined}
+ */
+export function parseVideoCount(label) {
+  const text = plsText(label)?.replace(/\u00a0/g, ' ').trim();
+  if (!text) return undefined;
+  if (PLS_NO_COUNT_RE.test(text)) return 0;
+  const m = text.match(PLS_COUNT_RE);
+  if (!m) return undefined;
+  const n = Number(m[1].replace(/,/g, ''));
+  return Number.isSafeInteger(n) ? n : undefined;
+}
+
+/**
+ * The count carried by ONE playlist entry (the object owning the id), or undefined.
+ * @param {any} entry
+ * @returns {number | undefined}
+ */
+function plsEntryCount(entry) {
+  for (const k of ['videoCountText', 'videoCountShortText']) {
+    const n = parseVideoCount(entry[k]);
+    if (n !== undefined) return n;
+  }
+  // Lockups can carry several badges; take the first that reads as a count.
+  for (const b of scanKey(entry, 'thumbnailBadgeViewModel', [])) {
+    const n = parseVideoCount(b?.text);
+    if (n !== undefined) return n;
+  }
+  return undefined;
+}
+
+/**
+ * @typedef {{title: string|null, count?: number}} PlsScanEntry
+ */
+
+/**
+ * Collect `id -> {title, count?}` for every playlist mentioned anywhere in a browse
+ * response. Pre-order: the outermost object that *directly* owns a playlist id wins,
+ * so the renderer/viewModel claims it before its own nested watchEndpoint does.
+ * A later mention may fill in a missing title or count, never overwrite one; `count`
+ * is only present as a key when one was actually parsed.
  * Pure — exported for tests.
  * @param {any} node
- * @param {Map<string, string|null>} out
+ * @param {Map<string, PlsScanEntry>} out
  */
 export function scanPlaylists(node, out) {
   if (!node || typeof node !== 'object') return out;
@@ -209,8 +375,20 @@ export function scanPlaylists(node, out) {
     const v = node[k];
     if (typeof v !== 'string' || !PLS_ID_RE.test(v)) continue;
     const id = v.replace(/^VL/, '');
-    const title = plsFirstTitle(node);
-    if (!out.has(id) || (title && !out.get(id))) out.set(id, title || null);
+    const title = plsFirstTitle(node) || null;
+    const count = plsEntryCount(node);
+    const prev = out.get(id);
+    if (!prev) {
+      /** @type {PlsScanEntry} */
+      const entry = { title };
+      if (count !== undefined) entry.count = count;
+      out.set(id, entry);
+    } else {
+      // Mutate in place: Map.set on an existing key would keep the order anyway,
+      // but this makes "first mention fixes the position" obvious.
+      if (title && !prev.title) prev.title = title;
+      if (count !== undefined && prev.count === undefined) prev.count = count;
+    }
     break;
   }
   for (const v of Object.values(node)) scanPlaylists(v, out);
@@ -242,7 +420,8 @@ export function scanKey(node, key, out) {
 // Checked before designing a "Recently updated" sort, and the answer is NO, so
 // the finding is written down here rather than re-derived (and re-guessed) later.
 //
-// A playlist entry carries an id, a title, and a video count. It does NOT carry a
+// A playlist entry carries an id, a title, and a video count (parsed — see "video
+// counts" above scanPlaylists). It does NOT carry a
 // modified date, a created date, a publish time, or an "Updated …" string — not in
 // either renderer generation:
 //
@@ -264,7 +443,8 @@ export function scanKey(node, key, out) {
 // returns rows in the order the server sent them — but what that order MEANS has never
 // been established. Same for `get_add_to_playlist`: it is widely assumed to be the 200
 // most-recently-modified playlists, and `coverage.md` C8 records that as ❓ with a known
-// counterexample. Neither is a recency signal you may put a label on.
+// counterexample. The sheet's Recent mode now uses this response order by request,
+// with live verification waived for 2.0.1; it is an assumption, not timestamp data.
 
 /**
  * Every playlist the user owns. NOT capped at 200 — that ceiling belongs to
@@ -274,10 +454,13 @@ export function scanKey(node, key, out) {
  * in insertion order). Callers may rely on that being *stable*; they may not
  * rely on it *meaning* anything — see the note above.
  *
- * @returns {Promise<Array<{id: string, title: string}>>}
+ * `count` is the entry's own video count when one could be parsed (see "video
+ * counts" above) and ABSENT otherwise — never 0 as a stand-in for "unknown".
+ *
+ * @returns {Promise<Array<{id: string, title: string, count?: number}>>}
  */
 export async function fetchAllPlaylists() {
-  /** @type {Map<string, string|null>} */
+  /** @type {Map<string, PlsScanEntry>} */
   const found = new Map();
   let data = await plsPost('browse', { browseId: 'FEplaylist_aggregation' });
   let page = 0;
@@ -296,8 +479,14 @@ export async function fetchAllPlaylists() {
     }
     data = await plsPost('browse', { continuation: token });
   }
-  const list = [...found].map(([id, title]) => ({ id, title: title || id }));
-  console.log(`[pls] fetched ${list.length} playlists in ${page} pages`);
+  const list = [...found].map(([id, { title, count }]) => {
+    /** @type {{id: string, title: string, count?: number}} */
+    const row = { id, title: title || id };
+    if (count !== undefined) row.count = count;
+    return row;
+  });
+  const counted = list.filter((p) => p.count !== undefined).length;
+  console.log(`[pls] fetched ${list.length} playlists in ${page} pages (${counted} with a video count)`);
   return list;
 }
 
@@ -374,39 +563,57 @@ export async function fetchMembership(videoId) {
  * slow for first paint, fine as a background refinement, and highly cacheable: the
  * tail is by definition the playlists the user rarely touches.
  *
+ * `signal` cancels it (content.js aborts when the sheet closes, so a dismissed
+ * sheet does not keep ~100 requests going). On abort: workers stop dequeuing,
+ * in-flight walks stop before fetching their next page (and the in-flight fetch
+ * itself is aborted), `onResolved` is never called again, and the promise RESOLVES
+ * with whatever was settled before the abort — it never rejects for a cancel, and a
+ * cancel is not logged as a failure.
+ *
  * @param {string} videoId
  * @param {string[]} playlistIds
  * @param {(id: string, hit: boolean) => void} [onResolved]
- * @param {number} concurrency
+ * @param {number} [concurrency=6]
+ * @param {AbortSignal} [signal]
  */
-export async function resolveMembershipTail(videoId, playlistIds, onResolved, concurrency = 6) {
+export async function resolveMembershipTail(videoId, playlistIds, onResolved, concurrency = 6, signal) {
   const map = new Map();
   const queue = [...playlistIds];
+  const opts = { signal };
+  /** @returns {Promise<boolean | undefined>} undefined = aborted, unknown */
   const contains = async (playlistId) => {
-    let data = await plsPost('browse', { browseId: 'VL' + playlistId });
+    let data = await plsPost('browse', { browseId: 'VL' + playlistId }, opts);
     for (let page = 0; page < 12; page++) {
       if (scanKey(data, 'videoId', []).includes(videoId)) return true;
       const token = scanKey(data, 'continuationCommand', []).find((c) => c?.token)?.token;
       if (!token) return false;
-      data = await plsPost('browse', { continuation: token });
+      if (signal?.aborted) return undefined;
+      data = await plsPost('browse', { continuation: token }, opts);
     }
     return false;
   };
   const worker = async () => {
-    while (queue.length) {
+    while (queue.length && !signal?.aborted) {
       const id = queue.shift();
       try {
         const hit = await contains(id);
+        // Re-check after the await: a walk that finished just as the sheet closed
+        // must not call back into UI that no longer exists.
+        if (hit === undefined || signal?.aborted) return;
         map.set(id, hit);
         onResolved?.(id, hit);
       } catch (e) {
+        if (signal?.aborted) return; // the AbortError we asked for — not a failure
         console.warn('[pls] tail check failed for', id, e); // stays unknown
       }
     }
   };
   const t0 = Date.now();
   await Promise.all(Array.from({ length: concurrency }, worker));
-  console.log(`[pls] tail: resolved ${map.size}/${playlistIds.length} in ${Date.now() - t0}ms`);
+  console.log(
+    `[pls] tail: resolved ${map.size}/${playlistIds.length} in ${Date.now() - t0}ms` +
+      (signal?.aborted ? ' (aborted)' : '')
+  );
   return map;
 }
 
@@ -451,7 +658,9 @@ export async function addVideo(playlistId, videoId) {
     actions: [{ action: 'ACTION_ADD_VIDEO', addedVideoId: videoId }],
   });
   console.log('[pls] add', playlistId, '->', data?.status ?? '(no status field)');
-  if (data?.status && data.status !== 'STATUS_SUCCEEDED') throw new Error(data.status);
+  if (data?.status && data.status !== 'STATUS_SUCCEEDED') {
+    throw plsError('rejected', `edit_playlist add ${playlistId} -> ${data.status}`);
+  }
   return data;
 }
 
@@ -468,6 +677,47 @@ export async function removeVideo(playlistId, videoId) {
     actions: [{ action: 'ACTION_REMOVE_VIDEO_BY_VIDEO_ID', removedVideoId: videoId }],
   });
   console.log('[pls] remove', playlistId, '->', data?.status ?? '(no status field)');
-  if (data?.status && data.status !== 'STATUS_SUCCEEDED') throw new Error(data.status);
+  if (data?.status && data.status !== 'STATUS_SUCCEEDED') {
+    throw plsError('rejected', `edit_playlist remove ${playlistId} -> ${data.status}`);
+  }
   return data;
 }
+
+/**
+ * Extract playlistId from a playlist/create response.
+ * Pure — exported for tests.
+ * @param {any} data
+ * @returns {string | null}
+ */
+export function parseCreateResponse(data) {
+  if (!data || typeof data !== 'object') return null;
+  if (typeof data.playlistId === 'string') return data.playlistId;
+  const found = scanKey(data, 'playlistId', []).find((id) => typeof id === 'string');
+  return found || null;
+}
+
+/**
+ * Creates a new playlist, optionally saving the video in the same request.
+ *
+ *   POST /youtubei/v1/playlist/create { title, privacyStatus, videoIds: [videoId] }
+ *   -> { playlistId: "PL..." }
+ *
+ * @param {string} title
+ * @param {string} [privacyStatus='PRIVATE']
+ * @param {string} [videoId]
+ * @returns {Promise<{id: string, title: string}>}
+ */
+export async function createPlaylist(title, privacyStatus = 'PRIVATE', videoId) {
+  // ponytail: defaults to PRIVATE; upgrade with privacy selector if requested
+  const body = { title, privacyStatus };
+  if (videoId) body.videoIds = [videoId];
+  const data = await plsPost('playlist/create', body);
+  console.log('[pls] create', title, '->', data?.playlistId ?? '(no playlistId)');
+  const playlistId = parseCreateResponse(data);
+  if (!playlistId) {
+    const why = data?.status || data?.error?.message || 'no playlistId in response';
+    throw plsError('rejected', `playlist/create "${title}" -> ${why}`);
+  }
+  return { id: playlistId, title };
+}
+

@@ -33,19 +33,19 @@ Status: ✅ verified live · ⚠️ known broken/missing · ❓ never tested · 
 | B2 | Personal account, no delegation | ✅ | Cody's personal account genuinely has 0 playlists |
 | B3 | **Switching accounts mid-session** | ✅ | *(2.0.0)* Fixed. `resetConfigCache()` is called from the SPA-navigation handler in `content.js`, so the cached delegation dies with the page it belonged to. Previously the session kept acting as whichever channel it started on |
 | B4 | Signed out | ✅ | *(2.0.0)* Verified in a fresh profile: the sheet opens, then reports `Couldn't load your playlists: no SAPISID cookie — signed out?`. Fails closed with an honest message, exactly as intended, and does not fall back to reading the page |
-| B5 | Multiple Google sessions (`authuser=1`) | ❓ | `SESSION_INDEX` never handled |
+| B5 | Multiple Google sessions (`authuser=1`) | 🔧 | *(2.0.1)* `SESSION_INDEX` lifted from ytcfg and sent as `X-Goog-AuthUser` (plus `X-Goog-PageId` for brand channels), matching YouTube's own client. Unit-tested; **not yet run live with two signed-in accounts** |
 
 ## C. Data / scale states
 
 | # | State | Status | Note |
 |---|---|---|---|
 | C1 | 256 playlists | ✅ | 809ms, no cap |
-| C2 | 0 playlists | ❓ | Empty state undesigned |
-| C3 | >200 playlists in the UI | ⚠️ | Sheet renders max 200 rows. Search still finds the rest, and the list now says how many it is holding back ("N more — keep typing to narrow") instead of truncating silently — but scrolling alone will not reach them. Acceptable for a type-to-find surface; a virtualised list would remove the cap if it ever bites |
+| C2 | 0 playlists | ✅ | *(2.0.1)* "No playlists yet. Type a name above to create your first playlist." — pinned in `tests/test-sheet-render.mjs`, including the create offer. Fixture-verified, not on a live empty account |
+| C3 | >200 playlists in the UI | ✅ | *(2.0.1)* No cap. Rows are built a page (200) at a time, appended as the list scrolls near its end or the cursor walks past the last built row. Ordering still happens before paging. Pinned in `tests/test-sheet-render.mjs` (261-row fixture, scroll and PageDown) |
 | C4 | Duplicate playlist titles | ⚠️ | Two "AGI this" seen — still unconfirmed whether real or a parsing dupe. Ids are deduplicated by `Map` key, so a parsing dupe would require two genuinely different ids; that makes "real duplicates in the account" the likelier explanation, but it has not been checked |
 | C5 | Very long titles / emoji | ✅ | Single-line ellipsis (constant row height for arrow-key nav); emoji scaled to 0.9em |
 | C6 | Membership, first 200 playlists | ✅ | `get_add_to_playlist {videoIds:[id]}` **with delegation** — real `containsSelectedVideos`, ~180ms |
-| C7 | Membership, the >200 tail | ⚠️ | Hard server cap; same 200 ids for every video. YouTube's own client is blind here too. `plsResolveMembershipTail` written + verified but **not wired in** |
+| C7 | Membership, the >200 tail | 🔧 | *(2.0.1)* `resolveMembershipTail` now wired: runs after first paint, concurrency 6, aborted on close, rows update via `sheet.setMember` with the cursor pinned to its playlist. Skipped when the fast path returned ≤1 row. Walk itself was verified live 2026-08-28 (56 playlists, ~9 s); **the wiring has not been run live**. Caveat: a playlist longer than 12 pages reports `false`, which renders the same as unknown |
 | C8 | Why *those* 200 are chosen | ❓ | "Most recently modified" is inference with a known counterexample. Cap itself is proven |
 
 ## D. Lifecycle
@@ -64,9 +64,11 @@ Status: ✅ verified live · ⚠️ known broken/missing · ❓ never tested · 
 |---|---|---|---|
 | E1 | Add to playlist | ✅ | Verified round-trip, then rolled back |
 | E2 | Remove from playlist | ⚠️ | *(2.0.0)* Exposed for known-member rows behind a separate confirmation action. The payload is lifted verbatim from YouTube's live `removeFromPlaylistServiceEndpoint`, but the write has not been manually round-tripped against a disposable playlist |
-| E3 | Create new playlist | ⚠️ | YouTube's own picker offers it; we don't |
-| E4 | Add failure / offline / 401 | ❓ | Error path never exercised |
+| E3 | Create new playlist | ❓ | *(2.0.1)* Handled via InnerTube `playlist/create` (defaults to PRIVATE, attaches videoId). Actionable via Enter on zero-match search, click on create action, or header New button. **Live verification was waived for 2.0.1, so this is not ✅ under this file's own rule** |
+| E4 | Add failure / offline / 401 | 🔧 | *(2.0.1)* Errors are classified (`offline`/`auth`/`rate`/`server`/`http`/`rejected`) with a `userMessage` the sheet relays. Classification unit-tested with stubbed `fetch`; relay pinned in the sheet test. **Not exercised against live YouTube** — a fetch blocked by another extension also reads as "offline" |
 | E5 | Concurrent adds (fast clicking) | ✅ | *(2.0.0)* Per-row state guards it: a row in `adding` or `added` returns early from `pick()`. Covered by `tests/test-sheet-render.mjs` |
+| E7 | Undo a save | ✅ | *(2.0.1)* Footer Undo calls `onRemove` without confirmation; same live caveat as E2, since it is the same write |
+| E8 | Create with chosen privacy | 🔧 | *(2.0.1)* `PRIVATE`/`UNLISTED`/`PUBLIC` passed to `playlist/create`. Fixture-tested; non-private creation not run live |
 | E6 | Saving to a playlist the video is already in | ✅ | *(2.0.0)* **Was a real bug, found by the new UI contract test.** `member === true` rows were still clickable, and YouTube permits duplicate entries — so clicking one silently added the video a second time. Those rows are now non-actionable |
 
 ## F. Environment

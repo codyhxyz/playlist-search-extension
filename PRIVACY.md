@@ -48,11 +48,11 @@ If you would rather the extension not observe anything at all, it works without 
 
 The extension reads the following from YouTube:
 
-- **Playlist titles and IDs**, and whether a given video is already in a playlist — from InnerTube API responses only. Version 2.0.0 removed all reading of playlist data out of the rendered page.
+- **Playlist titles, IDs and video counts**, and whether a given video is already in a playlist — from InnerTube API responses only. Version 2.0.0 removed all reading of playlist data out of the rendered page.
 - **The video ID you are trying to save**, from one of: YouTube's own save request (see "How the extension knows you clicked Save"), the URL of the tab, or the URL of a link you right-clicked.
-- **YouTube's client configuration** (`INNERTUBE_CONTEXT`, and the brand-channel session ID if you are acting as a channel), read from the page's own configuration script. This is what makes an API call from your session valid, and is the same configuration YouTube's own code uses. It is sent only back to YouTube.
+- **YouTube's client configuration** (`INNERTUBE_CONTEXT`, the brand-channel session ID if you are acting as a channel, and which of your signed-in Google accounts the page is using), read from the page's own configuration script. This is what makes an API call from your session valid, and is the same configuration YouTube's own code uses. It is sent only back to YouTube.
 
-All searching and filtering happens locally in your browser, over an in-memory list. Nothing is written to `chrome.storage`, `localStorage`, cookies, or any other persistent storage, and nothing survives closing the sheet: the extension keeps no playlist cache at all in this version.
+All searching and filtering happens locally in your browser, over an in-memory list. No playlist data, search text, or video IDs are written to `chrome.storage`, `localStorage`, cookies, or any other persistent storage, and none of it survives closing the sheet: the extension keeps no playlist cache at all in this version. The only thing it remembers about how you use it is two display preferences, listed under Permissions below.
 
 ## Permissions
 
@@ -63,6 +63,7 @@ The extension declares three Chrome API permissions in `manifest.json`:
 - `storage` — used for non-personal operational state only:
   - **Onboarding flags** (`chrome.storage.local`): whether you've seen the welcome page and whether host permission is currently granted.
   - **Registration errors** (`chrome.storage.local`): an error message and timestamp when Chrome cannot register the packaged content script. This contains no playlist, search, page, or authentication data.
+  - **Display preferences** (`chrome.storage.local`): the sort order you last chose (for example "A → Z") and the privacy setting new playlists are created with (Private, Unlisted or Public). These are two fixed words, not playlist names, IDs or searches, and they never leave your browser.
 
 Runtime diagnostics are written only to the local DevTools console. They are not persisted, copied into the YouTube page DOM, or transmitted.
 

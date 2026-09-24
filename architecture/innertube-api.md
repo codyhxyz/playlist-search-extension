@@ -30,6 +30,7 @@ POST https://www.youtube.com/youtubei/v1/{path}?prettyPrint=false[&key={apiKey}]
 | `playlist/get_add_to_playlist` | `{ videoIds: [videoId] }` | Which playlists already contain this video |
 | `browse/edit_playlist` | `{ playlistId, actions: [{ action: "ACTION_ADD_VIDEO", addedVideoId }] }` | Add |
 | `browse/edit_playlist` | `{ playlistId, actions: [{ action: "ACTION_REMOVE_VIDEO_BY_VIDEO_ID", removedVideoId }] }` | Remove after explicit UI confirmation (see `coverage.md` E2) |
+| `playlist/create` | `{ title, privacyStatus, videoIds: [videoId] }` | Create new playlist and immediately add the video |
 
 ### The two-endpoint split is the whole product
 
@@ -73,6 +74,19 @@ Authorization: `SAPISIDHASH ${ts}_${sha1(`${ts} ${sapisid} https://www.youtube.c
 X-Origin: https://www.youtube.com
 ```
 
+### Request headers
+
+| Header | Value | Why |
+|---|---|---|
+| `Authorization` | `SAPISIDHASH …` (or the 1P/3P variant) | Session auth, above |
+| `X-Origin` | `https://www.youtube.com` | Part of the hash contract |
+| `X-Goog-AuthUser` | ytcfg `SESSION_INDEX`, default `"0"` | Which signed-in Google account the call is for |
+| `X-Goog-PageId` | ytcfg `DELEGATED_SESSION_ID`, only when set | Names the brand channel being acted as |
+
+`X-Goog-AuthUser` matters when several Google accounts are signed in: the cookies are shared across all of them, and `SESSION_INDEX` (quoted `"1"` or bare `1` in ytcfg — `cfgFrom` accepts both) is how the page says which one this tab is. `"0"` is the first account and the server's default when the header is absent. `X-Goog-PageId` is sent *in addition to* `context.user.onBehalfOfUser`, which stays: the body field is the one proven to matter (2 vs 256 playlists); the header mirrors what YouTube's own client sends.
+
+**Both headers are mirrored from YouTube's own requests and unit-tested for what we send, but NOT yet live-verified with two signed-in accounts.** Until that is done, treat multi-account correctness as expected, not established.
+
 No OAuth, no `chrome.identity`, no tokens stored anywhere. The cookie value and the derived hash go only back to youtube.com as part of these same-origin calls.
 
 PoToken / BotGuard is not involved: that machinery is scoped to video playback endpoints, not playlist CRUD.
@@ -89,6 +103,36 @@ Every request carries a `context` object lifted from the page's own `INNERTUBE_C
 Neither errors. You simply get a smaller, wrong answer that looks like an API limit — which is exactly what it was mistaken for. `fetchMembership` warns whenever it sees ≤1 row so this can never be silently misread again, and the delegation scrape is unit-tested.
 
 The cache holding this is invalidated on SPA navigation, because switching accounts on YouTube is a client-side navigation and a session that kept its first delegation would go on listing the wrong library.
+
+## Video counts
+
+`fetchAllPlaylists()` returns `Array<{id, title, count?}>`. `count` is read from the entry that owns the playlist id — never from elsewhere in the response — and is **absent** (not `0`) when it could not be parsed.
+
+| Generation | Source | Example |
+|---|---|---|
+| `gridPlaylistRenderer` (legacy) | `videoCountText`, then `videoCountShortText` | `{runs: ["42", " videos"]}`, `{simpleText: "42"}` |
+| `lockupViewModel` (current) | first `thumbnailBadgeViewModel.text` that reads as a count | `"12 videos"`, `"4 episodes"` |
+
+`parseVideoCount` accepts only whole English counts: `"1,234 videos"`, `"1 video"`, `"No videos"` → 0, a bare `"42"`, and the same with `episode(s)`. Everything else — `"1.234"` (German grouping or a decimal?), `"1,2K"`, `"1 234"`, `"12 vidéos"`, a `"Mix"` badge — is `undefined`. A missing count shows nothing; a misread one would be a lie.
+
+Evidence: the real capture `tests/fixtures/innertube/real-channel-playlists-mrbeast.json` yields 4, 9, 8, 9, 25 — all from `"N episodes"` badges (podcast-style playlists say episodes, not videos). The same payload carries the *channel's* `"978 videos"` in its page header, which is why the scan is scoped to the owning entry; a test pins that. The legacy shape is only covered by synthetic fixtures. The synthetic lockup's `"Playlist • 1,234 videos"` metadata row is deliberately not read — the real capture has no such row.
+
+## Error kinds
+
+Every error thrown by `plsPost` and by the calls built on it (`addVideo`, `removeVideo`, `createPlaylist`, `fetchAllPlaylists`, `fetchMembership`, …) is built by `plsError(kind, message, cause?)` and carries `kind` and `userMessage`; `message` stays the descriptive `path -> status` string the `[pls]` logs print. The UI renders `Couldn’t save to “X”. <userMessage>`, so each `userMessage` is one sentence with one full stop.
+
+| `kind` | Trigger | `userMessage` |
+|---|---|---|
+| `offline` | `navigator.onLine === false` (checked before sending), or `fetch` rejects | You’re offline. |
+| `auth` | no `SAPISID`-family cookie, HTTP 401 / 403 | You’re signed out of YouTube — sign in and try again. |
+| `rate` | HTTP 429 | YouTube is rate-limiting requests — wait a moment. |
+| `server` | HTTP 5xx, or a 2xx whose body is not JSON | YouTube had a problem — try again. |
+| `http` | any other non-ok HTTP status | YouTube rejected the request. |
+| `rejected` | `edit_playlist` status other than `STATUS_SUCCEEDED`; `playlist/create` with no playlistId | YouTube rejected the change. |
+
+`classifyHttp(status)` is the pure status → kind mapping (null for 2xx). Caveat on `offline`: a rejected `fetch` means *no HTTP response at all*. Offline is the likeliest cause, but a blocking extension looks identical from inside the page and is reported the same way.
+
+Cancellation is not an error kind: `resolveMembershipTail(…, signal)` passes its `AbortSignal` to `fetch`, and an aborted request's `AbortError` is rethrown unwrapped and swallowed silently by the tail walk, which resolves with whatever it had settled.
 
 ## Failure policy
 

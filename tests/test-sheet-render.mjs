@@ -77,8 +77,8 @@ assert.equal(
 );
 
 // ── Fixture ─────────────────────────────────────────────────────────────────
-// 260 playlists, because the interesting behaviour only exists above 200: the row
-// cap, the "keep typing" hint, and the unknowable membership tail.
+// 261 playlists, because the interesting behaviour only exists above 200: paging
+// past the first page, and the unknowable membership tail.
 const PLAYLISTS = (() => {
   const out = [
     { id: "PLmember0001", title: "Deep Focus Instrumentals", member: true },
@@ -92,8 +92,9 @@ const PLAYLISTS = (() => {
         "An extremely long playlist title that should ellipsis on a single line so that row height stays constant for arrow-key navigation and never reflows the list",
       member: false,
     },
-    { id: "PLdupe000007", title: "AGI this", member: false },
-    { id: "PLdupe000008", title: "AGI this", member: undefined },
+    // Same title, different ids — the video count is what tells them apart.
+    { id: "PLdupe000007", title: "AGI this", member: false, count: 3 },
+    { id: "PLdupe000008", title: "AGI this", member: undefined, count: 12 },
     { id: "PLfail000009", title: "Woodworking Basics", member: false },
   ];
   for (let i = out.length; i < 260; i++) {
@@ -103,6 +104,9 @@ const PLAYLISTS = (() => {
       member: i % 3 === 0 ? false : undefined,
     });
   }
+  // Past the first page on purpose: reachable by scrolling, and the accent is
+  // what the fold has to see through.
+  out.push({ id: "PLcafe000261", title: "Café Lofi Beats", member: undefined, count: 1234 });
   return out;
 })();
 
@@ -160,6 +164,10 @@ const PAGE = `<!doctype html>
 
   window.__picks = [];
   window.__removes = [];
+  window.__creates = [];
+  window.__createPrivacy = [];
+  window.__privacy = [];
+  window.__opens = [];
   window.__closes = 0;
   const makeSheet = () => createSheet({
     videoId: "dQw4w9WgXcQ",
@@ -168,7 +176,8 @@ const PAGE = `<!doctype html>
       window.__picks.push(p.id);
       // One playlist always fails, so the error path is exercised for real.
       if (p.id === "PLfail000009" && window.__picks.filter((x) => x === p.id).length === 1) {
-        return Promise.reject(new Error("simulated 500"));
+        // The data layer attaches a plain-language reason; the sheet must relay it.
+        return Promise.reject(Object.assign(new Error("simulated offline"), { userMessage: "You’re offline." }));
       }
       return new Promise((r) => setTimeout(r, 30));
     },
@@ -179,7 +188,15 @@ const PAGE = `<!doctype html>
       }
       return new Promise((r) => setTimeout(r, 30));
     },
+    onCreate: (title, privacy) => {
+      window.__creates.push(title);
+      window.__createPrivacy.push(privacy);
+      if (title === "Fail Create") return Promise.reject(new Error("simulated create fail"));
+      return new Promise((r) => setTimeout(() => r({ id: "PLnew_" + Math.random().toString(36).slice(2, 6), title }), 30));
+    },
     onClose: () => { window.__closes++; },
+    onPrivacy: (v) => { window.__privacy.push(v); },
+    onOpen: (p) => { window.__opens.push(p.id); },
   });
   window.__sheet = makeSheet();
 
@@ -228,6 +245,57 @@ const PAGE = `<!doctype html>
       const button = $$('button').find((b) => b.textContent.trim() === text && !b.closest('[hidden]'));
       if (!button) return { clicked: false };
       button.click();
+      await new Promise((r) => setTimeout(r, 220));
+      return { clicked: true, ...this.snapshot() };
+    },
+    async clickCreate() {
+      const btn = $('button.create-btn, button.create-action');
+      if (!btn) return { clicked: false };
+      btn.click();
+      await new Promise((r) => setTimeout(r, 220));
+      return { clicked: true, ...this.snapshot() };
+    },
+    async clickPrivacy() {
+      const b = $('button.priv');
+      if (!b) return { present: false };
+      b.click();
+      await new Promise((r) => setTimeout(r, 60));
+      const now = $('button.priv');
+      return { present: true, text: now && now.textContent, label: now && now.getAttribute("aria-label"), privacy: window.__privacy.slice() };
+    },
+    privacyChip: () => { const b = $('button.priv'); return b ? b.textContent : null; },
+    undoVisible: () => { const b = $('button.undo'); return !!b && !b.hidden && getComputedStyle(b.parentElement).display !== "none"; },
+    async openGesture(t, how) {
+      const row = rowByTitle(t);
+      if (how === "ctrl") row.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
+      else if (how === "meta") row.dispatchEvent(new MouseEvent("click", { bubbles: true, metaKey: true }));
+      else if (how === "middle") row.dispatchEvent(new MouseEvent("auxclick", { bubbles: true, button: 1 }));
+      await new Promise((r) => setTimeout(r, 60));
+      return { opens: window.__opens.slice(), picks: window.__picks.slice() };
+    },
+    async ctrlEnter() {
+      const input = $('input');
+      input.focus();
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true, composed: true, cancelable: true }));
+      await new Promise((r) => setTimeout(r, 60));
+      return { opens: window.__opens.slice(), picks: window.__picks.slice() };
+    },
+    async scrollToEnd() {
+      const list = $('[role="listbox"]');
+      for (let i = 0; i < 5; i++) {
+        list.scrollTop = list.scrollHeight;
+        list.dispatchEvent(new Event("scroll"));
+        await new Promise((r) => setTimeout(r, 40));
+      }
+      return this.snapshot();
+    },
+    hits: () => $$('.hit').map((h) => h.textContent),
+    activeTitle() { const id = $('input').getAttribute("aria-activedescendant"); const r = rows().find((x) => x.id === id); return r ? rowTitle(r) : null; },
+    async setMember(id, v) { window.__sheet.setMember(id, v); await new Promise((r) => setTimeout(r, 40)); return this.snapshot(); },
+    async clickNew() {
+      const btn = $('button.new-btn');
+      if (!btn) return { clicked: false };
+      btn.click();
       await new Promise((r) => setTimeout(r, 220));
       return { clicked: true, ...this.snapshot() };
     },
@@ -365,6 +433,7 @@ const PAGE = `<!doctype html>
         listText,
         picks: window.__picks.slice(),
         removes: window.__removes.slice(),
+        creates: window.__creates.slice(),
         focused: this.focusedInSheet(),
         closes: window.__closes,
         errors: window.__errors.slice(),
@@ -385,9 +454,9 @@ const PAGE = `<!doctype html>
   };
   // Dismissal is tested twice (Escape, then outside-click) and each needs a live
   // sheet, so the harness can build a fresh one on demand.
-  window.__reopen = () => {
+  window.__reopen = (rows = PLAYLISTS) => {
     window.__sheet = makeSheet();
-    window.__sheet.setData(PLAYLISTS);
+    window.__sheet.setData(rows);
   };
   window.__booted = true;
 </script>
@@ -534,10 +603,24 @@ try {
   await ab("eval", "window.h.load()");
   await ab("wait", "150");
   const loaded = await run("return window.h.snapshot();");
-  check("renders at most 200 rows from a 260-playlist library", () =>
+  check("builds the first page of rows, not all 261 at once", () =>
     assert.equal(loaded.rowCount, 200));
-  check("says how many it is not showing rather than truncating silently", () =>
-    assert.match(loaded.listText, /60 more/));
+  const scrolled = await run("return window.h.scrollToEnd();");
+  check("scrolling alone reaches every playlist — there is no row cap", () => {
+    assert.equal(scrolled.rowCount, 261);
+    assert.match(scrolled.listText, /Café Lofi Beats/);
+  });
+  const counts = await run("return { a: window.h.rowText('Café Lofi Beats'), dupes: window.h.titles().map((t, i) => t) };");
+  check("rows show the video count YouTube reported", () =>
+    assert.match(counts.a, /1,234/));
+  const dupeTexts = await run(`return Array.from(window.__shadow.querySelectorAll('[role="option"]'))
+    .filter((r) => r.getAttribute('title') === 'AGI this').map((r) => r.textContent.replace(/\s+/g, ' ').trim());`);
+  check("identically-titled playlists are told apart by their counts", () => {
+    assert.equal(dupeTexts.length, 2);
+    assert.notEqual(dupeTexts[0], dupeTexts[1]);
+  });
+  await run("return window.h.type('x');");
+  await run("return window.h.type('');");
   const restingBackgrounds = await run("return window.h.restingRowBackgrounds();");
   check("adjacent resting rows have subtly different backgrounds", () => {
     assert.equal(restingBackgrounds.length, 2);
@@ -553,6 +636,23 @@ try {
   });
   check("filtering is case-insensitive and substring-based", () =>
     assert.match(focus.listText, /Deep Focus Instrumentals/));
+
+  const reordered = await run("return window.h.type('thunder rain');");
+  check("words match in any order", () => {
+    assert.equal(reordered.rowCount, 1);
+    assert.match(reordered.listText, /Focus — Rain & Thunder/);
+  });
+  const hits = await run("return window.h.hits();");
+  check("every matched word is marked in the title", () =>
+    assert.deepEqual([...hits].sort(), ["Rain", "Thunder"]));
+  const accent = await run("return window.h.type('cafe');");
+  check("accents fold away: 'cafe' finds 'Café'", () => {
+    assert.equal(accent.rowCount, 1);
+    assert.match(accent.listText, /Café Lofi Beats/);
+  });
+  const accentHit = await run("return window.h.hits();");
+  check("the highlight lands on the original, accented characters", () =>
+    assert.deepEqual(accentHit, ["Café"]));
 
   const none = await run("return window.h.type('zzzqqq');");
   check("no-match state echoes the query back", () => {
@@ -591,7 +691,17 @@ try {
   // 'focus' matches exactly four playlists — two members and two not — so the whole
   // rendered list can be pinned title-for-title with no row cap in the way.
   const MEMBERS = ["Deep Focus Instrumentals", "Focus — Rain & Thunder"];
-  const bestFocus = await run("return window.h.type('focus');");
+  const recentRest = await run("return window.h.titles();");
+  check("Recently added is the default and preserves YouTube's supplied order", () => {
+    assert.match(ctl.label, /recently added/i);
+    assert.deepEqual(recentRest, PLAYLISTS.slice(0, 200).map((p) => p.title));
+  });
+  const recentTitles = await run("await window.h.type('focus'); return window.h.titles();");
+  check("filtering preserves the supplied order in Recent mode", () =>
+    assert.deepEqual(recentTitles, [
+      "Deep Focus Instrumentals", "Focus — Rain & Thunder", "Morning Focus", "Focus (archive)",
+    ]));
+  const bestFocus = await run("return window.h.cycleSort();");
   const bestTitles = await run("return { t: window.h.titles() };");
   check("Best match ranks by where the query lands in the title", () => {
     // "Focus — Rain & Thunder" starts with the query; "Deep Focus Instrumentals"
@@ -604,8 +714,8 @@ try {
       "Morning Focus",
     ]);
   });
-  check("Best match is the default", () =>
-    assert.match(ctl.label, /best match/i));
+  check("Best match remains available after Recent", () =>
+    assert.match(bestFocus.label, /best match/i));
 
   const az = await run("return window.h.cycleSort();");
   const azTitles = await run("return { t: window.h.titles(), label: window.h.sortControl().label };");
@@ -634,7 +744,7 @@ try {
   check("membership groups first no matter which sort is on", () => {
     // The one thing that must survive every ordering: a `member === true` row is
     // not a save target, so it is a partition, not a peer to be sorted among.
-    for (const [name, t] of [["best", bestTitles.t], ["az", azTitles.t], ["za", zaTitles.t]]) {
+    for (const [name, t] of [["recent", recentTitles], ["best", bestTitles.t], ["az", azTitles.t], ["za", zaTitles.t]]) {
       assert.deepEqual([...t.slice(0, 2)].sort(), [...MEMBERS].sort(), `${name} broke the grouping`);
     }
   });
@@ -642,7 +752,7 @@ try {
     // The tri-state promise has to survive sorting too. 'Morning Focus' is false and
     // 'Focus (archive)' is undefined; if sorting ever split them into different
     // groups, an unmarked row would start implying "not in this playlist".
-    for (const t of [bestTitles.t, azTitles.t, zaTitles.t]) {
+    for (const t of [recentTitles, bestTitles.t, azTitles.t, zaTitles.t]) {
       const a = t.indexOf("Morning Focus");
       const b = t.indexOf("Focus (archive)");
       assert.equal(Math.abs(a - b), 1, `they must be adjacent, got ${a} and ${b}`);
@@ -655,16 +765,21 @@ try {
   // 'playlist' sits at index 7 in every "Filler playlist N" and at index 18 in the
   // long title, while alphabetically the long title ("An…") comes first. The two
   // orders therefore disagree about row 0 — which is the point.
+  const wrappedRecent = await run("await window.h.cycleSort(); return { t: window.h.titles(), label: window.h.sortControl().label };");
+  check("cycling back to Recent restores the original order", () => {
+    assert.match(wrappedRecent.label, /recently added/i);
+    assert.deepEqual(wrappedRecent.t, recentTitles);
+  });
   const matchP = await run("await window.h.cycleSort(); return window.h.type('playlist');");
   const matchTop = await run("return { t: window.h.titles(3), all: window.h.snapshot().listText };");
   check("Best match beats alphabetical on an ordering they disagree about", () => {
     assert.match(matchTop.t[0], /^Filler playlist/, `row 0 was "${matchTop.t[0]}"`);
     assert.equal(matchTop.t[0], "Filler playlist 9", "shortest title breaks a position tie");
   });
-  check("ordering happens BEFORE the 200-row cap", () => {
+  check("ordering happens BEFORE paging", () => {
     // The long title is the worst match of the 252, so under Best match it falls
-    // past the cap and must not be rendered at all. If the cap were applied first
-    // this row would survive and the mode would be sorting a truncated list.
+    // past the first page and must not be built yet. If paging came first this
+    // row would be on it and the mode would be sorting a truncated list.
     assert.doesNotMatch(matchTop.all, /An extremely long playlist/);
   });
   const azP = await run("await window.h.cycleSort(); return { t: window.h.titles(3), all: window.h.snapshot().listText };");
@@ -673,7 +788,7 @@ try {
     assert.match(azP.all, /An extremely long playlist/);
   });
   // Back to Best match for everything below.
-  await run("await window.h.cycleSort(2); return null;");
+  await run("await window.h.cycleSort(3); return null;");
 
   // ── 2c. The cursor opens on a row Enter can act on ────────────────────────
   await run("return window.h.type('focus');");
@@ -732,11 +847,11 @@ try {
     assert.equal(realEnter.picks, beforeRealEnter, "Enter on the control saved a playlist");
     assert.equal(realEnter.open, true, "the sheet must not close");
   });
-  await run("await window.h.cycleSort(2); window.h.focusInput(); return null;");
+  await run("await window.h.cycleSort(3); window.h.focusInput(); return null;");
 
   // ── 3. Tri-state membership — the one that must not regress ───────────────
   console.log("\nMembership is tri-state");
-  // Under the default order this 260-playlist fixture pushes 'Morning Focus' and
+  // Under Best match this 260-playlist fixture pushes 'Morning Focus' and
   // 'Focus (archive)' past the 200-row cap, exactly as production would. Narrowing
   // first is the real path to those rows, and the comparison below is unchanged.
   await run("return window.h.type('focus');");
@@ -810,9 +925,66 @@ try {
   const savedRow = await run("return { text: window.h.rowText('Filler playlist 20') };");
   check("a saved row reports its new state in text, not colour alone", () =>
     assert.notEqual(savedRow.text, "Filler playlist 20"));
-  const reclick = await run("return window.h.clickTitle('Filler playlist 20');");
-  check("a saved row is inert to further clicks", () =>
-    assert.equal(reclick.picks.length, beforeSave + 1));
+  const undoState = await run("return { visible: window.h.undoVisible(), status: window.h.snapshot().statusText };");
+  check("a save says where it went and offers Undo", () => {
+    assert.equal(undoState.visible, true);
+    assert.match(undoState.status, /Saved to “Filler playlist 20”/);
+  });
+  const undone = await run("return window.h.clickControl('Undo');");
+  check("Undo removes the video without asking again", () => {
+    assert.ok(undone.removes.includes("PLfiller0020"), `removes: ${undone.removes}`);
+    assert.match(undone.listText, /Filler playlist 20\s*Removed/);
+    assert.equal(undone.picks.length, beforeSave + 1, "undo must not add");
+  });
+  const undoGone = await run("return { visible: window.h.undoVisible() };");
+  check("Undo disappears once used", () => assert.equal(undoGone.visible, false));
+  await run("return window.h.clickTitle('Filler playlist 21');");
+  const reclick = await run("return window.h.clickTitle('Filler playlist 21');");
+  check("clicking a just-saved row again never adds twice — it arms removal", () => {
+    assert.equal(reclick.picks.length, beforeSave + 2);
+    assert.match(reclick.statusText, /Remove from “Filler playlist 21”/);
+  });
+  await run("return window.h.key('Escape');");
+
+  // ── 5b. Creating a new playlist ───────────────────────────────────────────
+  console.log("\nCreating a playlist");
+  await run("return window.h.type('Brand New Playlist');");
+  const createNote = await run("return window.h.snapshot();");
+  check("a non-matching query offers to create the playlist", () =>
+    assert.match(createNote.listText, /Create playlist “Brand New Playlist”/));
+  const chip0 = await run("return window.h.privacyChip();");
+  check("new playlists default to Private, and the sheet says so", () => assert.equal(chip0, "Private"));
+  const chip1 = await run("return window.h.clickPrivacy();");
+  check("the privacy chip cycles and reports the choice", () => {
+    assert.equal(chip1.text, "Unlisted");
+    assert.match(chip1.label, /privacy: Unlisted/);
+    assert.deepEqual(chip1.privacy, ["UNLISTED"]);
+  });
+  const beforeCreate = (await run("return { n: window.__creates.length };")).n;
+  const createdByEnter = await run("return window.h.key('Enter');");
+  const createdPrivacy = await run("return window.__createPrivacy.slice(-1)[0];");
+  check("the playlist is created with the privacy shown", () => assert.equal(createdPrivacy, "UNLISTED"));
+  await run("await window.h.type('x'); await window.h.clickPrivacy(); await window.h.clickPrivacy(); return null;");
+  check("Enter on a non-matching query creates the playlist and marks it saved", () => {
+    assert.equal(createdByEnter.creates.length, beforeCreate + 1);
+    assert.match(createdByEnter.listText, /Brand New Playlist\s*Saved/);
+  });
+  await run("return window.h.type('Brand New 2');");
+  const createdByClick = await run("return window.h.clickCreate();");
+  check("clicking create adds another playlist", () => {
+    assert.equal(createdByClick.creates.length, beforeCreate + 2);
+    assert.match(createdByClick.listText, /Brand New 2\s*Saved/);
+  });
+  await run("return window.h.type('Fail Create');");
+  const failedCreate = await run("return window.h.key('Enter');");
+  check("a failed creation is reported in status", () =>
+    assert.match(failedCreate.statusText, /Couldn’t create “Fail Create”/));
+  await run("return window.h.type('Brand New 3');");
+  const createdByNew = await run("return window.h.clickNew();");
+  check("clicking New in the header creates the playlist", () => {
+    assert.equal(createdByNew.creates.length, beforeCreate + 4);
+    assert.match(createdByNew.listText, /Brand New 3\s*Saved/);
+  });
 
   // ── 6. Failure is legible and recoverable ─────────────────────────────────
   console.log("\nFailure");
@@ -824,6 +996,8 @@ try {
     const t = failed.listText;
     assert.match(t, /fail|Fail|couldn|Couldn|retry|Retry|again/, "the failure must be stated, not just coloured");
   });
+  check("a failed save says WHY when the data layer knows", () =>
+    assert.match(failed.statusText, /Couldn’t save to “Woodworking Basics”\. You’re offline\. Select it again/));
   const retried = await run("return window.h.clickTitle('Woodworking Basics');");
   check("a failed row can be retried", () =>
     assert.equal(retried.picks.filter((p) => p === "PLfail000009").length, 2));
@@ -842,6 +1016,42 @@ try {
   const entered = await run("return window.h.key('Enter');");
   check("Enter saves the active row", () =>
     assert.equal(entered.picks.length, before + 1));
+
+  // ── Opening a playlist ────────────────────────────────────────────────────
+  console.log("\nOpening a playlist");
+  const beforeOpenPicks = (await run("return { n: window.__picks.length };")).n;
+  const ctrlClick = await run("return window.h.openGesture('Filler playlist 30', 'ctrl');");
+  const metaClick = await run("return window.h.openGesture('Filler playlist 31', 'meta');");
+  const middle = await run("return window.h.openGesture('Filler playlist 32', 'middle');");
+  check("Ctrl-click, ⌘-click and middle-click open the playlist without saving", () => {
+    assert.deepEqual(middle.opens.slice(-3), ["PLfiller0030", "PLfiller0031", "PLfiller0032"]);
+    assert.equal(middle.picks.length, beforeOpenPicks);
+  });
+  const ctrlEnter = await run("await window.h.type('filler playlist 33'); return window.h.ctrlEnter();");
+  check("Ctrl+Enter opens the cursor's playlist and does not save it", () => {
+    assert.equal(ctrlEnter.opens.slice(-1)[0], "PLfiller0033");
+    assert.equal(ctrlEnter.picks.length, beforeOpenPicks);
+  });
+
+  // ── Late membership (the >200 tail) ───────────────────────────────────────
+  console.log("\nLate membership");
+  await run("await window.h.type('filler'); for (let i = 0; i < 6; i++) await window.h.key('ArrowDown'); return null;");
+  const beforeLate = await run("return window.h.activeTitle();");
+  const late = await run("return window.h.setMember('PLfiller0040', true);");
+  const afterLate = await run("return window.h.activeTitle();");
+  check("a late 'already in' answer marks the row", () =>
+    assert.match(late.listText, /Filler playlist 40\s*Already in/));
+  check("the cursor stays on the same playlist while rows move under it", () =>
+    assert.equal(afterLate, beforeLate));
+  const acted = await run("return window.h.setMember('PLfiller0021', false).then(() => window.h.rowText('Filler playlist 21'));");
+  check("a late answer never overrides what the user did this session", () =>
+    assert.match(acted, /Saved/));
+
+  const walked = await run("await window.h.type('filler'); for (let i = 0; i < 30; i++) await window.h.key('PageDown'); return { n: window.h.snapshot().rowCount, t: window.h.activeTitle() };");
+  check("the keyboard walks past the first page too", () => {
+    assert.ok(walked.n > 200, `only ${walked.n} rows were built`);
+    assert.ok(walked.t, "the cursor must sit on a real row");
+  });
 
   // ── The sheet owns the keyboard while it is open ─────────────────────────
   const leak = await run(
@@ -906,6 +1116,19 @@ try {
   const after = await run("return { hostConnected: window.__shadow.host.isConnected, closes: window.__closes };");
   check("closing removes the host element — no state outlives the sheet", () =>
     assert.equal(after.hostConnected, false));
+
+  // ── Empty library ─────────────────────────────────────────────────────────
+  console.log("\nEmpty library");
+  const empty = await run("window.__reopen([]); await new Promise((r) => setTimeout(r, 60)); return window.h.snapshot();");
+  check("an account with no playlists gets a designed empty state, not a blank list", () => {
+    assert.equal(empty.rowCount, 0);
+    assert.match(empty.listText, /No playlists yet/);
+    assert.match(empty.listText, /Type a name above to create your first playlist/);
+  });
+  const firstCreate = await run("return window.h.type('My First');");
+  check("…and typing a name there offers to create it", () =>
+    assert.match(firstCreate.listText, /Create playlist “My First”/));
+  await run("return window.h.key('Escape');");
 
   // ── 11. Nothing threw along the way ───────────────────────────────────────
   const final = await run("return { errors: window.__errors };");

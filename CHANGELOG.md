@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.0.1
+
+- **Create new playlists directly from the save sheet.** Type a name and press Enter when there are no matches, click the inline create button, or click `New` in the header. Automatically adds the current video and marks it Saved in one request via InnerTube `playlist/create`.
+- **Recently added is the default sort.** It preserves YouTube's response order within each membership group, including during search.
+- Match, A → Z, and Z → A remain available. The selected sort lasts until the page reloads.
+- Recency assumes that YouTube returns playlists in recently-added order. No timestamps are available, and this assumption remains unverified.
+- **Undo.** Every save says where it went and offers Undo in the footer, which removes the video again without a second confirmation. A row saved this session can also be picked again to arm the usual confirmed removal; it can never add twice.
+- **Choose privacy when creating.** A chip beside every create control says what the new playlist will be — Private (default), Unlisted or Public — and cycles on click.
+- **Video counts on rows**, parsed from the same `FEplaylist_aggregation` response (the lockup's thumbnail badge, or `videoCountText` on the legacy renderer). Absent when YouTube didn't report one. This is also what tells two identically-titled playlists apart.
+- **Word-based search.** Every word must match, in any order, ignoring case and accents: "rain focus" finds "Focus — Rain & Thunder", "cafe" finds "Café". Each matched word is highlighted on the original characters.
+- **Open a playlist** with Ctrl/⌘-click, middle-click, or Ctrl/⌘+Enter on the cursor's row. Opens in a new tab; the sheet stays open.
+- **Sort order and new-playlist privacy persist** across page loads, in `chrome.storage.local`. They are the only usage state the extension stores; PRIVACY.md lists them.
+- **No row cap.** The list builds a page at a time as you scroll or arrow down, so every playlist is reachable without typing. The "N more — keep typing" line is gone.
+- **Membership past 200.** After the sheet loads, playlists outside the 200 YouTube reports are checked in the background by walking their contents, and gain "Already in" as answers arrive. The cursor stays on the same playlist while rows move. Cancelled when the sheet closes; skipped when the fast path returned ≤1 row (missing brand delegation), since that would crawl the whole library.
+- **Multiple signed-in Google accounts.** Requests now send `X-Goog-AuthUser` from the page's `SESSION_INDEX` (and `X-Goog-PageId` for brand channels), as YouTube's own client does.
+- **Failures say why.** Offline, signed out, rate-limited, YouTube errors and rejected edits each carry a plain-language reason into the status line: "Couldn’t save to “X”. You’re offline. Select it again to retry."
+- Live YouTube verification was skipped with approval. Local build, unit, browser UI, and store validation tests still gate submission. Everything above is verified against fixtures and a real engine only — see `architecture/coverage.md` for which rows remain unverified live.
+
 ## 2.0.0 - 2026-09-05
 
 A rebuild. The extension is now the save sheet and nothing else, and it holds one invariant that the 1.x line did not: **it never reads data from YouTube's DOM, and never writes a node into it.**

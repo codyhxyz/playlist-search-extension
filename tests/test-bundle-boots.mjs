@@ -80,6 +80,8 @@ const ctx = {
       sendMessage: async () => {},
       onMessage: { addListener: () => { record.runtimeListeners++; } },
     },
+    // The content script reads its two display preferences at module scope.
+    storage: { local: { get: async () => ({}), set: async () => {} } },
   },
   document: {
     addEventListener: (type) => record.documentEvents.push(type),

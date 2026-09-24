@@ -13,6 +13,9 @@ This extension replaces that picker with a searchable one covering **every** pla
 - **Three ways in that don't depend on YouTube's page at all** — the toolbar icon, right-click on any video link, and `Alt`+`S`. These use only the URL, so they survive any YouTube redesign, and they're the only way to save a Short (which has no Save button of its own).
 - **Shows what's already saved**, and is honest about what it can't know: past 200 playlists YouTube reports membership to nobody, so those rows are drawn unmarked rather than claimed as "not in".
 - **Brand-channel accounts work.** If your playlists live on a channel rather than your personal account, the extension acts as that channel.
+- **Search by words, in any order**, ignoring case and accents. Rows show each playlist's video count.
+- **Undo** any save from the footer. Create playlists as Private, Unlisted or Public.
+- **Open a playlist** with Ctrl/⌘-click, middle-click, or Ctrl/⌘+Enter.
 - Light and dark, keyboard-driven, no third-party code.
 
 ## The one rule
@@ -61,7 +64,7 @@ Full write-up in [`architecture/overview.md`](architecture/overview.md), and an 
 
 ## Privacy
 
-The extension talks only to `youtube.com`, using the session you already have, and never to the developer or any third party. It ships no third-party code and stores nothing.
+The extension talks only to `youtube.com`, using the session you already have, and never to the developer or any third party. It ships no third-party code and stores nothing about your playlists — only two display preferences (sort order, and the privacy new playlists are created with).
 
 The one thing worth reading about is how it detects that you clicked Save: it observes YouTube's own request for that action, from a script running in the page. That's a real tradeoff and it's described in full — including why the less invasive approach doesn't work — in the [privacy policy](https://playlist.codyh.xyz/privacy-policy.html).
 

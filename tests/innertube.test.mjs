@@ -11,9 +11,25 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { cfgFrom, parseMembership, scanKey, scanPlaylists } from "../src/lib/innertube.js";
+import {
+  cfgFrom,
+  parseMembership,
+  scanKey,
+  scanPlaylists,
+  parseCreateResponse,
+  parseVideoCount,
+  classifyHttp,
+  plsError,
+  PLS_USER_MESSAGES,
+  resetConfigCache,
+  fetchAllPlaylists,
+  addVideo,
+  resolveMembershipTail,
+} from "../src/lib/innertube.js";
 
 const scan = (node) => scanPlaylists(node, new Map());
+// Titles only, for the tests that are about titles.
+const titleOf = (out, id) => out.get(id)?.title;
 
 // ─── cfgFrom: the session handshake ──────────────────────────────────────────
 
@@ -69,25 +85,47 @@ test("cfgFrom fails closed on unusable input", () => {
   assert.equal(cfgFrom(`{"INNERTUBE_CONTEXT":{"client":{"clientVersion":"2.1"`), null);
 });
 
+test("cfgFrom lifts SESSION_INDEX — which signed-in Google account this tab is", () => {
+  // Quoted and bare both occur; it only ever goes into a header, so it is a string.
+  assert.equal(cfgFrom(YTCFG(`,"SESSION_INDEX":"1"`)).sessionIndex, "1");
+  assert.equal(cfgFrom(YTCFG(`,"SESSION_INDEX":2`)).sessionIndex, "2");
+  assert.equal(cfgFrom(YTCFG(`,"SESSION_INDEX": "0"`)).sessionIndex, "0");
+});
+
+test("cfgFrom reports no session index when absent, and ignores longer look-alike keys", () => {
+  // Absent -> null here; plsPost then sends X-Goog-AuthUser: 0, the server default.
+  assert.equal(cfgFrom(YTCFG()).sessionIndex, null);
+  assert.equal(cfgFrom(YTCFG(`,"LOGGED_OUT_SESSION_INDEX":"7"`)).sessionIndex, null);
+  // Not a number -> not a session index.
+  assert.equal(cfgFrom(YTCFG(`,"SESSION_INDEX":"abc"`)).sessionIndex, null);
+});
+
+test("cfgFrom lifts the session index and the delegation together", () => {
+  const cfg = cfgFrom(YTCFG(`,"SESSION_INDEX":"1","DELEGATED_SESSION_ID":"102341564451195211920"`));
+  assert.equal(cfg.sessionIndex, "1");
+  assert.equal(cfg.delegatedSessionId, "102341564451195211920");
+});
+
 // ─── scanPlaylists: shapes are mid-migration, so we walk ─────────────────────
 
 test("scanPlaylists reads the legacy gridPlaylistRenderer shape", () => {
   const out = scan({
     contents: [{ gridPlaylistRenderer: { playlistId: "PLlegacy001", title: { runs: [{ text: "Deep " }, { text: "Focus" }] } } }],
   });
-  assert.deepEqual([...out], [["PLlegacy001", "Deep Focus"]]);
+  // No count field on the entry -> no `count` key at all (not `count: undefined`).
+  assert.deepEqual([...out], [["PLlegacy001", { title: "Deep Focus" }]]);
 });
 
 test("scanPlaylists reads the post-2026 lockupViewModel shape", () => {
   const out = scan({
     contents: [{ lockupViewModel: { contentId: "PLmodern002", metadata: { lockupMetadataViewModel: { title: { content: "Ocean sounds" } } } } }],
   });
-  assert.deepEqual([...out], [["PLmodern002", "Ocean sounds"]]);
+  assert.deepEqual([...out], [["PLmodern002", { title: "Ocean sounds" }]]);
 });
 
 test("scanPlaylists reads simpleText titles", () => {
   const out = scan({ playlistAddToOptionRenderer: { playlistId: "PLsimple3", title: { simpleText: "Watch later" } } });
-  assert.equal(out.get("PLsimple3"), "Watch later");
+  assert.equal(titleOf(out, "PLsimple3"), "Watch later");
 });
 
 test("scanPlaylists strips the VL browse-id prefix", () => {
@@ -108,7 +146,7 @@ test("scanPlaylists lets the outermost owner of an id claim the title", () => {
       onTap: { watchEndpoint: { playlistId: "PLnested005", title: { content: "First video in it" } } },
     },
   });
-  assert.equal(out.get("PLnested005"), "My playlist");
+  assert.equal(titleOf(out, "PLnested005"), "My playlist");
 });
 
 test("scanPlaylists ignores ids that are not playlists", () => {
@@ -124,7 +162,7 @@ test("scanPlaylists ignores ids that are not playlists", () => {
 test("scanPlaylists falls back to the id when a playlist has no findable title", () => {
   // Better a raw id in the list than a silently dropped playlist.
   const out = scan({ gridPlaylistRenderer: { playlistId: "PLtitleless06" } });
-  assert.equal(out.get("PLtitleless06"), null);
+  assert.deepEqual(out.get("PLtitleless06"), { title: null });
 });
 
 test("scanPlaylists accumulates across continuation pages", () => {
@@ -132,6 +170,89 @@ test("scanPlaylists accumulates across continuation pages", () => {
   scanPlaylists({ contents: [{ gridPlaylistRenderer: { playlistId: "PLpage1a", title: { content: "A" } } }] }, found);
   scanPlaylists({ continuationItems: [{ lockupViewModel: { contentId: "PLpage2b", metadata: { title: { content: "B" } } } }] }, found);
   assert.deepEqual([...found.keys()], ["PLpage1a", "PLpage2b"]);
+});
+
+// ─── video counts: strict, or nothing ────────────────────────────────────────
+
+test("parseVideoCount reads the English count labels YouTube ships", () => {
+  assert.equal(parseVideoCount("12 videos"), 12);
+  assert.equal(parseVideoCount("1 video"), 1);
+  assert.equal(parseVideoCount("1,234 videos"), 1234);
+  assert.equal(parseVideoCount("12,345,678 videos"), 12345678);
+  assert.equal(parseVideoCount("No videos"), 0);
+  assert.equal(parseVideoCount("25 episodes"), 25); // the real capture's wording
+  assert.equal(parseVideoCount("1 episode"), 1);
+  assert.equal(parseVideoCount("42"), 42); // videoCountShortText
+  assert.equal(parseVideoCount("42\u00a0videos"), 42);
+  // InnerTube text objects, both flavours.
+  assert.equal(parseVideoCount({ runs: [{ text: "42" }, { text: " videos" }] }), 42);
+  assert.equal(parseVideoCount({ simpleText: "7" }), 7);
+  assert.equal(parseVideoCount({ content: "3 videos" }), 3);
+});
+
+test("parseVideoCount says undefined rather than guess", () => {
+  // "1.234" is 1234 in German and 1.234 in English. Either reading could be wrong,
+  // so neither is taken.
+  assert.equal(parseVideoCount("1.234 videos"), undefined);
+  assert.equal(parseVideoCount("1.234"), undefined);
+  assert.equal(parseVideoCount("1 234 videos"), undefined);
+  assert.equal(parseVideoCount("1,2K videos"), undefined);
+  assert.equal(parseVideoCount("1.2K videos"), undefined);
+  assert.equal(parseVideoCount("12,34 videos"), undefined); // not a thousands grouping
+  assert.equal(parseVideoCount("12 vidéos"), undefined);
+  assert.equal(parseVideoCount("Mix"), undefined);
+  assert.equal(parseVideoCount("Updated today"), undefined);
+  assert.equal(parseVideoCount("-3 videos"), undefined);
+  assert.equal(parseVideoCount(""), undefined);
+  assert.equal(parseVideoCount(null), undefined);
+  assert.equal(parseVideoCount(undefined), undefined);
+  assert.equal(parseVideoCount(12), undefined); // not a label
+});
+
+test("scanPlaylists reads the legacy count fields", () => {
+  const out = scan({
+    contents: [
+      { gridPlaylistRenderer: { playlistId: "PLcnt01", title: { content: "A" }, videoCountText: { runs: [{ text: "1,234" }, { text: " videos" }] } } },
+      { gridPlaylistRenderer: { playlistId: "PLcnt02", title: { content: "B" }, videoCountShortText: { simpleText: "0" } } },
+      { gridPlaylistRenderer: { playlistId: "PLcnt03", title: { content: "C" }, videoCountText: { simpleText: "No videos" } } },
+    ],
+  });
+  assert.deepEqual([...out], [
+    ["PLcnt01", { title: "A", count: 1234 }],
+    ["PLcnt02", { title: "B", count: 0 }],
+    ["PLcnt03", { title: "C", count: 0 }],
+  ]);
+});
+
+test("scanPlaylists reads a lockup's count badge, skipping badges that are not counts", () => {
+  const badge = (text) => ({ thumbnailBadgeViewModel: { text } });
+  const out = scan({
+    lockupViewModel: {
+      contentId: "PLbadge01",
+      contentImage: { thumbnailViewModel: { overlays: [{ thumbnailOverlayBadgeViewModel: { thumbnailBadges: [badge("Mix"), badge("12 videos")] } }] } },
+      metadata: { lockupMetadataViewModel: { title: { content: "Badged" } } },
+    },
+  });
+  assert.deepEqual(out.get("PLbadge01"), { title: "Badged", count: 12 });
+});
+
+test("scanPlaylists never borrows a count from outside the entry", () => {
+  // The real MrBeast capture carries "978 videos" in the CHANNEL header. A count
+  // must come from the entry that owns the id or not at all.
+  const out = scan({
+    header: { metadataParts: [{ text: { content: "978 videos" } }], thumbnailBadgeViewModel: { text: "978 videos" } },
+    contents: [{ lockupViewModel: { contentId: "PLnocnt01", metadata: { lockupMetadataViewModel: { title: { content: "Bare" } } } } }],
+  });
+  assert.deepEqual(out.get("PLnocnt01"), { title: "Bare" });
+  assert.equal("count" in out.get("PLnocnt01"), false);
+});
+
+test("a later mention fills in a missing count but never overwrites one", () => {
+  const found = new Map();
+  scanPlaylists({ gridPlaylistRenderer: { playlistId: "PLfill01", title: { content: "T" } } }, found);
+  scanPlaylists({ gridPlaylistRenderer: { playlistId: "PLfill01", videoCountShortText: { simpleText: "5" } } }, found);
+  scanPlaylists({ gridPlaylistRenderer: { playlistId: "PLfill01", videoCountShortText: { simpleText: "99" } } }, found);
+  assert.deepEqual([...found], [["PLfill01", { title: "T", count: 5 }]]);
 });
 
 // ─── parseMembership: tri-state, and the tail must stay unknown ──────────────
@@ -229,13 +350,41 @@ const fixture = (name) => JSON.parse(readFileSync(path.join(FIXTURES, name), "ut
 test("scanPlaylists parses a real captured channel-playlists response", () => {
   const found = scan(fixture("real-channel-playlists-mrbeast.json"));
   assert.equal(found.size, 5);
-  for (const [id, title] of found) {
+  for (const [id, { title }] of found) {
     assert.match(id, /^PL/, `${id} should be a playlist id`);
     // A raw id leaking through as the title is the visible symptom of the
     // id/title pairing being wrong — it would render as gibberish in the sheet.
     assert.ok(title && title !== id, `playlist ${id} came back with no human title`);
   }
-  assert.ok([...found.values()].includes("If You Survive, You Win"));
+  assert.ok([...found.values()].some((e) => e.title === "If You Survive, You Win"));
+});
+
+test("real capture: every playlist's count comes from its own badge", () => {
+  // Evidence, not a model: these are the badges YouTube actually rendered on
+  // youtube.com/@MrBeast/playlists ("4 episodes" …). The channel header's
+  // "978 videos" is in the same payload and must NOT appear here.
+  const found = scan(fixture("real-channel-playlists-mrbeast.json"));
+  assert.deepEqual(
+    [...found].map(([id, e]) => [id, e.title, e.count]),
+    [
+      ["PLoSWVnSA9vG8hI-SUpAimvYJrPh-PRRvp", "If You Survive, You Win", 4],
+      ["PLoSWVnSA9vG_s-XT40oPKF0iWFGw8pOp2", "Helping People In Need", 9],
+      ["PLoSWVnSA9vG8SK6-_45PAu6RVTaP1zXHf", "MrBeast Tries To Survive", 8],
+      ["PLoSWVnSA9vG_PuIrGMfUtJ2wwKSUb2CFd", "Cheapest Vs Most Expensive", 9],
+      ["PLoSWVnSA9vG9hJNdgr-81MG59EYT9eEYn", "MrBeast’s Most Viewed Videos", 25],
+    ],
+  );
+});
+
+test("synthetic fixtures: counts where the shape has one, absent where it does not", () => {
+  const grid = scan(fixture("grid-playlist-renderer.json"));
+  assert.equal(grid.get("PLAA1111111111111111111111111111").count, 42);
+  // Only `thumbnailText` here — not a field we read, so no count is claimed.
+  assert.equal(grid.get("PLBB2222222222222222222222222222").count, undefined);
+  assert.equal(scan(fixture("continuation-response.json")).get("PLGG7777777777777777777777777777").count, 5);
+  // The synthetic lockup puts "1,234 videos" in an invented metadata row, not a
+  // badge; the real capture shows no such row, so it is deliberately not read.
+  assert.equal(scan(fixture("lockup-view-model.json")).get("PLCC3333333333333333333333333333").count, undefined);
 });
 
 test("a real response still yields a continuation token — the walk keeps going", () => {
@@ -367,3 +516,243 @@ test("parseMembership reads the live get_add_to_playlist shape", () => {
     actions: [{ removedVideoId: "jNQXAC9IVRw", action: "ACTION_REMOVE_VIDEO_BY_VIDEO_ID" }],
   });
 });
+
+test("parseCreateResponse extracts playlistId from direct and nested response shapes", () => {
+  assert.equal(parseCreateResponse({ playlistId: "PLcreated123" }), "PLcreated123");
+  assert.equal(
+    parseCreateResponse({ responseContext: {}, data: { playlistId: "PLnested456" } }),
+    "PLnested456",
+  );
+  assert.equal(parseCreateResponse(null), null);
+  assert.equal(parseCreateResponse({}), null);
+});
+
+
+// ─── Classified errors ───────────────────────────────────────────────────────
+// The UI renders "Couldn’t save to “X”. " + userMessage, so each userMessage is one
+// sentence with exactly one closing full stop — no "..", no "!.", no trailing space.
+
+test("classifyHttp maps status codes to the kinds the UI can explain", () => {
+  assert.equal(classifyHttp(200), null);
+  assert.equal(classifyHttp(204), null);
+  assert.equal(classifyHttp(401), "auth");
+  assert.equal(classifyHttp(403), "auth");
+  assert.equal(classifyHttp(429), "rate");
+  assert.equal(classifyHttp(500), "server");
+  assert.equal(classifyHttp(503), "server");
+  assert.equal(classifyHttp(599), "server");
+  assert.equal(classifyHttp(400), "http");
+  assert.equal(classifyHttp(404), "http");
+  assert.equal(classifyHttp(409), "http");
+  assert.equal(classifyHttp(302), "http");
+});
+
+test("plsError carries kind, userMessage, and a descriptive message", () => {
+  const cause = new TypeError("Failed to fetch");
+  const e = plsError("offline", "browse -> network failure: Failed to fetch", cause);
+  assert.ok(e instanceof Error);
+  assert.equal(e.kind, "offline");
+  assert.equal(e.userMessage, "You’re offline.");
+  assert.equal(e.message, "browse -> network failure: Failed to fetch");
+  assert.equal(e.cause, cause);
+  // The signed-out log line stays recognisable.
+  assert.equal(plsError("auth", "no SAPISID cookie — signed out?").message, "no SAPISID cookie — signed out?");
+});
+
+test("every userMessage is one clean sentence", () => {
+  assert.deepEqual(PLS_USER_MESSAGES, {
+    offline: "You’re offline.",
+    auth: "You’re signed out of YouTube — sign in and try again.",
+    rate: "YouTube is rate-limiting requests — wait a moment.",
+    server: "YouTube had a problem — try again.",
+    http: "YouTube rejected the request.",
+    rejected: "YouTube rejected the change.",
+  });
+  for (const [kind, msg] of Object.entries(PLS_USER_MESSAGES)) {
+    assert.match(msg, /^[A-Z][^]*[^.!?\s]\.$/, `${kind}: must end in exactly one full stop`);
+    assert.equal(msg, msg.trim(), `${kind}: no stray whitespace`);
+  }
+});
+
+// ─── The calls, against a stubbed page + fetch (no network) ──────────────────
+// Only the browser globals the module already reads are stubbed (document.scripts,
+// document.cookie, fetch, navigator.onLine); the module itself is untouched. This
+// proves what we SEND — it proves nothing about how YouTube answers two signed-in
+// accounts, which is still pending live verification.
+
+function withPage({ ytcfgExtra = "", cookie = "SAPISID=abc123", onLine, respond }, fn) {
+  return async () => {
+    const saved = { document: globalThis.document, fetch: globalThis.fetch };
+    const navDesc = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    const calls = [];
+    globalThis.document = {
+      scripts: [{ textContent: YTCFG(ytcfgExtra) }],
+      cookie,
+      documentElement: { innerHTML: "" },
+    };
+    Object.defineProperty(globalThis, "navigator", { value: { onLine }, configurable: true, writable: true });
+    globalThis.fetch = async (url, init) => {
+      calls.push({ url, init, body: JSON.parse(init.body) });
+      return respond(calls.length, init);
+    };
+    const log = console.log;
+    console.log = () => {};
+    resetConfigCache();
+    try {
+      await fn(calls);
+    } finally {
+      console.log = log;
+      globalThis.document = saved.document;
+      globalThis.fetch = saved.fetch;
+      if (navDesc) Object.defineProperty(globalThis, "navigator", navDesc);
+      else delete globalThis.navigator;
+      resetConfigCache();
+    }
+  };
+}
+
+const json = (obj, status = 200) =>
+  new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
+
+test(
+  "plsPost sends X-Goog-AuthUser from SESSION_INDEX and X-Goog-PageId for a brand channel",
+  withPage(
+    { ytcfgExtra: `,"SESSION_INDEX":"1","DELEGATED_SESSION_ID":"102341564451195211920"`, respond: () => json({}) },
+    async (calls) => {
+      await fetchAllPlaylists();
+      const h = calls[0].init.headers;
+      assert.equal(h["X-Goog-AuthUser"], "1");
+      assert.equal(h["X-Goog-PageId"], "102341564451195211920");
+      assert.match(h.Authorization, /^SAPISIDHASH \d+_[0-9a-f]{40}$/);
+      // The proven fix stays in place alongside the header.
+      assert.equal(calls[0].body.context.user.onBehalfOfUser, "102341564451195211920");
+    },
+  ),
+);
+
+test(
+  "plsPost defaults X-Goog-AuthUser to 0 and sends no PageId on a personal account",
+  withPage({ respond: () => json({}) }, async (calls) => {
+    await fetchAllPlaylists();
+    const h = calls[0].init.headers;
+    assert.equal(h["X-Goog-AuthUser"], "0");
+    assert.equal("X-Goog-PageId" in h, false);
+  }),
+);
+
+test(
+  "fetchAllPlaylists returns counts, in order, only where parsed",
+  withPage({ respond: () => json(fixture("real-channel-playlists-mrbeast.json")) }, async () => {
+    // The fixture carries a continuation token; the stub answers page 2 with the
+    // same payload, which adds nothing new — so the walk stops, as in production.
+    const list = await fetchAllPlaylists();
+    assert.deepEqual(list.map((p) => p.count), [4, 9, 8, 9, 25]);
+    assert.equal(list[0].id, "PLoSWVnSA9vG8hI-SUpAimvYJrPh-PRRvp");
+    assert.equal(list[0].title, "If You Survive, You Win");
+  }),
+);
+
+const rejectsWith = async (p, kind) => {
+  const e = await p.then(() => assert.fail("expected a rejection"), (err) => err);
+  assert.equal(e.kind, kind, `kind — message was: ${e.message}`);
+  assert.equal(e.userMessage, PLS_USER_MESSAGES[kind]);
+  return e;
+};
+
+test(
+  "signed out: no SAPISID cookie -> auth, before any request",
+  withPage({ cookie: "PREF=f6=40000000", respond: () => json({}) }, async (calls) => {
+    const e = await rejectsWith(addVideo("PLx", "vid"), "auth");
+    assert.equal(e.message, "no SAPISID cookie — signed out?");
+    assert.equal(calls.length, 0);
+  }),
+);
+
+test(
+  "navigator.onLine === false -> offline, without calling fetch",
+  withPage({ onLine: false, respond: () => json({}) }, async (calls) => {
+    await rejectsWith(addVideo("PLx", "vid"), "offline");
+    assert.equal(calls.length, 0);
+  }),
+);
+
+test(
+  "fetch rejecting (TypeError) -> offline",
+  withPage(
+    { respond: () => { throw new TypeError("Failed to fetch"); } },
+    async () => {
+      const e = await rejectsWith(addVideo("PLx", "vid"), "offline");
+      assert.match(e.message, /network failure/);
+    },
+  ),
+);
+
+for (const [status, kind] of [[401, "auth"], [403, "auth"], [429, "rate"], [503, "server"], [400, "http"]]) {
+  test(
+    `HTTP ${status} -> ${kind}`,
+    withPage({ respond: () => json({ error: {} }, status) }, async () => {
+      const e = await rejectsWith(addVideo("PLx", "vid"), kind);
+      assert.match(e.message, new RegExp(`browse/edit_playlist -> ${status}`));
+    }),
+  );
+}
+
+test(
+  "edit_playlist answering a non-SUCCEEDED status -> rejected",
+  withPage({ respond: () => json({ status: "STATUS_FAILED" }) }, async () => {
+    const e = await rejectsWith(addVideo("PLx", "vid"), "rejected");
+    assert.match(e.message, /STATUS_FAILED/);
+  }),
+);
+
+// ─── resolveMembershipTail: cancellation ─────────────────────────────────────
+
+test(
+  "resolveMembershipTail stops on abort, resolves with what it has, and goes quiet",
+  withPage(
+    {
+      // Every playlist page has a continuation, so a walk would run 12 pages if
+      // nothing stopped it.
+      respond: (_n, init) =>
+        init.signal?.aborted
+          ? Promise.reject(new DOMException("aborted", "AbortError"))
+          : json({ contents: [{ videoId: "other" }], c: { continuationCommand: { token: "T" } } }),
+    },
+    async (calls) => {
+      const ac = new AbortController();
+      const resolved = [];
+      const warn = console.warn;
+      const warnings = [];
+      console.warn = (...a) => warnings.push(a);
+      try {
+        const p = resolveMembershipTail("vid", ["PL1", "PL2", "PL3", "PL4"], (id) => resolved.push(id), 2, ac.signal);
+        // Let a couple of requests go out, then close the sheet.
+        await new Promise((r) => setTimeout(r, 0));
+        ac.abort();
+        const before = calls.length;
+        const map = await p;
+        assert.ok(map instanceof Map);
+        assert.equal(map.size, 0, "no walk finished, so nothing is settled");
+        assert.deepEqual(resolved, [], "onResolved must never fire after abort");
+        assert.ok(calls.length <= before + 2, "no new pages fetched after abort (at most the in-flight ones)");
+        assert.ok(calls.length < 24, "the walk did not run to completion");
+        assert.deepEqual(warnings, [], "a cancel is not a failure");
+      } finally {
+        console.warn = warn;
+      }
+    },
+  ),
+);
+
+test(
+  "resolveMembershipTail without a signal still settles every playlist",
+  withPage(
+    { respond: (n) => json(n % 2 ? { contents: [{ videoId: "vid" }] } : { contents: [] }) },
+    async () => {
+      const resolved = [];
+      const map = await resolveMembershipTail("vid", ["PL1", "PL2"], (id, hit) => resolved.push([id, hit]), 1);
+      assert.deepEqual([...map], [["PL1", true], ["PL2", false]]);
+      assert.deepEqual(resolved, [["PL1", true], ["PL2", false]]);
+    },
+  ),
+);
