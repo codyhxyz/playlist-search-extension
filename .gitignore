@@ -19,3 +19,6 @@ e2e-build/
 # E2E artifact dumps (screenshots, diag rings) — keep the directory, not the files
 tests/e2e/artifacts/*
 !tests/e2e/artifacts/.gitkeep
+
+# Agent worktrees are local scratch, never repo content
+.claude/worktrees/
