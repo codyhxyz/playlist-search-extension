@@ -142,22 +142,6 @@ function plsDestroyCurrent() {
 document.addEventListener('yt-navigate-finish', () => plsOnNavigation('SPA navigation'));
 window.addEventListener('popstate', () => plsOnNavigation('history navigation'));
 
-// Zero-selector dismissal of YouTube's own dialog. Our <dialog>.showModal() already
-// lands in the top layer and inerts the page, so theirs cannot be interacted with
-// either way; this just clears it from view. If it stops working the failure is
-// cosmetic: their dialog sits behind ours, inert, under the backdrop.
-function plsDismissHostDialog() {
-  const ev = new KeyboardEvent('keydown', {
-    key: 'Escape', code: 'Escape', keyCode: 27, which: 27,
-    bubbles: true, cancelable: true,
-  });
-  const notCancelled = document.dispatchEvent(ev);
-  console.log(
-    `[pls] dispatched synthetic Escape on document — defaultPrevented=${!notCancelled} ` +
-      `(weak signal only; look at the page to see if YouTube's dialog actually closed)`
-  );
-}
-
 async function plsHandleIntent(videoId, source) {
   // Catch up on any navigation whose event we missed before deciding what's stale.
   plsOnNavigation('late-detected navigation');
@@ -179,7 +163,6 @@ async function plsHandleIntent(videoId, source) {
   }
 
   console.log(`[pls] SAVE_INTENT ${videoId} via ${source}`);
-  plsDismissHostDialog();
 
   const tail = new AbortController();
   plsTailAbort = tail;

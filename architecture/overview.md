@@ -99,7 +99,7 @@ Non-blocking `webRequest` is still fully available in MV3 (only the *blocking* v
 
 This matters more than it looks. It means **the DOM-adjacent path is an enhancement, not a foundation.** If YouTube changes everything tomorrow, the extension degrades from "seamless" to "press Alt+S" — not from "works" to "broken and weird." That's the difference between a bad week and a negative review.
 
-**Dismissing YouTube's dialog, without a selector:** our `<dialog>.showModal()` lands in the browser's top layer, above every stacking context, and `inert`s the rest of the page — so theirs cannot be interacted with regardless. To actually clear it, we dispatch a synthetic `Escape` keydown on `document`. YouTube's overlay behavior closes on Escape via a JS listener, and untrusted events do fire JS listeners. **No selector, no node reference, nothing to break.** If it ever stops working the failure is cosmetic: their dialog sits behind ours.
+**YouTube's own dialog is not dismissed.** Our `<dialog>.showModal()` lands in the browser's top layer, above every stacking context, and `inert`s the rest of the page — so theirs cannot be interacted with. The earlier synthetic-`Escape` dismissal was removed (2026-09): it fired before YouTube's popover had rendered, so it missed, and an untrusted Escape on `document` could reach any other listener on the page. YouTube's popover can therefore sit behind ours, under the backdrop.
 
 Explicitly rejected: capture-phase click interception on the Save button. It needs a durable way to recognize that button, and there isn't one — `aria-label` is localized, class names churn. That's the old architecture wearing a hat.
 
