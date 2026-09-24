@@ -351,8 +351,90 @@ function plsEntryCount(entry) {
   return undefined;
 }
 
+// ─────────────── thumbnail, stack colour, privacy ───────────────
+// What YouTube's own Save sheet draws beside each playlist, read from the SAME
+// entry that owns the id. Shape of a library lockup (FEplaylist_aggregation,
+// captured live 2026-09-24 — 257 of 257 entries carried a thumbnail):
+//
+//   lockupViewModel.contentImage.collectionThumbnailViewModel
+//     .primaryThumbnail.thumbnailViewModel.image.sources  [{url, width, height}]
+//     .stackColor  {lightTheme, darkTheme}   integers, RGB in the low 24 bits
+//   lockupViewModel.metadata.lockupMetadataViewModel.metadata
+//     .contentMetadataViewModel.metadataRows[0].metadataParts  "Private" · "Playlist"
+//
+// Privacy is only ever one of three words. Playlists saved from OTHER channels sit
+// in the same library, and their first part is the channel's name ("3Blue1Brown" ·
+// "Course"), so anything that is not literally Public/Private/Unlisted is absent.
+// The legacy gridPlaylistRenderer carries `thumbnail.thumbnails` and no privacy.
+//
+// Thumbnail URLs are kept only when they point at YouTube's image CDN — they are
+// handed to an <img> on youtube.com, where the browser caches them exactly as it
+// does YouTube's own.
+
+const PLS_PRIVACY_WORDS = new Set(['Public', 'Private', 'Unlisted']);
+const PLS_THUMB_HOST = /^https:\/\/i\d*\.ytimg\.com\//;
+
 /**
- * @typedef {{title: string|null, count?: number}} PlsScanEntry
+ * @typedef {{url: string, width?: number, height?: number}} PlsThumbSource
+ */
+
+/** @param {any} list @returns {PlsThumbSource[] | undefined} */
+function plsSources(list) {
+  if (!Array.isArray(list)) return undefined;
+  /** @type {PlsThumbSource[]} */
+  const out = [];
+  for (const s of list) {
+    if (!s || typeof s.url !== 'string' || !PLS_THUMB_HOST.test(s.url)) continue;
+    /** @type {PlsThumbSource} */
+    const src = { url: s.url };
+    if (Number.isSafeInteger(s.width) && s.width > 0) src.width = s.width;
+    if (Number.isSafeInteger(s.height) && s.height > 0) src.height = s.height;
+    out.push(src);
+  }
+  return out.length ? out : undefined;
+}
+
+/** @param {unknown} n @returns {string | undefined} */
+function plsRgb(n) {
+  if (!Number.isSafeInteger(n) || /** @type {number} */ (n) < 0) return undefined;
+  const v = /** @type {number} */ (n);
+  return `rgb(${(v >>> 16) & 255}, ${(v >>> 8) & 255}, ${v & 255})`;
+}
+
+/**
+ * The picture YouTube shows for ONE playlist entry.
+ * @param {any} entry
+ * @returns {{thumb?: PlsThumbSource[], stack?: {light: string, dark: string}}}
+ */
+function plsEntryImage(entry) {
+  const col = entry?.contentImage?.collectionThumbnailViewModel;
+  const thumb =
+    plsSources(col?.primaryThumbnail?.thumbnailViewModel?.image?.sources) ||
+    plsSources(entry?.thumbnail?.thumbnails);
+  const light = plsRgb(col?.stackColor?.lightTheme);
+  const dark = plsRgb(col?.stackColor?.darkTheme);
+  /** @type {{thumb?: PlsThumbSource[], stack?: {light: string, dark: string}}} */
+  const out = {};
+  if (thumb) out.thumb = thumb;
+  if (light && dark) out.stack = { light, dark };
+  return out;
+}
+
+/** @param {any} entry @returns {string | undefined} */
+function plsEntryPrivacy(entry) {
+  const rows = entry?.metadata?.lockupMetadataViewModel?.metadata?.contentMetadataViewModel?.metadataRows;
+  const first = Array.isArray(rows) ? rows[0]?.metadataParts?.[0]?.text?.content : undefined;
+  return typeof first === 'string' && PLS_PRIVACY_WORDS.has(first) ? first : undefined;
+}
+
+/**
+ * @typedef {{title: string|null, count?: number, privacy?: string,
+ *   thumb?: PlsThumbSource[], stack?: {light: string, dark: string}}} PlsScanEntry
+ */
+
+/**
+ * @typedef {{id: string, title: string, count?: number, privacy?: string,
+ *   thumb?: PlsThumbSource[], stack?: {light: string, dark: string}}} PlsPlaylist
  */
 
 /**
@@ -377,17 +459,25 @@ export function scanPlaylists(node, out) {
     const id = v.replace(/^VL/, '');
     const title = plsFirstTitle(node) || null;
     const count = plsEntryCount(node);
+    const privacy = plsEntryPrivacy(node);
+    const { thumb, stack } = plsEntryImage(node);
     const prev = out.get(id);
     if (!prev) {
       /** @type {PlsScanEntry} */
       const entry = { title };
       if (count !== undefined) entry.count = count;
+      if (privacy) entry.privacy = privacy;
+      if (thumb) entry.thumb = thumb;
+      if (stack) entry.stack = stack;
       out.set(id, entry);
     } else {
       // Mutate in place: Map.set on an existing key would keep the order anyway,
       // but this makes "first mention fixes the position" obvious.
       if (title && !prev.title) prev.title = title;
       if (count !== undefined && prev.count === undefined) prev.count = count;
+      if (privacy && !prev.privacy) prev.privacy = privacy;
+      if (thumb && !prev.thumb) prev.thumb = thumb;
+      if (stack && !prev.stack) prev.stack = stack;
     }
     break;
   }
@@ -457,7 +547,10 @@ export function scanKey(node, key, out) {
  * `count` is the entry's own video count when one could be parsed (see "video
  * counts" above) and ABSENT otherwise — never 0 as a stand-in for "unknown".
  *
- * @returns {Promise<Array<{id: string, title: string, count?: number}>>}
+ * `privacy`, `thumb` and `stack` follow the same rule: present only when the entry
+ * itself carried them (see "thumbnail, stack colour, privacy" above).
+ *
+ * @returns {Promise<Array<PlsPlaylist>>}
  */
 export async function fetchAllPlaylists() {
   /** @type {Map<string, PlsScanEntry>} */
@@ -479,10 +572,9 @@ export async function fetchAllPlaylists() {
     }
     data = await plsPost('browse', { continuation: token });
   }
-  const list = [...found].map(([id, { title, count }]) => {
-    /** @type {{id: string, title: string, count?: number}} */
-    const row = { id, title: title || id };
-    if (count !== undefined) row.count = count;
+  const list = [...found].map(([id, { title, ...rest }]) => {
+    /** @type {PlsPlaylist} */
+    const row = { id, title: title || id, ...rest };
     return row;
   });
   const counted = list.filter((p) => p.count !== undefined).length;

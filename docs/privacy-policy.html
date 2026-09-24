@@ -19,7 +19,7 @@
 <body>
 <!-- GENERATED FROM PRIVACY.md by scripts/build-privacy-page.mjs — do not edit by hand. -->
   <h1>Privacy Policy</h1>
-  <p><strong>Last updated:</strong> September 3, 2026</p>
+  <p><strong>Last updated:</strong> September 24, 2026</p>
   <h2>Overview</h2>
   <p>YouTube Playlist Search is a Chrome extension that replaces YouTube's "Save to playlist" picker with a searchable one covering every playlist you own. It fetches your playlists directly from YouTube and lets you save videos to them.</p>
   <p>As of version 2.0.0 the extension adds nothing to YouTube's own page and reads no data out of it. Its interface is drawn in a private container of its own, and its data comes from YouTube's API rather than from the rendered page.</p>
@@ -27,7 +27,7 @@
   <p>This extension does <strong>not</strong> collect, store, transmit, or sell personal data to the extension developer or any third party. No analytics, tracking, or remote logging is performed. The extension developer does not operate a backend server and never receives any of your data.</p>
   <p>Your username, email, and profile photo are ignored. The extension reads only the playlist content, the YouTube session value, and the save-request signal described below. None of it is sent to the developer or any third party.</p>
   <h2>External Services</h2>
-  <p>The extension only communicates with <code>youtube.com</code> — the same server you are already browsing. It does this by calling YouTube's internal "InnerTube" API (<code>https://www.youtube.com/youtubei/v1/*</code>) as a same-origin request from the YouTube tab you already have open. No requests are made to any other server, and no data is sent to the extension developer.</p>
+  <p>The extension only communicates with YouTube. It calls YouTube's internal "InnerTube" API (<code>https://www.youtube.com/youtubei/v1/*</code>) as a same-origin request from the YouTube tab you already have open. The only other requests are for the playlist thumbnails shown in the picker: these are the image addresses YouTube itself returns, on YouTube's image server (<code>i.ytimg.com</code>), loaded the same way YouTube's own pages load them — so your browser fetches and caches them exactly as it does when you browse YouTube. No requests are made to any other server, and no data is sent to the extension developer.</p>
   <h2>Authentication</h2>
   <p>The extension does <strong>not</strong> use OAuth, does <strong>not</strong> use <code>chrome.identity</code>, and does <strong>not</strong> obtain, store, or transmit any access tokens or refresh tokens.</p>
   <p>Because InnerTube requests originate from a youtube.com page, your browser automatically attaches your existing YouTube session cookie — the same way it does when you click around YouTube normally. To satisfy InnerTube's authentication scheme, the extension reads the <code>SAPISID</code> cookie from <code>document.cookie</code> on the current YouTube tab and uses it to compute a short-lived <code>SAPISIDHASH</code> authentication header. The cookie value and the derived hash are only ever sent back to <code>youtube.com</code> itself as part of these same-origin API calls. They are never stored, logged, or transmitted anywhere else.</p>

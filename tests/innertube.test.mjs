@@ -255,6 +255,85 @@ test("a later mention fills in a missing count but never overwrites one", () => 
   assert.deepEqual([...found], [["PLfill01", { title: "T", count: 5 }]]);
 });
 
+// ─── thumbnail, stack colour, privacy — what YouTube's own sheet draws ───────
+// Shaped exactly like a live FEplaylist_aggregation lockup (captured 2026-09-24),
+// with invented ids, titles and image URLs.
+const libraryLockup = (id, parts, { sources, stackColor } = {}) => ({
+  lockupViewModel: {
+    contentId: id,
+    contentType: "LOCKUP_CONTENT_TYPE_PLAYLIST",
+    contentImage: {
+      collectionThumbnailViewModel: {
+        primaryThumbnail: {
+          thumbnailViewModel: {
+            image: { sources: sources ?? [{ url: `https://i.ytimg.com/vi/${id}/hqdefault.jpg?sqp=x&rs=y`, width: 480, height: 270 }] },
+            overlays: [{ thumbnailOverlayBadgeViewModel: { thumbnailBadges: [{ thumbnailBadgeViewModel: { text: "23 videos" } }] } }],
+          },
+        },
+        stackColor: stackColor ?? { lightTheme: 0xbfb285, darkTheme: 0x8c8570 },
+      },
+    },
+    metadata: {
+      lockupMetadataViewModel: {
+        title: { content: `Title ${id}` },
+        metadata: { contentMetadataViewModel: {
+          metadataRows: [{ metadataParts: parts.map((content) => ({ text: { content } })) }],
+          delimiter: " • ",
+        } },
+      },
+    },
+  },
+});
+
+test("a library lockup yields the thumbnail, stack colour and privacy YouTube's sheet shows", () => {
+  const out = scan({ contents: [libraryLockup("PLlook0001", ["Private", "Playlist"])] });
+  assert.deepEqual(out.get("PLlook0001"), {
+    title: "Title PLlook0001",
+    count: 23,
+    privacy: "Private",
+    thumb: [{ url: "https://i.ytimg.com/vi/PLlook0001/hqdefault.jpg?sqp=x&rs=y", width: 480, height: 270 }],
+    // Watch later's real stackColor, which YouTube's own sheet drew as exactly these.
+    stack: { light: "rgb(191, 178, 133)", dark: "rgb(140, 133, 112)" },
+  });
+});
+
+test("privacy is only ever Public, Private or Unlisted — a saved playlist's channel name is not one", () => {
+  const out = scan({ contents: [
+    libraryLockup("PLpub00001", ["Public", "Playlist"]),
+    libraryLockup("PLunl00001", ["Unlisted", "Playlist"]),
+    libraryLockup("PLsaved001", ["3Blue1Brown", "Course"]),
+  ] });
+  assert.equal(out.get("PLpub00001").privacy, "Public");
+  assert.equal(out.get("PLunl00001").privacy, "Unlisted");
+  assert.equal("privacy" in out.get("PLsaved001"), false);
+});
+
+test("thumbnail sources are kept only from YouTube's image CDN, in the order sent", () => {
+  const out = scan({ contents: [libraryLockup("PLcdn00001", ["Public"], { sources: [
+    { url: "https://i9.ytimg.com/vi/a/mqdefault.jpg", width: 168, height: 94 },
+    { url: "https://evil.example/x.jpg", width: 336, height: 188 },
+    { url: "http://i.ytimg.com/vi/a/hq.jpg", width: 480, height: 270 },
+    { url: "https://i.ytimg.com/vi/a/hq.jpg" },
+  ] })] });
+  assert.deepEqual(out.get("PLcdn00001").thumb, [
+    { url: "https://i9.ytimg.com/vi/a/mqdefault.jpg", width: 168, height: 94 },
+    { url: "https://i.ytimg.com/vi/a/hq.jpg" },
+  ]);
+  const none = scan({ contents: [libraryLockup("PLcdn00002", ["Public"], { sources: [{ url: "https://evil.example/x.jpg" }] })] });
+  assert.equal("thumb" in none.get("PLcdn00002"), false);
+});
+
+test("the legacy grid renderer's thumbnails are read too; a missing stack colour is absent", () => {
+  const out = scan({ gridPlaylistRenderer: {
+    playlistId: "PLgridth01", title: { simpleText: "Old" },
+    thumbnail: { thumbnails: [{ url: "https://i.ytimg.com/vi/b/hqdefault.jpg", width: 480, height: 270 }] },
+  } });
+  assert.deepEqual(out.get("PLgridth01"), {
+    title: "Old",
+    thumb: [{ url: "https://i.ytimg.com/vi/b/hqdefault.jpg", width: 480, height: 270 }],
+  });
+});
+
 // ─── parseMembership: tri-state, and the tail must stay unknown ──────────────
 
 const option = (playlistId, containsSelectedVideos, title) => ({

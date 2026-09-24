@@ -1,19 +1,18 @@
-// L4 — UI. A surface we own outright. Knows nothing about YouTube.
+// L4 — UI. A surface we own outright, dressed as YouTube's own.
 // Zero HTML-string sinks anywhere — YouTube enforces require-trusted-types-for
 // 'script'. Every node is built with createElement / createElementNS /
 // textContent / append. Nodes only, no exceptions.
 //
 // ── Direction ───────────────────────────────────────────────────────────────
-// THESIS    A command palette, not a picker. 256 playlists means you type, you
-//           don't scroll — so search remains the primary control. One quiet,
-//           elided line above it names the video being changed. The placeholder
-//           names the job ("Save to playlist") until the library lands, then
-//           names the tool ("Search 256 playlists") and gets out of the way.
-// WORLD     Achromatic. One ground, one foreground, three opacity steps, one
-//           hairline weight, one 14px icon family at one stroke. Colour exists in
-//           exactly two places: jade when a save lands, red when one fails.
-//           Depth is a 1px inset sheen and a three-stop shadow — no glass, no
-//           glow, no gradient. Restraint is the whole aesthetic.
+// THESIS    YouTube's Save sheet, with a search field in it. 256 playlists means
+//           you type, you don't scroll — so search remains the primary control.
+//           The placeholder names the job ("Save to playlist") until the
+//           library lands, then names the tool ("Search 256 playlists").
+// WORLD     Not ours. Colours, type, spacing, radii, icons and hover washes are
+//           measured off YouTube's own Save sheet and New-playlist dialog, in
+//           both themes, and follow YouTube's theme (html[dark]) rather than the
+//           OS. Nothing here should look like an extension. Colour appears only
+//           where YouTube uses it: the error red, and the blue of an Undo.
 // SEARCH    A query is words; a title matches when it holds all of them, in any
 //           order, ignoring case and accents. The matched run of every word is
 //           marked — in a palette this is the difference between a filter and a
@@ -29,8 +28,9 @@
 //           requires a separate confirmation button so a double-click or key
 //           repeat cannot delete anything — except Undo, which reverses the
 //           save the user made a moment ago. Session events — Saving, Saved,
-//           Removing, Removed, Retry — use the same state slot. Every state
-//           carries a word as well as a mark, so colour is never the sole carrier.
+//           Removing, Removed, Retry — use the same state slot: a word in the
+//           row's subtitle beside YouTube's bookmark (filled when the video is
+//           in the playlist), so colour is never the sole carrier.
 // ORDER     Three orderings, and every one of them is a *claim* the sheet can
 //           back: "Best match" (where the query lands in the title, then the
 //           shorter title, then A→Z — and plain A→Z when the field is empty,
@@ -42,17 +42,14 @@
 //           orderings. It is a partition — `member === true` rows are not save
 //           targets — so they group above the targets in every mode, and the
 //           cursor opens on the first row that Enter can actually act on.
-// VIEWPORT  Video title · field + count + order + close · hairline · list.
-//           The title is elided above the query, and the raw video id remains
-//           diagnostic-only on the host element. The footer exists only for a
-//           useful transient status, Undo, or removal confirmation. Rows carry a
-//           video count when YouTube reported one. Top-anchored, so
-//           the sheet grows down to a ceiling and shrinks with the query.
-// MOTION    One entrance (@starting-style, 220ms), one payoff (the check draws
-//           itself in 360ms while the row's field flashes jade and settles), one
-//           honest spinner while a save is in flight. Everything else is a 130ms
-//           colour change. Exponential ease-out throughout — no overshoot, no
-//           bounce. And no weight changes on hover or cursor: reflowing a
+// VIEWPORT  "Save to..." · video title · field + count + order · list ·
+//           "New playlist". The raw video id remains diagnostic-only on the host
+//           element. The status footer exists only for a useful transient
+//           status, Undo, or removal confirmation. Rows carry a video count when
+//           YouTube reported one. Top-anchored, so the sheet grows down to a
+//           ceiling and shrinks with the query.
+// MOTION    YouTube's: a short fade in, a spinner while a save is in flight, and
+//           nothing else. No weight changes on hover or cursor: reflowing a
 //           clipped title under the arrow keys is a defect, not a flourish.
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -64,15 +61,16 @@ const PLS_PAGE = 200;
 const PLS_GROW_MARGIN = 600; // px from the bottom at which the next page is built
 const PLS_LOAD_PATIENCE = 8000;
 const PLS_SVGNS = 'http://www.w3.org/2000/svg';
-const PLS_PAD = 8; // .list padding, and the scroll margin the cursor keeps
+const PLS_PAD = 8; // the scroll margin the cursor keeps
 const PLS_MIN_HL = 2; // shortest query worth marking inside a title
-const PLS_CHECK = 'M3.6 7.35 5.95 9.75 10.5 4.35';
-const PLS_CROSS = 'M4.3 4.3 9.7 9.7M9.7 4.3 4.3 9.7';
-const PLS_PLUS = 'M7 2.5v9M2.5 7h9';
-// Three descending rules. One glyph for all three orderings on purpose — the
-// mode is carried by the word beside it, the same way every other state in this
-// sheet carries a word rather than leaning on a shape.
-const PLS_SORT = 'M2.6 3.6h8.8M2.6 7h5.8M2.6 10.4h2.8';
+// YouTube's own 24px icons, copied from the paths it renders (2026-09).
+const PLS_BOOKMARK = 'M19 2H5a2 2 0 00-2 2v16.887c0 1.266 1.382 2.048 2.469 1.399L12 18.366l6.531 3.919c1.087.652 2.469-.131 2.469-1.397V4a2 2 0 00-2-2ZM5 20.233V4h14v16.233l-6.485-3.89-.515-.309-.515.309L5 20.233Z';
+const PLS_BOOKMARKED = 'M19 2H5a2 2 0 00-2 2v16.887c0 1.266 1.382 2.048 2.469 1.399L12 18.366l6.531 3.919c1.087.652 2.469-.131 2.469-1.397V4a2 2 0 00-2-2Z';
+const PLS_CROSS = 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z';
+const PLS_PLUS = 'M12 3a1 1 0 00-1 1v7H4a1 1 0 000 2h7v7a1 1 0 002 0v-7h7a1 1 0 000-2h-7V4a1 1 0 00-1-1Z';
+// The comments section's "Sort by" glyph. One glyph for every ordering on
+// purpose — the mode is carried by the word beside it.
+const PLS_SORT = 'M21 5H3a1 1 0 000 2h18a1 1 0 100-2Zm-6 6H3a1 1 0 000 2h12a1 1 0 000-2Zm-6 6H3a1 1 0 000 2h6a1 1 0 000-2Z';
 
 // Wrap emoji runs so they stop out-shouting the text they sit beside.
 let PLS_EMOJI = null;
@@ -80,79 +78,37 @@ try { PLS_EMOJI = new RegExp('\\p{RGI_Emoji}', 'gv'); } catch { /* older engine:
 
 const PLS_CSS = `
 :host { all: initial; }
+/* Every value below was measured off YouTube's own Save-to-playlist sheet
+   (yt-sheet-view-model > yt-contextual-sheet-layout) and its New-playlist
+   dialog, in both themes, 2026-09. YouTube's own tokens are hashed per release
+   (--t08a7c6…), so they are pinned here as values rather than referenced by
+   name. The theme follows YouTube's, not the OS: YouTube marks dark mode with
+   html[dark], and this host lives directly under <html>. */
 :host {
-  color-scheme: light dark;
-
-  /* Ground and ink. Three steps only; --fg-3 is pinned to the lowest alpha that
-     still clears 4.5:1 on the row field it actually sits on, not on the ground. */
-  --bg:#131417; --fg:#eceef1;
-  --fg-2:rgba(236,238,241,.72);
-  --fg-3:rgba(236,238,241,.55);
-
-  --line:rgba(255,255,255,.075);
-  --edge:rgba(255,255,255,.10);
-  --sheen:rgba(255,255,255,.09);
-
-  --alt:rgba(255,255,255,.022);
-  --hov:rgba(255,255,255,.048);
-  --act:rgba(255,255,255,.088);
-  --hit:rgba(255,255,255,.13);
-  --skel:rgba(255,255,255,.075);
-  --thumb:rgba(255,255,255,.15);
-  --ring:rgba(236,238,241,.6);
-  --sel:rgba(236,238,241,.24);
-
-  --ok:#4cdea1; --bad:#ff7d72;
-  --lift:
-    0 1px 1px rgba(0,0,0,.30),
-    0 10px 24px -10px rgba(0,0,0,.55),
-    0 36px 80px -28px rgba(0,0,0,.72);
-
-  /* State fields, resolved where they are used so they follow whichever
-     --ok/--bad is live. The tint depths are per-theme: a dark ground swallows a
-     wash and a light one does not, and the deeper field a row wears under the
-     cursor is the case that decides whether its coloured label still clears
-     4.5:1. (No backticks in here — this whole block is a template literal.) */
-  --f-ok:color-mix(in srgb, var(--ok) 13%, transparent);
-  --f-ok-on:color-mix(in srgb, var(--ok) 22%, transparent);
-  --f-bad:color-mix(in srgb, var(--bad) 10%, transparent);
-  --f-bad-on:color-mix(in srgb, var(--bad) 18%, transparent);
-
-  --row-h:36px;
-  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif,
-         "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji";
-  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --bg:#fff;                         /* menu-background */
+  --fg:#0f0f0f;                      /* text primary, as the sheet renders it */
+  --fg-2:#606060;                    /* text secondary */
+  --hov:rgba(0,0,0,.05);             /* list item hover / keyboard focus */
+  --tonal:rgba(0,0,0,.05);           /* mono tonal button */
+  --tonal-hov:rgba(0,0,0,.1);        /* mono tonal button, hovered */
+  --line:rgba(0,0,0,.1);             /* panel footer divider */
+  --field:rgba(0,0,0,.2);            /* outlined text field, at rest */
+  --thumb:#909090;                   /* scrollbar, only while hovered */
+  --filled:#0f0f0f; --on-filled:#fff; --filled-hov:#272727;
+  --cta:#065fd4;                     /* call-to-action */
+  --sep:#fff;                        /* hairline between a thumbnail and its stack */
+  --bad:#c30027;                     /* error-indicator */
+  --sans:Roboto,Arial,sans-serif;
 }
-@media (prefers-color-scheme: light) { :host {
-  --bg:#fff; --fg:#14161a;
-  --fg-2:rgba(20,22,26,.72);
-  --fg-3:rgba(20,22,26,.60);
-
-  --line:rgba(0,0,0,.08);
-  --edge:rgba(0,0,0,.09);
-  --sheen:transparent;      /* a white sheet has no lit top edge to fake */
-
-  --alt:rgba(0,0,0,.018);
-  --hov:rgba(0,0,0,.04);
-  --act:rgba(0,0,0,.07);
-  --hit:rgba(0,0,0,.10);
-  --skel:rgba(0,0,0,.07);
-  --thumb:rgba(0,0,0,.2);
-  --ring:rgba(20,22,26,.55);
-  --sel:rgba(20,22,26,.15);
-
-  /* Deep enough to clear 4.5:1 against their own tinted row fields — including
-     the deeper field a row wears under the cursor — not against white. */
-  --ok:#096546; --bad:#a82c22;
-  --f-ok:color-mix(in srgb, var(--ok) 9%, transparent);
-  --f-ok-on:color-mix(in srgb, var(--ok) 16%, transparent);
-  --f-bad:color-mix(in srgb, var(--bad) 8%, transparent);
-  --f-bad-on:color-mix(in srgb, var(--bad) 14%, transparent);
-  --lift:
-    0 1px 1px rgba(14,16,22,.06),
-    0 8px 20px -8px rgba(14,16,22,.14),
-    0 30px 64px -24px rgba(14,16,22,.26);
-} }
+:host-context(html[dark]) {
+  --bg:#282828; --fg:#f1f1f1; --fg-2:#aaa;
+  --hov:rgba(255,255,255,.1);
+  --tonal:rgba(255,255,255,.1); --tonal-hov:rgba(255,255,255,.2);
+  --line:rgba(255,255,255,.2); --field:rgba(255,255,255,.2);
+  --thumb:#717171;
+  --filled:#f1f1f1; --on-filled:#0f0f0f; --filled-hov:#d9d9d9;
+  --cta:#3ea6ff; --bad:#f57; --sep:#0f0f0f;
+}
 
 [hidden] { display: none !important; }
 
@@ -163,226 +119,200 @@ const PLS_CSS = `
    the whole interaction, so narrowing the query only moves the bottom edge. */
 dialog {
   box-sizing: border-box; margin: 9vh auto auto; padding: 0;
-  width: 520px; max-width: calc(100vw - 32px);
+  width: 400px; max-width: calc(100vw - 32px);
   /* bottom:auto is load-bearing — the UA's inset:0 would otherwise stretch an
      auto height to the full viewport and the sheet could never size to content. */
   bottom: auto; height: auto; max-height: min(78vh, 620px);
   display: flex; flex-direction: column; overflow: hidden;
   background: var(--bg); color: var(--fg);
-  font: 400 14px/1.45 var(--sans);
-  -webkit-font-smoothing: antialiased;
-  border: 1px solid var(--edge); border-radius: 16px;
-  /* Outer three-stop ramp for depth, plus a 1px lit top edge for material. */
-  box-shadow: var(--lift), inset 0 1px 0 var(--sheen);
-  transition: opacity .18s ease, transform .22s cubic-bezier(.16,1,.3,1);
+  font: 400 14px/20px var(--sans);
+  border: 0; border-radius: 12px;
+  /* tp-yt-paper-dialog's shadow: this is a modal, like YouTube's own dialogs. */
+  box-shadow: 0 0 24px 12px rgba(0,0,0,.15);
+  transition: opacity .15s ease;
 }
 dialog:not([open]) { display: none; }
-@starting-style { dialog[open] { opacity: 0; transform: translateY(10px) scale(.985); } }
-/* ::backdrop did not inherit custom properties from its originator until late
-   Chrome, so these two rules stay literal on purpose. */
-dialog::backdrop {
-  background: rgba(6,7,10,.58);
-  backdrop-filter: blur(6px) saturate(.9);
-  transition: opacity .18s ease;
-}
+@starting-style { dialog[open] { opacity: 0; } }
+/* tp-yt-iron-overlay-backdrop: flat black at 30%, no blur. */
+dialog::backdrop { background: rgba(0,0,0,.3); transition: opacity .15s ease; }
 @starting-style { dialog[open]::backdrop { opacity: 0; } }
-@media (prefers-color-scheme: light) { dialog::backdrop {
-  background: rgba(16,18,24,.28); backdrop-filter: blur(4px) saturate(.95);
-} }
-dialog ::selection { background: var(--sel); }
 
-/* ── header ──────────────────────────────────────────────────────────────── */
+svg.i { display: block; width: 24px; height: 24px; fill: currentColor; flex: none; }
+
+/* ── header: yt-panel-header-view-model, then the search field ─────────────── */
 .head {
-  flex: none; display: grid; grid-template-columns: minmax(0,1fr) auto auto auto auto;
-  align-items: center; gap: 8px 12px;
-  padding: 15px 20px 14px; border-bottom: 1px solid var(--line);
+  flex: none; display: grid; grid-template-columns: minmax(0,1fr) auto auto;
+  grid-template-areas: "ttl ttl x" "vid vid x" "q rd sort";
+  align-items: center; column-gap: 8px;
+  padding: 10px 8px 12px 16px;
+}
+.ttl {
+  grid-area: ttl; margin: 0; min-width: 0;
+  font: 700 18px/26px var(--sans); color: var(--fg);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .vid {
-  grid-column: 1 / -1; min-width: 0; overflow: hidden;
+  grid-area: vid; min-width: 0; margin-top: 2px; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2);
-  font: 400 12px/1.3 var(--sans);
+  font: 400 12px/18px var(--sans);
 }
 .vid:empty { display: none; }
-input {
-  all: initial; flex: 1 1 auto; min-width: 0;
-  font: 400 17px/1.4 var(--sans); letter-spacing: -.012em;
-  color: var(--fg); caret-color: var(--fg);
+/* Text-mono icon button, size M: 40px round, hover wash is the outline token. */
+.x {
+  all: initial; grid-area: x; align-self: start;
+  display: grid; place-items: center; width: 40px; height: 40px;
+  border-radius: 20px; cursor: pointer; color: var(--fg);
 }
-input::placeholder { color: var(--fg-3); letter-spacing: -.008em; }
+.x:hover { background-color: var(--line); }
+.x:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
 
-/* Empty until you type. At rest the field gets the whole header to itself. */
+/* textarea-shape, outlined, label hidden: 8px radius, 1px rest border, 2px
+   primary border on focus with the padding pulled in so nothing shifts. */
+input {
+  all: initial; grid-area: q; box-sizing: border-box; min-width: 0;
+  margin: 12px 0 0; height: 40px; padding: 0 12px;
+  border: 1px solid var(--field); border-radius: 8px;
+  font: 400 16px/22px var(--sans); color: var(--fg); caret-color: var(--fg);
+}
+input:focus { border: 2px solid var(--fg); padding: 0 11px; }
+input::placeholder { color: var(--fg-2); }
+
 .readout {
-  flex: none; white-space: nowrap;
-  font: 400 11.5px/1 var(--sans); font-variant-numeric: tabular-nums;
-  letter-spacing: .012em; color: var(--fg-3);
+  grid-area: rd; margin-top: 12px; white-space: nowrap;
+  font: 400 12px/18px var(--sans); font-variant-numeric: tabular-nums;
+  color: var(--fg-2);
 }
 .readout:empty { display: none; }
 
-.x {
-  all: initial; flex: none; margin-right: -6px;
-  display: grid; place-items: center; width: 26px; height: 26px;
-  border-radius: 8px; cursor: pointer; color: var(--fg-3);
-  transition: color .13s ease, background-color .13s ease;
+/* ── buttons: button-shape-next, mono ──────────────────────────────────────── */
+.sort, .priv, .confirm button, .undo {
+  all: initial; box-sizing: border-box; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 32px; padding: 0 12px; border-radius: 16px;       /* size S */
+  font: 500 12px/32px var(--sans); white-space: nowrap;
+  color: var(--fg); cursor: pointer;
 }
-.x:hover { color: var(--fg); background-color: var(--hov); }
-.x:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.sort, .priv { background-color: var(--tonal); }              /* tonal */
+.sort:hover, .priv:hover { background-color: var(--tonal-hov); }
+.sort { grid-area: sort; margin: 12px 8px 0 0; }
+.sort svg.i, .priv svg.i { width: 16px; height: 16px; margin: 0 4px 0 -4px; }
+.confirm button:hover, .undo:hover { background-color: var(--line); } /* text */
+.confirm .danger { background-color: var(--filled); color: var(--on-filled); } /* filled */
+.confirm .danger:hover { background-color: var(--filled-hov); }
+.undo { color: var(--cta); }
+:is(.sort, .priv, .confirm button, .undo, .new-btn, .create-btn):focus-visible {
+  outline: 2px solid var(--fg); outline-offset: 2px;
+}
+/* Held to one width so cycling cannot move the query field. */
+.sl { min-width: 40px; text-align: left; }
 
-/* ── list ─────────────────────────────────────────────────────────────────── */
+/* ── list: yt-list-view-model of compact, tappable, in-popup list items ────── */
 .list {
   position: relative; flex: 1 1 auto; min-height: 0;
   overflow-y: auto; overscroll-behavior: contain;
-  /* Stable gutter: without it the rows jump 8px sideways the moment a query
+  /* Stable gutter: without it the rows jump sideways the moment a query
      narrows the list below one screenful. Typing must not move the results. */
   scrollbar-gutter: stable;
-  padding: 8px;
-  scrollbar-width: thin; scrollbar-color: var(--thumb) transparent;
+  scrollbar-width: thin; scrollbar-color: transparent transparent;
 }
+.list:hover { scrollbar-color: var(--thumb) transparent; }
 /* A centred empty state should be centred in the sheet, not in the sheet minus
    a scrollbar it will never need. */
 .list:has(.note) { scrollbar-gutter: auto; }
 
 .row {
   all: initial; box-sizing: border-box;
-  display: grid; grid-template-columns: minmax(0,1fr) auto;
-  align-items: center; column-gap: 12px;
-  width: 100%; min-height: var(--row-h); padding: 8px 12px; border-radius: 8px;
-  font: 400 14px/1.35 var(--sans); letter-spacing: -.004em;
+  display: flex; align-items: center; gap: 12px;
+  /* Every row is the height of YouTube's own Save rows (which always carry a
+     subtitle), whether or not this one has a count to show: arrow keys and
+     PageDown need a constant row height. */
+  width: 100%; height: 54px; padding: 6px 16px;
+  font: 400 14px/20px var(--sans);
   color: var(--fg); cursor: pointer; background-color: transparent;
-  transition: background-color .13s ease, color .13s ease;
 }
-.row:nth-child(even) { background-color: var(--alt); }
-/* In-flight events and a completed removal are terminal. Known members and rows
-   saved this session stay actionable, but activation only opens the separate
-   removal confirmation — it never adds twice. */
-.row.done { background-color: var(--f-ok); }
-.row.fail { background-color: var(--f-bad); }
 .row.busy, .row.removed { cursor: default; }
-:where(.list:not(.kb)) .row:not(.on,.done,.busy,.removed):hover { background-color: var(--hov); }
-/* The cursor is simply the brightest field on screen, layered per state so it
-   never argues with the state colour underneath it. */
-.row.on { background-color: var(--act); }
-.row.on.done { background-color: var(--f-ok-on); }
-.row.on.fail { background-color: var(--f-bad-on); }
-.row:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+/* Full-bleed and square, exactly as YouTube's own rows hover. The keyboard
+   cursor wears the same wash — it is the same "you are here". */
+:where(.list:not(.kb)) .row:not(.busy,.removed):hover, .row.on { background-color: var(--hov); }
+.row:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
 
-.t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Spread instead of padding: the mark must not widen the line, or the ellipsis
-   would move as you type. */
-.hit { border-radius: 3px; background-color: var(--hit); box-shadow: 0 0 0 1px var(--hit); }
-.emo { font-size: .86em; opacity: .8; letter-spacing: .02em; }
-/* Known members are dimmed at rest and brighten when targeted for removal. */
-.row.mem .t { color: var(--fg-2); }
-.row.mem:hover .t, .row.mem.on .t { color: var(--fg); }
-.row.done .t { color: var(--fg); }
+/* yt-collection-thumbnail-view-model, small: a 56x32 thumbnail with the
+   playlist's own coloured card peeking out 6px above it, both 4px-rounded and
+   split by a 1px hairline. Geometry and colours measured off YouTube's sheet. */
+.lead { position: relative; flex: none; width: 56px; height: 42px; }
+.stk, .th { position: absolute; box-sizing: content-box; border-radius: 4px;
+            border-top: 1px solid var(--sep); }
+.stk { left: 8px; top: 2px; width: 40px; height: 33px;
+       background-color: var(--stk-l, #606060); }
+:host-context(html[dark]) .stk { background-color: var(--stk-d, #606060); }
+.th { left: 0; top: 7px; width: 56px; height: 32px; overflow: hidden;
+      background-color: var(--tonal); }
+.th img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.txt { flex: 1 1 auto; min-width: 0; }
+/* ytListItemViewModelSingleLineTitle — one line, so the height holds. */
+.t { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hit { border-radius: 2px; background-color: var(--tonal-hov); }
+.emo { font-size: .9em; }
+/* ytListItemViewModelSubtitle: count, then any state word. */
+.sub { display: block; margin-top: 2px; font: 400 12px/18px var(--sans); color: var(--fg-2);
+       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sep::before { content: " \\2022  "; }
+.row.fail .tag { color: var(--bad); }
 
-/* State column: optional word, then mark, flush right. The mark box is a fixed
-   14px whether or not it holds anything, so marks stack in a true column. */
-.state { display: flex; align-items: center; gap: 8px; color: var(--fg-3); }
-.row.on .state { color: var(--fg-2); }
-.gut { display: grid; place-items: center; width: 14px; height: 14px; flex: none; }
-.mark { display: block; width: 14px; height: 14px; fill: none; stroke: currentColor;
-        stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.tag { flex: none; white-space: nowrap;
-       font: 500 11.5px/1 var(--sans); letter-spacing: .01em; }
-/* Permanent facts whisper, events speak — the difference is weight and colour,
-   not presence. A bare check would be ambiguous against the jade "Saved" check,
-   and this row is not clickable, so it owes the reader an explanation. */
-.row.mem .tag { font-weight: 400; }
-.row.mem .gut { opacity: .78; }
-.row.busy .state { color: var(--fg-2); }
-.row.done .state { color: var(--ok); }
-.row.done .tag, .row.fail .tag { font-weight: 600; }
-.row.fail .state { color: var(--bad); }
-.row.removed .state { color: var(--fg-2); }
-/* Two thirds of the ring, so it still reads as a spinner in the frame where it
-   is not moving — including under reduced motion, where it never moves at all. */
+/* The trailing accessory: YouTube's own bookmark — outline for a target,
+   filled for a playlist this video is in. */
+.gut { display: grid; place-items: center; width: 24px; height: 24px; flex: none; }
 .spin { animation: spin .8s linear infinite; }
-.spin circle { stroke-dasharray: 20 12; }
-/* The one payoff, and only one: the check draws itself while the row's field
-   flashes jade and settles. No scale pop on top — a second motion on the same
-   14px glyph is gilding, and overshoot easing is a costume. */
-.row.flash .mark { stroke-dasharray: 12; stroke-dashoffset: 12;
-                   animation: draw .36s cubic-bezier(.16,1,.3,1) forwards; }
-.row.flash { animation: land .5s cubic-bezier(.16,1,.3,1); }
+.spin circle { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round;
+               stroke-dasharray: 40 17; }
 
-.note { padding: 44px 28px; text-align: center; text-wrap: balance;
-        color: var(--fg-3); font-size: 13px; line-height: 1.6; }
-.note .h { display: block; margin-bottom: 3px;
-           font-size: 14px; font-weight: 500; color: var(--fg-2); }
+/* YouTube type scale: 16/22 medium for the line that matters, 14/20 secondary. */
+.note { padding: 40px 24px; text-align: center; text-wrap: balance;
+        color: var(--fg-2); font: 400 14px/20px var(--sans); }
+.note .h { display: block; margin-bottom: 4px; font: 500 16px/22px var(--sans); color: var(--fg); }
 .note .s { display: block; }
-.note .q { color: var(--fg); font-weight: 500; overflow-wrap: anywhere; }
+.note .q { overflow-wrap: anywhere; }
 
-.create-btn {
+/* Tonal, size M: the same pill as YouTube's "New playlist". */
+.create-btn, .new-btn {
   all: initial; box-sizing: border-box;
-  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  margin-top: 12px; padding: 7px 14px; border-radius: 8px;
-  background-color: var(--hov); color: var(--fg);
-  font: 500 13px/1 var(--sans); cursor: pointer;
-  border: 1px solid var(--line);
-  transition: background-color .13s ease, border-color .13s ease;
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 40px; padding: 0 16px; border-radius: 20px;
+  background-color: var(--tonal); color: var(--fg);
+  font: 500 14px/40px var(--sans); white-space: nowrap; cursor: pointer;
 }
-.create-btn:hover { background-color: var(--act); border-color: var(--edge); }
-.create-btn:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.create-btn:hover, .new-btn:hover { background-color: var(--tonal-hov); }
+.create-btn svg.i, .new-btn svg.i { margin: 0 6px 0 -6px; }
 .create-btn.busy { opacity: .6; cursor: default; }
-.create-btn .mark { stroke-width: 1.6; }
+.new-btn { width: 100%; }
 
+/* "Create playlist …" under a result list is a list item like the rest, with
+   YouTube's plus as its leading icon. */
 .create-action {
-  all: initial; box-sizing: border-box;
-  display: flex; align-items: center; gap: 8px;
-  width: 100%; min-height: var(--row-h); padding: 8px 12px; border-radius: 8px;
-  font: 500 13px/1.35 var(--sans); letter-spacing: -.004em;
-  color: var(--fg-2); cursor: pointer; background-color: transparent;
-  border-top: 1px solid var(--line); margin-top: 4px;
-  transition: background-color .13s ease, color .13s ease;
+  all: initial; box-sizing: border-box; flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center; gap: 12px;
+  min-height: 40px; padding: 2px 16px;
+  font: 400 14px/20px var(--sans); color: var(--fg); cursor: pointer;
 }
-.create-action:hover { background-color: var(--hov); color: var(--fg); }
-.create-action:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.create-action:hover { background-color: var(--hov); }
+.create-action:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
 .create-action.busy { opacity: .6; cursor: default; }
-.create-action .mark { stroke-width: 1.6; }
 
-.new-btn {
-  all: initial; box-sizing: border-box; flex: none;
-  display: inline-flex; align-items: center; gap: 5px;
-  height: 22px; padding: 0 8px; margin: 0 2px 0 0; border-radius: 7px;
-  font: 500 11.5px/1 var(--sans); letter-spacing: .01em;
-  color: var(--fg-3); cursor: pointer;
-  transition: color .13s ease, background-color .13s ease;
-}
-.new-btn:hover { color: var(--fg); background-color: var(--hov); }
-.new-btn:active { background-color: var(--act); }
-.new-btn:focus-visible { color: var(--fg); outline: 2px solid var(--ring); outline-offset: -2px; }
-.new-btn .mark { stroke-width: 1.6; }
-/* Video count: a quiet fact beside the state column. It is also what tells two
-   identically-titled playlists apart. */
-.cnt { flex: none; min-width: 2ch; text-align: right;
-       font: 400 11.5px/1 var(--sans); font-variant-numeric: tabular-nums;
-       color: var(--fg-3); }
+/* The create control plus the privacy it will create with, side by side. The
+   privacy chip is a real, separately focusable button: nesting it inside the
+   create button would be invalid, and hiding the choice would make "Private"
+   a secret. */
+.create-row { display: flex; align-items: center; gap: 8px; }
+.create-wrap { border-top: 1px solid var(--line); }
+.create-wrap .create-row { padding-right: 16px; }
+.note .create-row { justify-content: center; margin-top: 16px; }
 
-/* Create button plus the privacy it will create with, side by side. The privacy
-   chip is a real, separately focusable button: nesting it inside the create
-   button would be invalid, and hiding the choice would make "Private" a secret. */
-.create-row { display: flex; align-items: center; gap: 6px; }
-.create-row .create-action { flex: 1 1 auto; margin-top: 0; }
-.create-wrap { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; }
-.note .create-row { justify-content: center; margin-top: 12px; }
-.note .create-row .create-btn { margin-top: 0; }
-.priv {
-  all: initial; box-sizing: border-box; flex: none;
-  display: inline-flex; align-items: center; height: 26px; padding: 0 9px;
-  border-radius: 7px; border: 1px solid var(--line);
-  font: 500 11.5px/1 var(--sans); letter-spacing: .01em;
-  color: var(--fg-2); cursor: pointer;
-  transition: color .13s ease, background-color .13s ease;
-}
-.priv:hover { color: var(--fg); background-color: var(--hov); }
-.priv:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
-
-/* Same height as a real row, so the list resolves into place instead of popping.
+/* Row-height placeholders, so the list resolves into place instead of popping.
    The resting opacity is declared, not implied by the keyframes — otherwise
    reduced-motion would leave solid bars behind. */
-.sk { display: flex; align-items: center; height: var(--row-h); padding: 0 12px; }
-.sk span { display: block; height: 9px; border-radius: 5px;
-           background-color: var(--skel); opacity: .6;
+.sk { display: flex; align-items: center; height: 54px; padding: 0 16px; }
+.sk span { display: block; height: 14px; border-radius: 4px;
+           background-color: var(--hov); opacity: .6;
            animation: shimmer 1.8s ease-in-out infinite; }
 .sk:nth-child(7n+1) span { width: 61%; animation-delay: 0s }
 .sk:nth-child(7n+2) span { width: 44%; animation-delay: .11s }
@@ -392,68 +322,26 @@ input::placeholder { color: var(--fg-3); letter-spacing: -.008em; }
 .sk:nth-child(7n+6) span { width: 67%; animation-delay: .55s }
 .sk:nth-child(7n+7) span { width: 47%; animation-delay: .66s }
 
-/* ── footer: transient status and removal confirmation only ─────────────── */
+/* ── footers ───────────────────────────────────────────────────────────────── */
+/* Transient status, Undo and removal confirmation — only while there is one. */
 .foot {
-  flex: none; display: flex; align-items: center; gap: 10px;
-  padding: 10px 20px 11px; border-top: 1px solid var(--line);
-  font: 400 11.5px/1.5 var(--sans); color: var(--fg-3);
+  flex: none; display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px 8px 16px; border-top: 1px solid var(--line);
+  font: 400 14px/20px var(--sans); color: var(--fg-2);
 }
 .foot:has(.status:empty):not(:has(.undo:not([hidden]))) { display: none; }
 .status { flex: 1 1 auto; min-width: 0; overflow: hidden;
           display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .confirm { flex: none; display: flex; gap: 8px; }
-.confirm button {
-  all: initial; box-sizing: border-box; padding: 5px 9px; border-radius: 7px;
-  font: 500 11.5px/1 var(--sans); color: var(--fg-2); cursor: pointer;
-}
-.confirm button:hover { background-color: var(--hov); color: var(--fg); }
-.confirm button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
-.confirm .danger { color: var(--bad); }
-.undo {
-  all: initial; box-sizing: border-box; flex: none; padding: 5px 9px; border-radius: 7px;
-  font: 600 11.5px/1 var(--sans); color: var(--fg); cursor: pointer;
-}
-.undo:hover { background-color: var(--hov); }
-.undo:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+/* yt-panel-footer-view-model: divider, 12px, one full-width button. */
+.pfoot { flex: none; display: flex; padding: 12px; border-top: 1px solid var(--line); }
 
-/* The header's order control cycles through the three supported modes. */
-.sort {
-  all: initial; box-sizing: border-box; flex: none;
-  display: inline-flex; align-items: center; gap: 7px;
-  height: 22px; padding: 0 8px; margin: 0 2px 0 0; border-radius: 7px;
-  font: 500 11.5px/1 var(--sans); letter-spacing: .01em;
-  color: var(--fg-3); cursor: pointer;
-  transition: color .13s ease, background-color .13s ease;
-}
-.sort:hover { color: var(--fg); background-color: var(--hov); }
-.sort:active { background-color: var(--act); }
-.sort:focus-visible { color: var(--fg); outline: 2px solid var(--ring); outline-offset: -2px; }
-.sort .mark { stroke-width: 1.6; }
-/* Held to one width so cycling cannot move the query field. */
-.sl { min-width: 38px; text-align: left; white-space: nowrap; }
-
-@keyframes draw    { to { stroke-dashoffset: 0 } }
 @keyframes spin    { to { transform: rotate(1turn) } }
 @keyframes shimmer { 0%,100% { opacity: .55 } 50% { opacity: 1 } }
-/* No 'to' — it settles into whatever field the row now rests at. */
-@keyframes land    { from { background-color: color-mix(in srgb, var(--ok) 30%, transparent) } }
 
-@media (max-width: 460px) {
-  dialog { margin-top: 6vh; border-radius: 14px; }
-  .head { padding: 13px 16px 12px; }
-  .foot { padding: 9px 16px 10px; }
-  .list { padding: 6px; }
-  .row { padding: 8px 10px; }
-}
-
-/* Every state still reads without motion: in-flight and failed carry a word,
-   saved carries a word and a field, and membership carries a mark plus a full
-   sentence on the row's accessible name. Nothing here is the sole carrier. */
 @media (prefers-reduced-motion: reduce) {
-  dialog, dialog::backdrop, .row, .x, .sort { transition-duration: 1ms; }
-  .row.flash, .spin, .sk span { animation: none; }
-  /* killing the draw must not leave the stroke dashed out of existence */
-  .row.flash .mark { animation: none; stroke-dasharray: none; }
+  dialog, dialog::backdrop { transition-duration: 1ms; }
+  .spin, .sk span { animation: none; }
 }
 `;
 
@@ -466,28 +354,63 @@ function plsEl(tag, cls, text) {
 
 function plsSvg(cls) {
   const svg = document.createElementNS(PLS_SVGNS, 'svg');
-  svg.setAttribute('viewBox', '0 0 14 14');
+  svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('class', cls);
   svg.setAttribute('aria-hidden', 'true');
   return svg;
 }
 
 function plsIcon(d) {
-  const svg = plsSvg('mark');
+  const svg = plsSvg('i');
   const p = document.createElementNS(PLS_SVGNS, 'path');
   p.setAttribute('d', d);
   svg.append(p);
   return svg;
 }
 
-// An arc, not a pulsing check — a check that means "done" has no business
+// An arc, not a pulsing bookmark — a mark that means "saved" has no business
 // standing in for "in flight".
 function plsSpinner() {
-  const svg = plsSvg('mark spin');
+  const svg = plsSvg('i spin');
   const c = document.createElementNS(PLS_SVGNS, 'circle');
-  c.setAttribute('cx', '7'); c.setAttribute('cy', '7'); c.setAttribute('r', '5');
+  c.setAttribute('cx', '12'); c.setAttribute('cy', '12'); c.setAttribute('r', '9');
   svg.append(c);
   return svg;
+}
+
+// The playlist's picture, as YouTube draws it in its own sheet. The URLs are the
+// ones YouTube sent (innertube.js keeps only its image CDN), so the browser
+// fetches and caches them exactly as it does for YouTube's pages; `srcset` lets
+// it pick the smallest that fills 56px, and `lazy` means only rows on screen
+// load at all. No picture (a playlist made a moment ago) leaves the empty tile.
+/** @param {{thumb?: Array<{url: string, width?: number}>, stack?: {light: string, dark: string}}} p */
+function plsThumb(p) {
+  const lead = plsEl('span', 'lead');
+  lead.setAttribute('aria-hidden', 'true');
+  const stk = plsEl('span', 'stk');
+  if (p.stack) {
+    stk.style.setProperty('--stk-l', p.stack.light);
+    stk.style.setProperty('--stk-d', p.stack.dark);
+  }
+  const th = plsEl('span', 'th');
+  const src = Array.isArray(p.thumb) ? p.thumb.filter((x) => x && typeof x.url === 'string') : [];
+  if (src.length) {
+    const img = document.createElement('img');
+    img.alt = '';
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    const sized = src.filter((x) => typeof x.width === 'number');
+    if (sized.length === src.length) {
+      img.setAttribute('srcset', sized.map((x) => `${x.url} ${x.width}w`).join(', '));
+      img.setAttribute('sizes', '56px');
+    }
+    img.src = src[0].url;
+    // A dead link shows YouTube's empty tile rather than a broken-image glyph.
+    img.addEventListener('error', () => img.remove(), { once: true });
+    th.append(img);
+  }
+  lead.append(stk, th);
+  return lead;
 }
 
 // Text nodes + spans only — never a string sink.
@@ -731,6 +654,8 @@ export function createSheet({
   closeBtn.append(plsIcon(PLS_CROSS));
 
   const head = plsEl('header', 'head');
+  // YouTube's own heading for this sheet, word for word.
+  const ttl = plsEl('h2', 'ttl', 'Save to...');
 
   const list = plsEl('div', 'list');
   list.id = uid + '-l';
@@ -813,8 +738,7 @@ export function createSheet({
   if (newBtn) {
     newBtn.type = 'button';
     newBtn.setAttribute('aria-label', 'Create new playlist');
-    newBtn.title = 'Create a new playlist';
-    newBtn.append(plsIcon(PLS_PLUS), plsEl('span', null, 'New'));
+    newBtn.append(plsIcon(PLS_PLUS), plsEl('span', null, 'New playlist'));
     newBtn.addEventListener('click', () => {
       cancelRemoval(false);
       const raw = input.value.trim();
@@ -827,12 +751,17 @@ export function createSheet({
     });
   }
 
-  head.append(vid, input, readout, sortBtn, ...(newBtn ? [newBtn] : []), closeBtn);
+  // DOM order is tab order: close, then the field, then — one Tab away — the sort.
+  head.append(ttl, vid, closeBtn, input, readout, sortBtn);
 
   const foot = plsEl('div', 'foot');
   foot.append(status, confirmRemove, undoBtn);
 
-  dlg.append(head, list, foot);
+  // "New playlist" sits where YouTube puts it: a full-width button in the footer.
+  const pfoot = plsEl('div', 'pfoot');
+  if (newBtn) pfoot.append(newBtn);
+
+  dlg.append(head, list, foot, ...(newBtn ? [pfoot] : []));
   shadow.append(dlg);
   document.documentElement.append(host);
 
@@ -890,62 +819,75 @@ export function createSheet({
     // They stay mouse- and script-focusable, so clicking a row behaves as before.
     b.tabIndex = -1;
 
+    // A YouTube list item: title over an optional subtitle, bookmark trailing.
+    const txt = plsEl('span', 'txt');
     const t = plsEl('span', 't');
     plsWriteTitle(t, p, toks);
+    txt.append(t);
     const gut = plsEl('span', 'gut');
-    const cell = plsEl('span', 'state');
-    b.append(t, cell);
-    // Only a count YouTube actually reported is drawn; absent means absent.
+    b.append(plsThumb(p), txt, gut);
+    // Only what YouTube actually reported is drawn; absent means absent.
     const n = typeof p.count === 'number' ? p.count : null;
-    if (n != null) {
-      const c = plsEl('span', 'cnt', n.toLocaleString());
-      c.setAttribute('aria-hidden', 'true');
-      cell.append(c);
-    }
-    const sayCount = n == null ? '' : `, ${n.toLocaleString()} video${n === 1 ? '' : 's'}`;
+    const priv = typeof p.privacy === 'string' ? p.privacy : null;
+    const sayCount = (priv ? `, ${priv}` : '') +
+      (n == null ? '' : `, ${n.toLocaleString()} video${n === 1 ? '' : 's'}`);
+    // The subtitle reads as YouTube's does — privacy first — then the count, then
+    // the state word, so every state is written down rather than left to the icon.
+    const sub = (word) => {
+      const line = plsEl('span', 'sub');
+      const facts = [];
+      if (priv) facts.push(plsEl('span', 'pv', priv));
+      if (n != null) facts.push(plsEl('span', 'cnt', `${n.toLocaleString()} video${n === 1 ? '' : 's'}`));
+      for (const f of facts) f.setAttribute('aria-hidden', 'true');
+      if (word) facts.push(plsEl('span', 'tag', word));
+      facts.forEach((f, k) => { if (k) line.append(plsEl('span', 'sep')); line.append(f); });
+      if (line.firstChild) txt.append(line);
+    };
 
     let said = p.title + sayCount;
+    let word = '';
+    let mark = PLS_BOOKMARK;
     if (st === 'adding') {
       b.classList.add('busy');
       b.setAttribute('aria-busy', 'true');
       b.setAttribute('aria-disabled', 'true');
-      gut.append(plsSpinner());
-      cell.append(plsEl('span', 'tag', 'Saving'));
+      mark = null;
+      word = 'Saving';
       said = p.title + sayCount + ', saving';
     } else if (st === 'added') {
       b.classList.add('done');
-      gut.append(plsIcon(PLS_CHECK));
-      cell.append(plsEl('span', 'tag', 'Saved'));
+      mark = PLS_BOOKMARKED;
+      word = 'Saved';
       said = p.title + sayCount + ', saved. Activate to remove';
     } else if (st === 'error') {
       b.classList.add('fail');
-      gut.append(plsIcon(PLS_CROSS));
-      cell.append(plsEl('span', 'tag', 'Retry'));
+      word = 'Retry';
       said = p.title + sayCount + ', could not be saved. Activate to try again';
     } else if (st === 'removing') {
       b.classList.add('busy');
       b.setAttribute('aria-busy', 'true');
       b.setAttribute('aria-disabled', 'true');
-      gut.append(plsSpinner());
-      cell.append(plsEl('span', 'tag', 'Removing'));
+      mark = null;
+      word = 'Removing';
       said = p.title + ', removing';
     } else if (st === 'removed') {
       b.classList.add('removed');
       b.setAttribute('aria-disabled', 'true');
-      cell.append(plsEl('span', 'tag', 'Removed'));
+      word = 'Removed';
       said = p.title + ', removed';
     } else if (st === 'remove-error') {
       b.classList.add('fail');
-      gut.append(plsIcon(PLS_CROSS));
-      cell.append(plsEl('span', 'tag', 'Retry remove'));
+      mark = PLS_BOOKMARKED;
+      word = 'Retry remove';
       said = p.title + ', could not be removed. Activate to try again';
     } else if (known) {
       b.classList.add('mem');
-      gut.append(plsIcon(PLS_CHECK));
-      cell.append(plsEl('span', 'tag', 'Already in'));
+      mark = PLS_BOOKMARKED;
+      word = 'Already in';
       said = p.title + sayCount + ', already in this playlist. Activate to remove';
     }
-    cell.append(gut);
+    sub(word);
+    gut.append(mark ? plsIcon(mark) : plsSpinner());
 
     // Names the row for assistive tech and, via the tooltip, un-truncates it.
     b.setAttribute('aria-label', said);
@@ -1152,9 +1094,14 @@ export function createSheet({
     setStatus(`Creating “${name}”…`);
     render();
     try {
-      const created = await onCreate(name, PLS_PRIVACY[privIdx].id);
+      // Read once: the chip can be cycled while the request is in flight.
+      const chosen = PLS_PRIVACY[privIdx];
+      const created = await onCreate(name, chosen.id);
       if (dead) return;
-      const newPl = { id: created.id, title: created.title || name, member: Boolean(videoId) };
+      const newPl = {
+        id: created.id, title: created.title || name, member: Boolean(videoId),
+        privacy: chosen.label,
+      };
       data.unshift(newPl);
       if (videoId) state.set(newPl.id, 'added');
       creating = false;
@@ -1169,7 +1116,6 @@ export function createSheet({
       if (i > -1) {
         active = i;
         paint(false);
-        nodes[i]?.classList.add('flash');
       }
     } catch (e) {
       console.warn('[pls] create playlist failed', name, e);
@@ -1255,7 +1201,7 @@ export function createSheet({
       setStatus(`Saved to “${p.title}”.`);
       showUndo(p);
       const i = shown.findIndex((x) => x.id === p.id);
-      if (i > -1) { active = i; paint(false); nodes[i]?.classList.add('flash'); }
+      if (i > -1) { active = i; paint(false); }
     } catch (e) {
       console.warn('[pls] add failed', p.id, e);
       if (dead) return;

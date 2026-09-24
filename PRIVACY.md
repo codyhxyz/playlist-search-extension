@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Last updated:** September 3, 2026
+**Last updated:** September 24, 2026
 
 ## Overview
 
@@ -16,7 +16,7 @@ Your username, email, and profile photo are ignored. The extension reads only th
 
 ## External Services
 
-The extension only communicates with `youtube.com` — the same server you are already browsing. It does this by calling YouTube's internal "InnerTube" API (`https://www.youtube.com/youtubei/v1/*`) as a same-origin request from the YouTube tab you already have open. No requests are made to any other server, and no data is sent to the extension developer.
+The extension only communicates with YouTube. It calls YouTube's internal "InnerTube" API (`https://www.youtube.com/youtubei/v1/*`) as a same-origin request from the YouTube tab you already have open. The only other requests are for the playlist thumbnails shown in the picker: these are the image addresses YouTube itself returns, on YouTube's image server (`i.ytimg.com`), loaded the same way YouTube's own pages load them — so your browser fetches and caches them exactly as it does when you browse YouTube. No requests are made to any other server, and no data is sent to the extension developer.
 
 ## Authentication
 

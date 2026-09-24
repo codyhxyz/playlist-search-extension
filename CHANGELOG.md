@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.2
+
+- **The save sheet now looks like YouTube's own.** Every colour, font size, spacing, corner radius, icon and hover shade was measured off YouTube's native Save sheet and New-playlist dialog, in both themes: "Save to..." header with the video's title under it, an outlined search field, flat full-width rows, YouTube's bookmark icon (filled when the video is already in the playlist), and a full-width "New playlist" button in the footer. It follows YouTube's own dark/light setting rather than the operating system's.
+- **Playlist thumbnails and privacy, as YouTube shows them.** Each row shows the playlist's thumbnail with its coloured stack card, and a subtitle reading "Private • 23 videos". Both come from the same library response the list already used (257 of 257 playlists carried a thumbnail in a live check). Images load from YouTube's image server only for rows on screen, and the browser caches them as it does YouTube's. Privacy appears only when YouTube says Public, Private or Unlisted — playlists saved from other channels show none.
+- **Removed the synthetic Escape** that tried to close YouTube's own Save popup. It fired before the popup existed, so it did nothing useful, and it sent a fake keypress into the page. YouTube's popup can sit behind ours, under the backdrop, where it cannot be clicked.
+
 ## 2.0.1
 
 - **Create new playlists directly from the save sheet.** Type a name and press Enter when there are no matches, click the inline create button, or click `New` in the header. Automatically adds the current video and marks it Saved in one request via InnerTube `playlist/create`.

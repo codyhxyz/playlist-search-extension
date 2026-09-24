@@ -23,7 +23,7 @@
  *   6. Every offered sort orders by what its label claims, membership still groups
  *      first in all of them, and the header control is one real Tab from the query.
  *   7. The header names the video without leaking its id, visible key hints are gone,
- *      and adjacent resting rows remain distinguishable in either colour scheme.
+ *      and resting rows are flat like YouTube's own Save rows.
  *
  * Run:   node tests/test-sheet-render.mjs
  * Skip:  set YTPF_SKIP_BROWSER_TESTS=1 (CI without agent-browser available)
@@ -79,6 +79,9 @@ assert.equal(
 // ── Fixture ─────────────────────────────────────────────────────────────────
 // 261 playlists, because the interesting behaviour only exists above 200: paging
 // past the first page, and the unknowable membership tail.
+// 1x1 GIFs, so the images load without a network and never fire `error`.
+const THUMB_A = "data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==#a";
+const THUMB_B = "data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==#b";
 const PLAYLISTS = (() => {
   const out = [
     { id: "PLmember0001", title: "Deep Focus Instrumentals", member: true },
@@ -104,6 +107,17 @@ const PLAYLISTS = (() => {
       member: i % 3 === 0 ? false : undefined,
     });
   }
+  // One playlist carrying everything a live library lockup does: privacy, count,
+  // YouTube's thumbnail sources, and its per-theme stack colour.
+  Object.assign(out[50], {
+    privacy: "Private",
+    count: 8,
+    thumb: [
+      { url: THUMB_A, width: 168, height: 94 },
+      { url: THUMB_B, width: 336, height: 188 },
+    ],
+    stack: { light: "rgb(191, 178, 133)", dark: "rgb(140, 133, 112)" },
+  });
   // Past the first page on purpose: reachable by scrolling, and the accent is
   // what the fold has to see through.
   out.push({ id: "PLcafe000261", title: "Café Lofi Beats", member: undefined, count: 1234 });
@@ -318,6 +332,18 @@ const PAGE = `<!doctype html>
     },
     // Text of a row, normalised — the tri-state comparison hangs off this.
     rowText: (t) => { const r = rowByTitle(t); return r ? r.textContent.replace(/\\s+/g, " ").trim() : null; },
+    thumbInfo(t) {
+      const r = rowByTitle(t);
+      if (!r) return null;
+      const img = r.querySelector("img");
+      const stk = r.querySelector(".stk");
+      return {
+        img: img && { srcset: img.getAttribute("srcset"), sizes: img.getAttribute("sizes"), loading: img.loading, alt: img.alt, src: img.getAttribute("src") },
+        stackColor: stk && getComputedStyle(stk).backgroundColor,
+        hiddenFromAT: r.querySelector(".lead")?.getAttribute("aria-hidden"),
+        label: r.getAttribute("aria-label"),
+      };
+    },
     rowActionable: (t) => {
       const r = rowByTitle(t);
       if (!r) return null;
@@ -613,6 +639,23 @@ try {
   const counts = await run("return { a: window.h.rowText('Café Lofi Beats'), dupes: window.h.titles().map((t, i) => t) };");
   check("rows show the video count YouTube reported", () =>
     assert.match(counts.a, /1,234/));
+  const thumbed = await run(`return { info: window.h.thumbInfo('Filler playlist 50'), text: window.h.rowText('Filler playlist 50'), bare: window.h.thumbInfo('Morning Focus') };`);
+  check("rows show YouTube's thumbnail, letting the browser pick the size", () => {
+    assert.ok(thumbed.info.img, "a playlist with a thumbnail must render one");
+    assert.equal(thumbed.info.img.srcset, `${THUMB_A} 168w, ${THUMB_B} 336w`);
+    assert.equal(thumbed.info.img.sizes, "56px");
+    assert.equal(thumbed.info.img.loading, "lazy", "200 rows must not fetch 200 images");
+    assert.equal(thumbed.info.img.alt, "");
+    assert.equal(thumbed.info.hiddenFromAT, "true");
+  });
+  check("the stack behind the thumbnail wears the playlist's own colour", () =>
+    assert.equal(thumbed.info.stackColor, "rgb(191, 178, 133)"));
+  check("privacy leads the subtitle, as in YouTube's sheet, and is spoken", () => {
+    assert.match(thumbed.text, /^Filler playlist 50\s*Private\s*8 videos$/);
+    assert.match(thumbed.info.label, /Filler playlist 50, Private, 8 videos/);
+  });
+  check("a playlist without a thumbnail keeps the empty tile, not a broken image", () =>
+    assert.equal(thumbed.bare.img, null));
   const dupeTexts = await run(`return Array.from(window.__shadow.querySelectorAll('[role="option"]'))
     .filter((r) => r.getAttribute('title') === 'AGI this').map((r) => r.textContent.replace(/\s+/g, ' ').trim());`);
   check("identically-titled playlists are told apart by their counts", () => {
@@ -622,9 +665,9 @@ try {
   await run("return window.h.type('x');");
   await run("return window.h.type('');");
   const restingBackgrounds = await run("return window.h.restingRowBackgrounds();");
-  check("adjacent resting rows have subtly different backgrounds", () => {
+  check("resting rows are flat, as YouTube's own Save rows are — no zebra", () => {
     assert.equal(restingBackgrounds.length, 2);
-    assert.notEqual(restingBackgrounds[0], restingBackgrounds[1]);
+    assert.deepEqual(restingBackgrounds, ["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"]);
   });
   const emptyFooter = await run("return { display: window.h.footerDisplay() };");
   check("the empty footer is hidden", () => assert.equal(emptyFooter.display, "none"));
@@ -967,13 +1010,13 @@ try {
   await run("await window.h.type('x'); await window.h.clickPrivacy(); await window.h.clickPrivacy(); return null;");
   check("Enter on a non-matching query creates the playlist and marks it saved", () => {
     assert.equal(createdByEnter.creates.length, beforeCreate + 1);
-    assert.match(createdByEnter.listText, /Brand New Playlist\s*Saved/);
+    assert.match(createdByEnter.listText, /Brand New Playlist\s*(?:Private|Unlisted|Public)\s*Saved/);
   });
   await run("return window.h.type('Brand New 2');");
   const createdByClick = await run("return window.h.clickCreate();");
   check("clicking create adds another playlist", () => {
     assert.equal(createdByClick.creates.length, beforeCreate + 2);
-    assert.match(createdByClick.listText, /Brand New 2\s*Saved/);
+    assert.match(createdByClick.listText, /Brand New 2\s*(?:Private|Unlisted|Public)\s*Saved/);
   });
   await run("return window.h.type('Fail Create');");
   const failedCreate = await run("return window.h.key('Enter');");
@@ -981,9 +1024,9 @@ try {
     assert.match(failedCreate.statusText, /Couldn’t create “Fail Create”/));
   await run("return window.h.type('Brand New 3');");
   const createdByNew = await run("return window.h.clickNew();");
-  check("clicking New in the header creates the playlist", () => {
+  check("clicking New playlist in the footer creates the playlist", () => {
     assert.equal(createdByNew.creates.length, beforeCreate + 4);
-    assert.match(createdByNew.listText, /Brand New 3\s*Saved/);
+    assert.match(createdByNew.listText, /Brand New 3\s*(?:Private|Unlisted|Public)\s*Saved/);
   });
 
   // ── 6. Failure is legible and recoverable ─────────────────────────────────
