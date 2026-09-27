@@ -288,20 +288,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 async function onActionClicked(tab) {
   // Before access is granted there is nothing to save into — send them to the page
-  // that explains why and asks for it. This, and the one automatic open on first
-  // install (onInstalled, reason 'install'), are the ONLY ways onboarding appears;
-  // openOrFocusWelcome reuses an open welcome tab rather than stacking another.
+  // that explains why and asks for it.
   if (!(await hasYouTubePermission())) {
     await openOrFocusWelcome();
     return;
   }
   // No video in the URL. On YouTube, there is still something to do: find a
-  // playlist. Anywhere else, go to YouTube — NOT the welcome page: setup is
-  // finished, and showing onboarding again to someone who already completed it
-  // is exactly the "it keeps asking me" loop this must never be.
+  // playlist. Anywhere else, the welcome page is the honest answer; doing nothing
+  // would read as a broken extension.
   if (!videoIdFromUrl(tab?.url)) {
     if (isYouTube(tab?.url)) dispatchFind(tab, 'toolbar');
-    else await chrome.tabs.create({ url: 'https://www.youtube.com/' });
+    else await openOrFocusWelcome();
     return;
   }
   await dispatchIntent({ tabId: tab.id, source: 'toolbar', tabUrl: tab.url });
