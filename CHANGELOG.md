@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.6
+
+- **Setup never comes back once it's done.** After you've granted access, clicking the toolbar icon on a non-YouTube tab now opens YouTube instead of the welcome page. The welcome page opens by itself only once, on first install, and otherwise only when you click the icon before granting access — reusing an already-open welcome tab rather than opening another. The permission prompt only ever appears when you click "Grant access".
+
 ## 2.0.5
 
 - **Only playlists you can save to.** Liked videos, mixes, and playlists you saved from other channels no longer appear in the save sheet — adding to them could never work. With 200 or fewer playlists this follows YouTube's own picker exactly; past 200, playlists showing another channel's name are hidden, and only when YouTube's labels are in English, so no real playlist is hidden in other languages.
