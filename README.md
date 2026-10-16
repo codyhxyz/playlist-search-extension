@@ -49,6 +49,10 @@ The build step is what Chrome actually injects — skip it and the extension fai
 
 Requires Chrome 123 or later.
 
+Chrome requests access to `www.youtube.com` during installation because the extension runs there.
+There is no separate permission step on the welcome page.
+If YouTube was already open, reload that tab or open a fresh YouTube tab before using the extension.
+
 ## How it works
 
 Four layers, dependencies pointing one way:

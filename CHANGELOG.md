@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.8
+
+- **Ready after installation.** Chrome requests the required `www.youtube.com` access during installation. There is no separate permission step, and ignoring the welcome page does not prevent the extension from working.
+- **A first-use guide, not a permission gate.** The welcome page introduces saving and finding playlists. It keeps the fresh-tab/reload instruction visible and shows an amber access notice only if Chrome blocks the extension.
+- Updated the privacy policy to explain installation-time access. The host scope remains `https://www.youtube.com/*`; no other site or Chrome API permission was added.
+- Users who never granted access in earlier versions may need to approve Chrome's update permission warning.
+
 ## 2.0.7
 
 - **One click saves.** Playlist refreshes no longer replace a pressed row before its click completes. This also protects bookmark clicks.

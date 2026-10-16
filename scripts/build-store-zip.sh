@@ -14,7 +14,7 @@ set -euo pipefail
 #                       unbundled alongside it
 #   intent-hook.js      MAIN-world content script, no imports, ships as-is
 #   content.bundle.js   esbuild output of content.js + lib/{innertube,sheet}.js
-#   welcome.html/.js    onboarding + the optional-host-permission grant
+#   welcome.html/.js    first-use onboarding + restricted-site-access recovery
 # No styles.css and no vendor/: the sheet is a closed shadow root that styles
 # itself via adoptedStyleSheets, and its search is a substring filter over our
 # own array, so the vendored BM25 index went with the /feed/playlists surface.

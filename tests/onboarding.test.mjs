@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 
 const origin = 'https://www.youtube.com/*';
+const manifest = JSON.parse(readFileSync(new URL('../src/manifest.json', import.meta.url), 'utf8'));
 const source = readFileSync(new URL('../src/background.js', import.meta.url), 'utf8')
   .replace(/^import .*;$/gm, '');
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -64,6 +65,27 @@ function harness({ granted = false, existingWelcome = false } = {}) {
   });
   return { calls, handlers, setGranted: (value) => { granted = value; } };
 }
+
+test('YouTube-only access is required at installation, with no optional host grant', () => {
+  assert.deepEqual(manifest.host_permissions, [origin]);
+  assert.equal(manifest.optional_host_permissions, undefined);
+  assert.equal(manifest.permissions.includes('tabs'), false);
+  assert.equal(manifest.permissions.includes('activeTab'), false);
+});
+
+test('a normal install registers scripts and saves without acknowledging the welcome page', async () => {
+  const { calls, handlers } = harness({ granted: true });
+  await tick();
+  await handlers.installed({ reason: 'install' });
+  await tick();
+  assert.equal(calls.tabs.length, 1);
+  assert.ok(calls.registrations.length > 0);
+  assert.equal(calls.badges.at(-1), '');
+  handlers.action({ id: 1, url: 'https://www.youtube.com/watch?v=jNQXAC9IVRw' });
+  await tick();
+  assert.equal(calls.messages[0].type, 'SAVE_INTENT');
+  assert.equal(calls.tabs.length, 1);
+});
 
 test('missing access is visible without reopening setup on worker start or browser startup', async () => {
   const { calls, handlers } = harness();

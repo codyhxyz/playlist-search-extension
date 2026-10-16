@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Last updated:** September 24, 2026
+**Last updated:** October 16, 2026
 
 ## Overview
 
@@ -58,7 +58,7 @@ All searching and filtering happens locally in your browser. So that the playlis
 
 The extension declares three Chrome API permissions in `manifest.json`:
 
-- `scripting` — to dynamically register its content scripts once you grant the YouTube host permission.
+- `scripting` — to dynamically register its content scripts when YouTube site access is allowed.
 - `contextMenus` — to add a single "Save to playlist" item to the right-click menu on YouTube video links.
 - `storage` — used for the in-memory playlist list described above, for two display preferences, and to delete records that earlier versions stored (onboarding flags and a content-script registration error), which this version no longer writes:
   - **Playlist list** (`chrome.storage.session`, memory only, cleared when the browser quits): the last list of your playlists for one signed-in account, so the picker opens without waiting.
@@ -66,7 +66,7 @@ The extension declares three Chrome API permissions in `manifest.json`:
 
 Runtime diagnostics are written only to the local DevTools console. They are not persisted, copied into the YouTube page DOM, or transmitted.
 
-Site access is `https://www.youtube.com/*` only, and is requested as an **optional host permission** that you grant explicitly via the welcome page's "Grant access" button. The extension does not run on any other site, subdomain, or scheme.
+Site access is `https://www.youtube.com/*` only. Starting with version 2.0.8, this is a **required host permission**, requested through Chrome's installation consent. No separate permission step is needed on the welcome page. You can restrict site access later through Chrome's extension controls. The extension does not run on any other site, subdomain, or scheme.
 
 A small service worker (`background.js`) registers or unregisters the content scripts, works out which video a save request refers to, and opens the welcome page on first install. It stores nothing itself; it only allows the YouTube tab to use the in-memory `chrome.storage.session` area described above. It never sees your playlists, your cookies, or your authentication headers — those exist only inside the YouTube tab. There is no popup.
 

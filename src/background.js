@@ -108,20 +108,8 @@ async function reconcileContentScripts() {
 
 // ═══════════════════════ onboarding / welcome page ═══════════════════════
 
-/**
- * Say out loud, on the toolbar icon, that the extension is not armed yet.
- *
- * youtube.com is an OPTIONAL host permission, so until it is granted this
- * extension does exactly nothing: no content scripts, no Save interception, no
- * sheet. That is the right privacy default, but the failure mode it produces is
- * the worst one available — a freshly-installed extension that is silently inert
- * and indistinguishable from broken. It has already been mistaken for a bug
- * twice during development, by the person who wrote it.
- *
- * A badge costs nothing and converts "nothing happens" into "something is
- * obviously waiting for me". Clicking the icon in this state opens the welcome
- * page (see onActionClicked), so the badge points at its own fix.
- */
+// Required YouTube access is normally granted at install, but Chrome's site
+// controls can still withhold it. Keep recovery visible without opening nag tabs.
 async function refreshActionAffordance() {
   try {
     const granted = await hasYouTubePermission();
@@ -134,7 +122,7 @@ async function refreshActionAffordance() {
     await chrome.action.setBadgeText({ text: 'OFF' });
     await chrome.action.setBadgeBackgroundColor({ color: '#9a3412' });
     await chrome.action.setTitle({
-      title: 'YouTube Playlist Search is OFF — click to allow YouTube access.\nThe extension will not work until you finish setup.',
+      title: 'YouTube Playlist Search is OFF — click to restore YouTube access.\nChrome is blocking access to youtube.com.',
     });
   } catch (err) {
     // Badge APIs are cosmetic; never let them take the worker down.
@@ -304,8 +292,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // are the *only* coverage for Shorts, which has no native save affordance at all.
 
 async function onActionClicked(tab) {
-  // Before access is granted there is nothing to save into — send them to the page
-  // that explains why and asks for it.
+  // Required host access can still be withheld through Chrome's site controls.
   if (!(await hasYouTubePermission())) {
     await openOrFocusWelcome();
     return;

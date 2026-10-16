@@ -38,7 +38,7 @@ Thanks for your interest in YouTube Playlist Search! Here's how to get started.
 
 ```
 src/
-  manifest.json          — Manifest v3. scripting + storage + contextMenus, optional youtube.com host
+  manifest.json          — Manifest v3. scripting + storage + contextMenus, required youtube.com host
   background.js          — Module service worker: content-script registration, intent resolution,
                            the zero-DOM entry points (toolbar / context menu / hotkey), onboarding
   onboarding-state.js    — Shared by the worker and the welcome page (ES module)
@@ -51,7 +51,7 @@ src/
                            Imported by the WORKER at runtime, so it ships unbundled
     innertube.js         — InnerTube client. Parsing exported separately from the calls
     sheet.js             — The UI. Closed shadow root, knows nothing about YouTube
-  welcome.html/.js       — First-run page; where the youtube.com host permission is granted
+  welcome.html/.js       — First-use guide, with recovery if Chrome blocks YouTube site access
   icons/                 — Extension icons
 
 tests/
