@@ -46,9 +46,7 @@
       #status[data-state="err"] { font-weight: 600; }
       #retry { margin-top: 12px; }
       figure { margin: 0; }
-      #demo-image { display: block; width: 100%; height: auto; aspect-ratio: 960 / 515; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
-      figcaption { display: flex; justify-content: flex-end; margin-top: 14px; }
-      #demo-toggle { flex: none; }
+      #demo-video { display: block; width: 100%; height: auto; aspect-ratio: 1280 / 686; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
       .shortcuts { margin-top: 36px; padding-top: 26px; border-top: 1px solid var(--line); }
       dl { display: flex; gap: 48px; margin: 0; }
       dl div { display: flex; align-items: center; gap: 14px; }
@@ -89,10 +87,7 @@
         <button id="retry" type="button" hidden>Try again</button>
       </div>
       <figure aria-label="Playlist Search on YouTube">
-        <img id="demo-image" src="assets/onboarding-demo-poster.webp" width="960" height="515" alt="Playlist Search’s Save menu on YouTube, with playlist search and playlist choices." />
-        <figcaption>
-          <button id="demo-toggle" type="button" aria-controls="demo-image" aria-pressed="false">Play demo</button>
-        </figcaption>
+        <video id="demo-video" src="assets/onboarding-demo.mp4" poster="assets/onboarding-demo-poster.webp" width="1280" height="686" muted loop playsinline controls preload="metadata" aria-label="Playlist Search’s Save menu on YouTube, showing playlist search and selection."></video>
       </figure>
       <section class="shortcuts" aria-labelledby="shortcuts-title">
         <h2 id="shortcuts-title">Shortcuts</h2>

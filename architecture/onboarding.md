@@ -13,10 +13,11 @@ The user must sign in to the account that contains their playlists.
 Keyboard shortcuts have a separate section.
 
 The logo is the extension's existing `icons/icon128.png`, not a recreated mark.
-The GIF and poster are packaged locally under `src/assets/`, without a remote media request.
+The muted, looping MP4 and poster are packaged locally under `src/assets/`, without a remote media request.
 They derive from `private/demo-videos/demo1.gif`; the private directory is not part of the package.
-The animation keeps the existing recording, reduced to 960 pixels wide, 10 frames per second, and a 64-color palette.
+The video keeps the existing recording, encoded as H.264 at 1280 pixels wide and 24 frames per second, without audio.
 The poster comes from its seven-second frame. The original recording remains unchanged.
+Playback starts automatically unless the user requests reduced motion. Native video controls allow pausing.
 
 The page checks actual site access and waits for content-script registration before it claims readiness.
 It shows an amber recovery notice only if Chrome blocks access.

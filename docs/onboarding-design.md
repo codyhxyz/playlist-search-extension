@@ -7,12 +7,11 @@ Amber appears only when the existing permission controller detects restricted
 YouTube access.
 
 The teaching surface is the existing recording, not a reconstructed Save
-dialog: `assets/onboarding-demo.gif`, with
-`assets/onboarding-demo-poster.webp` as its initial and stopped frame.
-There is no autoplay, including with reduced motion. The native Play demo /
-Stop demo button swaps those assets and exposes the playing state through
-`aria-pressed`. Stop returns to the poster rather than promising pause/resume.
-The image retains its aspect ratio on narrow screens.
+dialog: `assets/onboarding-demo.mp4`, with
+`assets/onboarding-demo-poster.webp` as its loading preview.
+The video autoplays muted, loops, and plays inline. Reduced-motion users get
+the static poster instead. Native video controls allow pausing or playing
+without a separate demo button. The video retains its aspect ratio on narrow screens.
 
 The factual headline and brief description precede Open YouTube. A separate
 Shortcuts section gives Alt+S and Alt+P readable labels. There is no pinning
@@ -24,8 +23,8 @@ retry, live status, and fresh-tab action are unchanged. Version comes from
 Browser validation fixtures must read `src/manifest.json`, never inject a
 release number as a literal.
 
-Validation: welcome VM tests cover static startup, real asset switching,
-accessible state, version, and existing permission races. Local Chromium
+Validation: welcome VM tests cover autoplay, reduced motion, playback rejection,
+version, and existing permission races. Local Chromium
 captures cover desktop/narrow, light/dark, normal/restricted states, asset
 loading, keyboard operation, reduced-motion startup, and horizontal overflow.
 Screenshots are review artifacts outside the repository; no remote assets or

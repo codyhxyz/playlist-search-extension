@@ -15,14 +15,22 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
-function harness({ granted = true, contains = async () => granted, version = 'test' } = {}) {
+function harness({ granted = true, contains = async () => granted, version = 'test', reducedMotion = false, playbackFails = false } = {}) {
   const nodes = {};
+  const mediaCalls = [];
+  let motionListener;
+  const motion = {
+    matches: reducedMotion,
+    addEventListener(type, listener) { assert.equal(type, 'change'); motionListener = listener; },
+  };
   let focused;
   for (const match of html.matchAll(/<([a-z0-9]+)\b([^>]*\bid="([^"]+)"[^>]*)>/g)) {
     nodes[match[3]] = {
       disabled: /\bdisabled\b/.test(match[2]), hidden: /\bhidden\b/.test(match[2]),
       dataset: {}, textContent: '', attributes: {}, listeners: {},
       src: match[2].match(/\bsrc="([^"]+)"/)?.[1],
+      play() { mediaCalls.push('play'); return playbackFails ? Promise.reject(new Error('blocked')) : Promise.resolve(); },
+      pause() { mediaCalls.push('pause'); },
       addEventListener(type, fn) { this.listeners[type] = fn; },
       setAttribute(name, value) { this.attributes[name] = value; },
       focus() { focused = match[3]; },
@@ -50,9 +58,13 @@ function harness({ granted = true, contains = async () => granted, version = 'te
     tabs: { create: (value) => { calls.push(['open', value]); return behavior.open(); } },
   };
   const body = { dataset: {} };
-  runInNewContext(source, { chrome, document: { body, getElementById: (id) => nodes[id] } });
+  runInNewContext(source, {
+    chrome, document: { body, getElementById: (id) => nodes[id] },
+    window: { matchMedia: (query) => { assert.equal(query, '(prefers-reduced-motion: reduce)'); return motion; } },
+  });
   return {
-    nodes, body, calls, behavior, handlers,
+    nodes, body, calls, behavior, handlers, mediaCalls,
+    setReducedMotion: (value) => { motion.matches = value; motionListener(); },
     click: (id) => nodes[id].listeners.click(),
     setGranted: (value) => { granted = value; },
     focused: () => focused,
@@ -95,21 +107,37 @@ test('default HTML welcomes users to first success without a permission gate', (
   assert.doesNotMatch(html, /<table|Required:|Setup isn’t finished|Checking YouTube access/);
 });
 
-test('real recording starts static and toggles with truthful accessible state', async () => {
+test('the real recording autoplays muted with native controls and no demo button', async () => {
   const h = harness();
   await tick();
-  assert.equal(h.nodes['demo-image'].src, 'assets/onboarding-demo-poster.webp');
-  assert.match(html, /aria-controls="demo-image" aria-pressed="false">Play demo/);
-  await h.click('demo-toggle');
-  assert.equal(h.nodes['demo-image'].src, 'assets/onboarding-demo.gif');
-  assert.equal(h.nodes['demo-toggle'].textContent, 'Stop demo');
-  assert.equal(h.nodes['demo-toggle'].attributes['aria-pressed'], 'true');
-  await h.click('demo-toggle');
-  assert.equal(h.nodes['demo-image'].src, 'assets/onboarding-demo-poster.webp');
-  assert.equal(h.nodes['demo-toggle'].textContent, 'Play demo');
-  assert.equal(h.nodes['demo-toggle'].attributes['aria-pressed'], 'false');
+  assert.equal(h.nodes['demo-video'].src, 'assets/onboarding-demo.mp4');
+  assert.equal(h.nodes['demo-video'].muted, true);
+  assert.equal(h.nodes['demo-video'].autoplay, true);
+  assert.deepEqual(h.mediaCalls, ['play']);
+  assert.match(html, /<video[^>]+muted loop playsinline controls/);
+  assert.match(html, /poster="assets\/onboarding-demo-poster.webp"/);
+  assert.doesNotMatch(html, /demo-toggle|Play demo|Stop demo|onboarding-demo\.gif/);
   assert.match(html, /@media \(max-width: 600px\)/);
   assert.doesNotMatch(html, /<input|onclick=|<img[^>]+https:/);
+});
+
+test('reduced motion prevents autoplay and updates playback when the preference changes', async () => {
+  const h = harness({ reducedMotion: true });
+  await tick();
+  assert.equal(h.nodes['demo-video'].autoplay, false);
+  assert.deepEqual(h.mediaCalls, ['pause']);
+  h.setReducedMotion(false);
+  assert.equal(h.nodes['demo-video'].autoplay, true);
+  assert.deepEqual(h.mediaCalls, ['pause', 'play']);
+  h.setReducedMotion(true);
+  assert.deepEqual(h.mediaCalls, ['pause', 'play', 'pause']);
+});
+
+test('blocked autoplay does not break onboarding or produce an unhandled rejection', async () => {
+  const h = harness({ playbackFails: true });
+  await tick();
+  assertReady(h);
+  assert.deepEqual(h.mediaCalls, ['play']);
 });
 
 test('version is read from the runtime manifest rather than hardcoded', () => {

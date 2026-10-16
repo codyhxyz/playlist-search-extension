@@ -10,16 +10,17 @@ import { YOUTUBE_ORIGIN, hasYouTubePermission, touchesYouTube } from "./onboardi
   const version = document.getElementById("version");
   version.textContent = `v${chrome.runtime.getManifest().version}`;
 
-  const demo = /** @type {HTMLImageElement} */ (document.getElementById("demo-image"));
-  const demoToggle = document.getElementById("demo-toggle");
-  let playing = false;
-  // Static for everyone, including reduced-motion users, until explicitly played.
-  demoToggle.addEventListener("click", () => {
-    playing = !playing;
-    demo.src = playing ? "assets/onboarding-demo.gif" : "assets/onboarding-demo-poster.webp";
-    demoToggle.textContent = playing ? "Stop demo" : "Play demo";
-    demoToggle.setAttribute("aria-pressed", String(playing));
-  });
+  const demo = /** @type {HTMLVideoElement} */ (document.getElementById("demo-video"));
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  function syncDemoMotion() {
+    demo.muted = true;
+    demo.autoplay = !reducedMotion.matches;
+    if (reducedMotion.matches) demo.pause();
+    // Native controls remain usable if the browser blocks automatic playback.
+    else void demo.play().catch(() => {});
+  }
+  reducedMotion.addEventListener("change", syncDemoMotion);
+  syncDemoMotion();
 
   let generation = 0;
   let state = "checking";

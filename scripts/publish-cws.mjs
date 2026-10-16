@@ -55,7 +55,7 @@ function validateZipAgainstSource(zipPath) {
   // installs cleanly and then does nothing at all.
   const requiredNested = [
     "lib/intent.js", "icons/icon128.png",
-    "assets/onboarding-demo.gif", "assets/onboarding-demo-poster.webp",
+    "assets/onboarding-demo.mp4", "assets/onboarding-demo-poster.webp",
   ];
   const files = list.stdout.split("\n").filter((name) => name && !name.endsWith("/"));
   for (const file of files) {
