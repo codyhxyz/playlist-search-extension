@@ -47,8 +47,7 @@
       #retry { margin-top: 12px; }
       figure { margin: 0; }
       #demo-image { display: block; width: 100%; height: auto; aspect-ratio: 960 / 515; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
-      figcaption { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 14px; }
-      figcaption p { color: var(--muted); }
+      figcaption { display: flex; justify-content: flex-end; margin-top: 14px; }
       #demo-toggle { flex: none; }
       .shortcuts { margin-top: 36px; padding-top: 26px; border-top: 1px solid var(--line); }
       dl { display: flex; gap: 48px; margin: 0; }
@@ -63,8 +62,6 @@
         .brand { max-width: 170px; }
         #version { margin-left: 84px; margin-top: -18px; }
         .intro { margin-top: 32px; }
-        figcaption { align-items: flex-start; }
-        figcaption p { font-size: 14px; }
         dl { flex-direction: column; gap: 18px; }
       }
     </style>
@@ -94,7 +91,6 @@
       <figure aria-label="Playlist Search on YouTube">
         <img id="demo-image" src="assets/onboarding-demo-poster.webp" width="960" height="515" alt="Playlist Search’s Save menu on YouTube, with playlist search and playlist choices." />
         <figcaption>
-          <p>See Playlist Search in action.</p>
           <button id="demo-toggle" type="button" aria-controls="demo-image" aria-pressed="false">Play demo</button>
         </figcaption>
       </figure>
