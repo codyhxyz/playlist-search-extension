@@ -86,7 +86,7 @@ test('default HTML welcomes users to first success without a permission gate', (
   assert.match(html, /Extensions.*puzzle menu and pin/);
   assert.match(html, /cannot work while YouTube site access is restricted/);
   assert.match(html, /Extensions → YouTube Playlist Search → Site access/);
-  assert.match(html, /On youtube.com/);
+  assert.match(html, /www\.youtube\.com/);
   assert.match(html, /background: var\(--required-bg\)/);
   assert.match(html, /#open \{ background: var\(--success\)/);
   assert.match(html, /role="status" aria-live="polite" aria-atomic="true"/);
@@ -167,7 +167,7 @@ test('denial is recoverable and a second grant succeeds', async () => {
   await h.click('grant');
   assertNotReady(h);
   assert.equal(h.nodes.grant.disabled, false);
-  assert.match(h.nodes.status.textContent, /wasn’t restored.*Extensions.*Site access.*On youtube.com/);
+  assert.match(h.nodes.status.textContent, /wasn’t restored.*Extensions.*Site access.*www\.youtube\.com/);
   assert.equal(h.focused(), 'grant');
   h.behavior.request = async () => { h.setGranted(true); return true; };
   await h.click('grant');
@@ -235,7 +235,7 @@ test('synchronous request error restores a usable retry button', async () => {
   await h.click('grant');
   assertNotReady(h);
   assert.equal(h.nodes.grant.disabled, false);
-  assert.match(h.nodes.status.textContent, /couldn’t be restored.*Site access.*On youtube.com/);
+  assert.match(h.nodes.status.textContent, /couldn’t be restored.*Site access.*www\.youtube\.com/);
   h.behavior.request = async () => { h.setGranted(true); return true; };
   await h.click('grant');
   assertReady(h);
@@ -250,7 +250,7 @@ test('revocation clears ready immediately; unrelated permissions are ignored; re
   h.setGranted(false);
   h.handlers.removed({ origins: [origin] });
   assertNotReady(h);
-  assert.match(h.nodes.status.textContent, /access was removed.*Site access.*On youtube.com/);
+  assert.match(h.nodes.status.textContent, /access was removed.*Site access.*www\.youtube\.com/);
   await h.click('open');
   assert.equal(count(h, 'open'), 0);
   h.setGranted(true);
@@ -351,7 +351,7 @@ test('a positive request result is not trusted when required site access remains
   assert.equal(h.nodes.permission.hidden, false);
   assert.equal(h.nodes.grant.disabled, false);
   assert.equal(count(h, 'register'), 0);
-  assert.match(h.nodes.status.textContent, /Extensions.*Site access.*On youtube.com/);
+  assert.match(h.nodes.status.textContent, /Extensions.*Site access.*www\.youtube\.com/);
 });
 
 test('an asynchronously rejected recovery request keeps honest Chrome site-control guidance', async () => {
@@ -362,7 +362,7 @@ test('an asynchronously rejected recovery request keeps honest Chrome site-contr
   assertNotReady(h);
   assert.equal(h.nodes.permission.hidden, false);
   assert.equal(h.nodes.grant.disabled, false);
-  assert.match(h.nodes.status.textContent, /couldn’t be restored.*Extensions.*Site access.*On youtube.com/);
+  assert.match(h.nodes.status.textContent, /couldn’t be restored.*Extensions.*Site access.*www\.youtube\.com/);
   assert.equal(count(h, 'register'), 0);
 });
 

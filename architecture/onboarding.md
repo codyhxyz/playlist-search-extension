@@ -47,6 +47,14 @@ Changing optional access to required access can disable an update until the user
 Users who previously granted the same access can behave differently from users who never granted it.
 Chrome's [permission-warning guide](https://developer.chrome.com/docs/extensions/develop/concepts/permission-warnings) describes testing signed updates.
 
+The migration investigation used the official update-testing tool and generated same-ID signed fixtures.
+Headless installation failed at Chrome's native file-drop boundary, so the signed-update cases were not observed.
+[Chromium's privilege check](https://github.com/chromium/chromium/blob/971a7443b0c9b0a9b2860529b33331b76077ec62/chrome/browser/extensions/chrome_extension_registrar_delegate.cc#L490-L593)
+supports the expected distinction: previously granted access normally avoids a new warning; never-granted access normally requires approval.
+This source inspection is not an executed migration test.
+A separate unpacked required-host fixture verified that site controls can withhold access and restore it.
+Unpacked reloads do not test signed-update permission warnings.
+
 `tests/onboarding.test.mjs` checks the narrow manifest, automatic registration without acknowledgement, recovery routes, and badge state.
 `tests/welcome.test.mjs` checks normal first-use readiness, access recovery, registration failure, retry, and revocation.
 Local browser layout checks use mocked Chrome APIs. They do not establish native permission or signed-update behavior.

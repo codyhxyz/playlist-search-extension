@@ -15,7 +15,7 @@ import { YOUTUBE_ORIGIN, hasYouTubePermission, touchesYouTube } from "./onboardi
   let requesting = false;
   let restricted = false;
 
-  const siteAccessHelp = "In Chrome’s Extensions → YouTube Playlist Search → Site access, allow access On youtube.com.";
+  const siteAccessHelp = "In Chrome’s Extensions → YouTube Playlist Search → Site access, allow access to www.youtube.com.";
 
   function setStatus(text, error = false) {
     status.textContent = text;
