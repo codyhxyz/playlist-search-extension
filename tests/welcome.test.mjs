@@ -73,6 +73,10 @@ function assertReady(h) {
 test('the page is short, permission-first, accessible and names the required next navigation', () => {
   assert.match(html, /extension will not work until you allow YouTube access/);
   assert.match(html, /Grant YouTube access/);
+  assert.match(html, /Required: allow YouTube access/);
+  assert.match(html, /cannot show your searchable playlists without this step/);
+  assert.match(html, /background: var\(--required-bg\)/);
+  assert.match(html, /background: var\(--action\)/);
   assert.match(html, /Choose <strong>Allow/);
   assert.match(html, /existing YouTube sign-in/);
   assert.match(html, /not sent to third parties/);

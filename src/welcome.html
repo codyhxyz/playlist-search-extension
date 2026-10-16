@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>YouTube Playlist Search — Setup</title>
     <style>
-      /* Keep the save sheet's monochrome ground, ink ramp and hairlines. */
+      /* Amber owns the required action; green is reserved for verified access. */
       :root {
         color-scheme: light dark;
         --bg: #131417;
@@ -16,6 +16,16 @@
         --sel: rgba(236, 238, 241, 0.24);
         --ink-hover: #ffffff;
         --bad: #ff7d72;
+        --required-bg: #2c2312;
+        --required-ink: #ffe3a3;
+        --required-muted: #e6c98b;
+        --required-edge: #8f6d29;
+        --action: #f5bf4f;
+        --action-ink: #241a08;
+        --action-hover: #ffd275;
+        --success: #72dfae;
+        --success-ink: #10261c;
+        --success-hover: #99edc7;
         --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
           sans-serif;
       }
@@ -29,6 +39,16 @@
           --sel: rgba(20, 22, 26, 0.15);
           --ink-hover: #2f333b;
           --bad: #a82c22;
+          --required-bg: #fff6df;
+          --required-ink: #633c09;
+          --required-muted: #785017;
+          --required-edge: #c69a3c;
+          --action: #914700;
+          --action-ink: #ffffff;
+          --action-hover: #713700;
+          --success: #146c48;
+          --success-ink: #ffffff;
+          --success-hover: #0e5135;
         }
       }
       * { box-sizing: border-box; }
@@ -71,6 +91,21 @@
       }
       p { margin: 0 0 16px; color: var(--fg-2); }
       strong { color: var(--fg); font-weight: 600; }
+      #permission {
+        padding: clamp(20px, 4vw, 28px);
+        border: 1px solid var(--required-edge);
+        border-radius: 12px;
+        background: var(--required-bg);
+        color: var(--required-ink);
+      }
+      .notice-title { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
+      .notice-title svg { flex: none; width: 24px; height: 24px; margin-top: 1px; }
+      h2 { margin: 0; font-size: 19px; line-height: 1.35; font-weight: 650; }
+      #permission p { color: var(--required-ink); }
+      #permission strong { color: inherit; }
+      #permission .prompt { color: var(--required-muted); margin-bottom: 0; }
+      .scope { margin: 16px 0 0; font-size: 13px; }
+      body[data-permission="granted"] .scope { display: none; }
       button {
         appearance: none;
         min-height: 44px;
@@ -78,17 +113,22 @@
         padding: 12px 20px;
         border: 1px solid transparent;
         border-radius: 8px;
-        background: var(--fg);
-        color: var(--bg);
+        background: var(--action);
+        color: var(--action-ink);
         font: 600 15px/1.3 var(--sans);
         cursor: pointer;
       }
-      button:hover:not(:disabled) { background: var(--ink-hover); }
+      button:hover:not(:disabled) { background: var(--action-hover); }
       button:disabled { opacity: 0.6; cursor: default; }
+      #grant { width: 100%; }
+      #permission :focus-visible { outline-color: var(--required-ink); }
+      #open { background: var(--success); color: var(--success-ink); }
+      #open:hover:not(:disabled) { background: var(--success-hover); }
       .prompt { margin-top: 10px; font-size: 13px; }
       #status { margin: 0; font-size: 14px; }
       #status:not(:empty) { margin-top: 16px; }
       #status[data-state="err"] { color: var(--bad); }
+      body[data-permission="granted"] #status:not([data-state="err"]) { color: var(--success); }
       .recovery {
         margin: 32px 0 0;
         padding-top: 20px;
@@ -107,12 +147,20 @@
         <span id="version"></span>
       </header>
 
-      <h1 id="heading" tabindex="-1">The extension will not work until you allow YouTube access.</h1>
+      <h1 id="heading" tabindex="-1">Enable search in YouTube’s Save menu.</h1>
       <section id="permission" aria-label="Allow access">
-        <p>It runs on youtube.com using your existing YouTube sign-in. Your data is not sent to third parties.</p>
+        <div class="notice-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M10.3 4.1 2.6 17.4a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.1a2 2 0 0 0-3.4 0Z"/>
+            <path d="M12 9v4.5M12 16.5v.1" stroke-linecap="round"/>
+          </svg>
+          <h2>Required: allow YouTube access</h2>
+        </div>
+        <p>The extension will not work until you allow YouTube access. <strong>It cannot show your searchable playlists without this step.</strong></p>
         <button id="grant" type="button" disabled>Grant YouTube access</button>
         <p class="prompt">Choose <strong>Allow</strong> in Chrome’s permission prompt.</p>
       </section>
+      <p class="scope">Access is limited to youtube.com using your existing YouTube sign-in. Your data is not sent to third parties.</p>
 
       <section id="ready" aria-label="Start using the extension" hidden>
         <p><strong>Open a fresh YouTube tab</strong> below, or <strong>reload any YouTube tab you already had open</strong>. Setup won’t take effect in an old tab until you reload it.</p>

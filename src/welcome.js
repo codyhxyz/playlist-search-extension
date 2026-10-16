@@ -32,7 +32,7 @@ import { YOUTUBE_ORIGIN, hasYouTubePermission, touchesYouTube } from "./onboardi
         ? "Setup isn’t finished yet."
         : state === "registering"
           ? "Finishing YouTube setup…"
-          : "The extension will not work until you allow YouTube access.";
+          : "Enable search in YouTube’s Save menu.";
     grantBtn.disabled = pending || requesting;
     grantBtn.textContent = state === "error" ? "Try setup again" : "Grant YouTube access";
     openBtn.disabled = !complete;
