@@ -10,12 +10,12 @@ const source = readFileSync(new URL('../src/onboarding-state.js', import.meta.ur
 const origin = 'https://www.youtube.com/*';
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const deferred = () => {
-  let resolve;
-  const promise = new Promise((done) => { resolve = done; });
-  return { promise, resolve };
+  let resolve, reject;
+  const promise = new Promise((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
 };
 
-function harness({ granted = false, contains = async () => granted } = {}) {
+function harness({ granted = true, contains = async () => granted } = {}) {
   const nodes = {};
   let focused;
   for (const match of html.matchAll(/<([a-z0-9]+)\b([^>]*\bid="([^"]+)"[^>]*)>/g)) {
@@ -59,8 +59,8 @@ function harness({ granted = false, contains = async () => granted } = {}) {
 }
 const count = (h, name) => h.calls.filter(([kind]) => kind === name).length;
 function assertNotReady(h) {
-  assert.equal(h.body.dataset.permission, 'ungranted');
-  assert.equal(h.nodes.ready.hidden, true);
+  assert.notEqual(h.body.dataset.permission, 'granted');
+  assert.equal(h.nodes.ready.hidden, false);
   assert.equal(h.nodes.open.disabled, true);
 }
 function assertReady(h) {
@@ -70,34 +70,55 @@ function assertReady(h) {
   assert.equal(h.nodes.open.disabled, false);
 }
 
-test('the page is short, permission-first, accessible and names the required next navigation', () => {
-  assert.match(html, /extension will not work until you allow YouTube access/);
-  assert.match(html, /Grant YouTube access/);
-  assert.match(html, /Required: allow YouTube access/);
-  assert.match(html, /cannot show your searchable playlists without this step/);
-  assert.match(html, /background: var\(--required-bg\)/);
-  assert.match(html, /background: var\(--action\)/);
-  assert.match(html, /Choose <strong>Allow/);
-  assert.match(html, /existing YouTube sign-in/);
-  assert.match(html, /not sent to third parties/);
-  assert.match(html, /Open a fresh YouTube tab/);
-  assert.match(html, /reload any YouTube tab you already had open/);
+test('default HTML welcomes users to first success without a permission gate', () => {
+  assert.match(html, /<title>YouTube Playlist Search — Welcome<\/title>/);
+  assert.match(html, /<body data-permission="checking">/);
+  assert.match(html, /<section id="permission"[^>]* hidden>/);
+  assert.doesNotMatch(html, /<section id="ready"[^>]* hidden>/);
+  assert.match(html, /Find the right playlist. Save the video./);
+  assert.match(html, /Search all the playlists you own/);
+  assert.match(html, /Open a video → <strong>Save<\/strong> → <strong>type a playlist name<\/strong> → pick a playlist/);
+  assert.match(html, /Open YouTube and try it/);
   assert.match(html, /account with your playlists/);
-  assert.match(html, /Save → search → pick a playlist/);
-  assert.match(html, /Extensions.*puzzle menu.*YouTube Playlist Search.*Pinning is optional/);
+  assert.match(html, /fresh tab.*reload any YouTube tabs you already had open/);
+  assert.match(html, /Alt\+S.*Shorts too.*Alt\+P/);
+  assert.match(html, /<details>\s*<summary>Keep it handy \(optional\)/);
+  assert.match(html, /Extensions.*puzzle menu and pin/);
+  assert.match(html, /cannot work while YouTube site access is restricted/);
+  assert.match(html, /Extensions → YouTube Playlist Search → Site access/);
+  assert.match(html, /On youtube.com/);
+  assert.match(html, /background: var\(--required-bg\)/);
+  assert.match(html, /#open \{ background: var\(--success\)/);
   assert.match(html, /role="status" aria-live="polite" aria-atomic="true"/);
   assert.match(html, /:focus-visible/);
   assert.match(html, /prefers-color-scheme: light/);
-  assert.doesNotMatch(html, /<table|The 200 limit|Where you’ll see it/);
+  assert.doesNotMatch(html, /<table|Required:|Setup isn’t finished|Checking YouTube access/);
 });
 
-test('initial check without permission enables only Grant', async () => {
-  const h = harness();
-  assert.equal(h.nodes.grant.disabled, true);
+test('permission checking preserves welcome without flashing the recovery warning', async () => {
+  const check = deferred();
+  const h = harness({ contains: () => check.promise });
   assertNotReady(h);
+  assert.equal(h.nodes.permission.hidden, true);
+  assert.equal(h.nodes.retry.hidden, true);
+  assert.equal(h.nodes.grant.disabled, true);
+  assert.equal(count(h, 'request'), 0);
+  check.resolve(true);
+  await tick();
+  assertReady(h);
+  assert.equal(count(h, 'request'), 0);
+  assert.equal(count(h, 'open'), 0, 'welcome does not open tabs without a click');
+});
+
+test('restricted site access reveals recovery only after permission verification', async () => {
+  const h = harness({ granted: false });
+  assert.equal(h.nodes.permission.hidden, true);
   await tick();
   assertNotReady(h);
+  assert.equal(h.body.dataset.permission, 'restricted');
+  assert.equal(h.nodes.permission.hidden, false);
   assert.equal(h.nodes.grant.disabled, false);
+  assert.equal(h.nodes.retry.hidden, true);
   assert.equal(count(h, 'register'), 0);
 });
 
@@ -107,7 +128,8 @@ test('already-granted init waits for registration and checks permission again be
   h.behavior.register = () => registration.promise;
   await tick();
   assertNotReady(h);
-  assert.equal(h.nodes.grant.disabled, true);
+  assert.equal(h.nodes.permission.hidden, true);
+  assert.equal(count(h, 'request'), 0);
   assert.equal(count(h, 'register'), 1);
   registration.resolve({ ok: true });
   await tick();
@@ -116,7 +138,7 @@ test('already-granted init waits for registration and checks permission again be
 });
 
 test('Grant requests directly in the click gesture, ignores duplicate clicks and its onAdded race', async () => {
-  const h = harness();
+  const h = harness({ granted: false });
   await tick();
   const request = deferred();
   h.behavior.request = () => request.promise;
@@ -139,13 +161,13 @@ test('Grant requests directly in the click gesture, ignores duplicate clicks and
 });
 
 test('denial is recoverable and a second grant succeeds', async () => {
-  const h = harness();
+  const h = harness({ granted: false });
   await tick();
   h.behavior.request = async () => false;
   await h.click('grant');
   assertNotReady(h);
   assert.equal(h.nodes.grant.disabled, false);
-  assert.match(h.nodes.status.textContent, /wasn’t allowed.*try again/);
+  assert.match(h.nodes.status.textContent, /wasn’t restored.*Extensions.*Site access.*On youtube.com/);
   assert.equal(h.focused(), 'grant');
   h.behavior.request = async () => { h.setGranted(true); return true; };
   await h.click('grant');
@@ -159,36 +181,40 @@ for (const reply of [{ ok: false, error: 'missing bundle' }, undefined]) {
     await tick();
     assertNotReady(h);
     assert.equal(h.nodes.status.dataset.state, 'err');
-    assert.match(h.nodes.status.textContent, /Try setup again.*chrome:\/\/extensions/);
-    assert.equal(h.nodes.grant.disabled, false);
+    assert.match(h.nodes.status.textContent, /Try again.*chrome:\/\/extensions/);
+    assert.equal(h.nodes.permission.hidden, true);
+    assert.equal(h.nodes.retry.hidden, false);
     h.behavior.register = async () => ({ ok: true });
-    await h.click('grant');
+    await h.click('retry');
+    assert.equal(count(h, 'request'), 0);
     assertReady(h);
   });
 }
 
 test('registration rejection after granting access stays not ready and recovers', async () => {
-  const h = harness();
+  const h = harness({ granted: false });
   await tick();
   h.behavior.register = async () => { throw new Error('worker unavailable'); };
   await h.click('grant');
   assertNotReady(h);
-  assert.match(h.nodes.status.textContent, /Setup couldn’t finish.*Try setup again/);
+  assert.match(h.nodes.status.textContent, /Couldn’t get Playlist Search ready.*Try again/);
+  assert.equal(h.nodes.permission.hidden, true);
   h.behavior.register = async () => ({ ok: true });
-  await h.click('grant');
+  await h.click('retry');
   assertReady(h);
 });
 
-test('permission check rejection is visible and the grant gesture can recover', async () => {
+test('permission check rejection is visible and retry recovers without requesting consent', async () => {
   const h = harness({ granted: true });
   h.behavior.contains = async () => { throw new Error('check failed'); };
   // The first contains call was already started; exercise the post-registration check.
   await tick();
   assertNotReady(h);
   assert.equal(h.nodes.status.dataset.state, 'err');
-  assert.match(h.nodes.status.textContent, /Couldn’t verify setup/);
+  assert.match(h.nodes.status.textContent, /Couldn’t get Playlist Search ready/);
+  assert.equal(h.nodes.permission.hidden, true);
   h.behavior.contains = async () => true;
-  await h.click('grant');
+  await h.click('retry');
   assertReady(h);
 });
 
@@ -196,19 +222,20 @@ test('initial permission check rejection is handled without an unhandled rejecti
   const h = harness({ contains: async () => { throw new Error('check failed'); } });
   await tick();
   assertNotReady(h);
-  assert.equal(h.nodes.grant.disabled, false);
-  assert.match(h.nodes.status.textContent, /Couldn’t verify setup/);
+  assert.equal(h.nodes.permission.hidden, true);
+  assert.equal(h.nodes.retry.hidden, false);
+  assert.match(h.nodes.status.textContent, /Couldn’t get Playlist Search ready/);
   assert.equal(count(h, 'register'), 0);
 });
 
 test('synchronous request error restores a usable retry button', async () => {
-  const h = harness();
+  const h = harness({ granted: false });
   await tick();
   h.behavior.request = () => { throw new Error('prompt unavailable'); };
   await h.click('grant');
   assertNotReady(h);
   assert.equal(h.nodes.grant.disabled, false);
-  assert.match(h.nodes.status.textContent, /Try setup again/);
+  assert.match(h.nodes.status.textContent, /couldn’t be restored.*Site access.*On youtube.com/);
   h.behavior.request = async () => { h.setGranted(true); return true; };
   await h.click('grant');
   assertReady(h);
@@ -223,7 +250,7 @@ test('revocation clears ready immediately; unrelated permissions are ignored; re
   h.setGranted(false);
   h.handlers.removed({ origins: [origin] });
   assertNotReady(h);
-  assert.match(h.nodes.status.textContent, /access was removed.*Grant access/);
+  assert.match(h.nodes.status.textContent, /access was removed.*Site access.*On youtube.com/);
   await h.click('open');
   assert.equal(count(h, 'open'), 0);
   h.setGranted(true);
@@ -297,7 +324,7 @@ test('onAdded supersedes an old permission check but does not duplicate in-fligh
 });
 
 test('revocation while the prompt is pending ignores its late result and permits retry', async () => {
-  const h = harness();
+  const h = harness({ granted: false });
   await tick();
   const request = deferred();
   h.behavior.request = () => request.promise;
@@ -313,4 +340,70 @@ test('revocation while the prompt is pending ignores its late result and permits
   h.behavior.request = async () => { h.setGranted(true); return true; };
   await h.click('grant');
   assertReady(h);
+});
+
+test('a positive request result is not trusted when required site access remains withheld', async () => {
+  const h = harness({ granted: false });
+  await tick();
+  h.behavior.request = async () => true;
+  await h.click('grant');
+  assertNotReady(h);
+  assert.equal(h.nodes.permission.hidden, false);
+  assert.equal(h.nodes.grant.disabled, false);
+  assert.equal(count(h, 'register'), 0);
+  assert.match(h.nodes.status.textContent, /Extensions.*Site access.*On youtube.com/);
+});
+
+test('an asynchronously rejected recovery request keeps honest Chrome site-control guidance', async () => {
+  const h = harness({ granted: false });
+  await tick();
+  h.behavior.request = async () => { throw new Error('required host prompt unavailable'); };
+  await h.click('grant');
+  assertNotReady(h);
+  assert.equal(h.nodes.permission.hidden, false);
+  assert.equal(h.nodes.grant.disabled, false);
+  assert.match(h.nodes.status.textContent, /couldn’t be restored.*Extensions.*Site access.*On youtube.com/);
+  assert.equal(count(h, 'register'), 0);
+});
+
+test('revocation wins over a late post-registration permission check', async () => {
+  const h = harness();
+  const check = deferred();
+  h.behavior.contains = () => check.promise;
+  await tick();
+  h.setGranted(false);
+  h.handlers.removed({ origins: [origin] });
+  check.resolve(true);
+  await tick();
+  assertNotReady(h);
+  assert.equal(h.nodes.permission.hidden, false);
+  assert.match(h.nodes.status.textContent, /access was removed/);
+});
+
+test('a stale initial check error cannot replace a newer verified welcome state', async () => {
+  const check = deferred();
+  const h = harness({ contains: () => check.promise });
+  h.behavior.contains = async () => true;
+  h.handlers.added({ origins: [origin] });
+  await tick();
+  assertReady(h);
+  check.reject(new Error('old check failed'));
+  await tick();
+  assertReady(h);
+  assert.notEqual(h.nodes.status.dataset.state, 'err');
+  assert.equal(h.nodes.retry.hidden, true);
+});
+
+test('a late tab-opening error cannot overwrite revoked-access recovery', async () => {
+  const h = harness();
+  await tick();
+  const opened = deferred();
+  h.behavior.open = () => opened.promise;
+  const completion = h.click('open');
+  h.handlers.removed({ origins: [origin] });
+  opened.reject(new Error('late tab failure'));
+  await completion;
+  assertNotReady(h);
+  assert.match(h.nodes.status.textContent, /access was removed/);
+  assert.equal(h.nodes.permission.hidden, false);
 });

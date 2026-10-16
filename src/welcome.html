@@ -3,9 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>YouTube Playlist Search — Setup</title>
+    <title>YouTube Playlist Search — Welcome</title>
     <style>
-      /* Amber owns the required action; green is reserved for verified access. */
+      /* Jade leads to first use; amber is reserved for restricted site access. */
       :root {
         color-scheme: light dark;
         --bg: #131417;
@@ -97,6 +97,7 @@
         border-radius: 12px;
         background: var(--required-bg);
         color: var(--required-ink);
+        margin: 24px 0;
       }
       .notice-title { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
       .notice-title svg { flex: none; width: 24px; height: 24px; margin-top: 1px; }
@@ -104,8 +105,6 @@
       #permission p { color: var(--required-ink); }
       #permission strong { color: inherit; }
       #permission .prompt { color: var(--required-muted); margin-bottom: 0; }
-      .scope { margin: 16px 0 0; font-size: 13px; }
-      body[data-permission="granted"] .scope { display: none; }
       button {
         appearance: none;
         min-height: 44px;
@@ -121,6 +120,8 @@
       button:hover:not(:disabled) { background: var(--action-hover); }
       button:disabled { opacity: 0.6; cursor: default; }
       #grant { width: 100%; }
+      #retry { background: transparent; border-color: var(--line); color: var(--fg); }
+      #retry:hover:not(:disabled) { background: var(--sel); }
       #permission :focus-visible { outline-color: var(--required-ink); }
       #open { background: var(--success); color: var(--success-ink); }
       #open:hover:not(:disabled) { background: var(--success-hover); }
@@ -129,47 +130,58 @@
       #status:not(:empty) { margin-top: 16px; }
       #status[data-state="err"] { color: var(--bad); }
       body[data-permission="granted"] #status:not([data-state="err"]) { color: var(--success); }
-      .recovery {
+      .extras {
         margin: 32px 0 0;
         padding-top: 20px;
         border-top: 1px solid var(--line);
         font-size: 13px;
       }
+      .extras p { margin-bottom: 12px; }
+      summary { cursor: pointer; width: fit-content; }
+      details p { margin: 10px 0 0; }
+      kbd { font: inherit; font-weight: 600; color: var(--fg); }
       footer { display: flex; flex-wrap: wrap; gap: 12px 20px; margin-top: 16px; }
       a { color: var(--fg-2); font-size: 13px; text-underline-offset: 3px; }
       a:hover { color: var(--fg); }
     </style>
   </head>
-  <body data-permission="ungranted">
+  <body data-permission="checking">
     <main>
       <header>
         <span>YouTube Playlist Search</span>
         <span id="version"></span>
       </header>
 
-      <h1 id="heading" tabindex="-1">Enable search in YouTube’s Save menu.</h1>
-      <section id="permission" aria-label="Allow access">
+      <h1 id="heading" tabindex="-1">Find the right playlist. Save the video.</h1>
+      <p>Search all the playlists you own, right in YouTube’s Save menu.</p>
+
+      <section id="permission" aria-label="Restore YouTube access" hidden>
         <div class="notice-title">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
             <path d="M10.3 4.1 2.6 17.4a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.1a2 2 0 0 0-3.4 0Z"/>
             <path d="M12 9v4.5M12 16.5v.1" stroke-linecap="round"/>
           </svg>
-          <h2>Required: allow YouTube access</h2>
+          <h2>YouTube access is turned off</h2>
         </div>
-        <p>The extension will not work until you allow YouTube access. <strong>It cannot show your searchable playlists without this step.</strong></p>
+        <p>The extension cannot work while YouTube site access is restricted. <strong>Restore access to search your playlists.</strong></p>
         <button id="grant" type="button" disabled>Grant YouTube access</button>
-        <p class="prompt">Choose <strong>Allow</strong> in Chrome’s permission prompt.</p>
+        <p class="prompt">If Chrome asks, choose <strong>Allow</strong>. If access stays off, go to Chrome’s <strong>Extensions → YouTube Playlist Search → Site access</strong> and allow access <strong>On youtube.com</strong>.</p>
       </section>
-      <p class="scope">Access is limited to youtube.com using your existing YouTube sign-in. Your data is not sent to third parties.</p>
-
-      <section id="ready" aria-label="Start using the extension" hidden>
-        <p><strong>Open a fresh YouTube tab</strong> below, or <strong>reload any YouTube tab you already had open</strong>. Setup won’t take effect in an old tab until you reload it.</p>
-        <p>Sign in to the YouTube account with your playlists. On a video, click <strong>Save → search → pick a playlist</strong>.</p>
-        <button id="open" type="button" disabled>Open YouTube</button>
+      <section id="ready" aria-label="Try your first save">
+        <p>Open a video → <strong>Save</strong> → <strong>type a playlist name</strong> → pick a playlist.</p>
+        <button id="open" type="button" disabled>Open YouTube and try it</button>
+        <p class="prompt">Sign in to the YouTube account with your playlists. This opens a fresh tab; <strong>reload any YouTube tabs you already had open</strong> so the extension can run there.</p>
       </section>
 
-      <p id="status" role="status" aria-live="polite" aria-atomic="true">Checking YouTube access…</p>
-      <p class="recovery">Closed this page? Open Chrome’s <strong>Extensions</strong> puzzle menu → <strong>YouTube Playlist Search</strong>. Pinning is optional.</p>
+      <p id="status" role="status" aria-live="polite" aria-atomic="true"></p>
+      <button id="retry" type="button" hidden>Try again</button>
+      <div class="extras">
+        <p>Optional shortcuts: <kbd>Alt+S</kbd> to save (Shorts too), <kbd>Alt+P</kbd> to find a playlist.</p>
+        <details>
+          <summary>Keep it handy (optional)</summary>
+          <p>Open Chrome’s <strong>Extensions</strong> puzzle menu and pin <strong>YouTube Playlist Search</strong>. Click its icon to reopen this welcome page.</p>
+        </details>
+      </div>
       <footer>
         <a href="https://playlist.codyh.xyz/privacy-policy.html" target="_blank" rel="noopener">Privacy</a>
         <a href="https://github.com/codyhxyz/playlist-search-extension/issues" target="_blank" rel="noopener">Get help</a>

@@ -3,9 +3,9 @@ import { YOUTUBE_ORIGIN, hasYouTubePermission, touchesYouTube } from "./onboardi
 (() => {
   const heading = document.getElementById("heading");
   const permission = document.getElementById("permission");
-  const ready = document.getElementById("ready");
   const grantBtn = /** @type {HTMLButtonElement} */ (document.getElementById("grant"));
   const openBtn = /** @type {HTMLButtonElement} */ (document.getElementById("open"));
+  const retryBtn = /** @type {HTMLButtonElement} */ (document.getElementById("retry"));
   const status = document.getElementById("status");
   const version = document.getElementById("version");
   version.textContent = `v${chrome.runtime.getManifest().version}`;
@@ -13,6 +13,9 @@ import { YOUTUBE_ORIGIN, hasYouTubePermission, touchesYouTube } from "./onboardi
   let generation = 0;
   let state = "checking";
   let requesting = false;
+  let restricted = false;
+
+  const siteAccessHelp = "In Chrome’s Extensions → YouTube Playlist Search → Site access, allow access On youtube.com.";
 
   function setStatus(text, error = false) {
     status.textContent = text;
@@ -21,87 +24,85 @@ import { YOUTUBE_ORIGIN, hasYouTubePermission, touchesYouTube } from "./onboardi
 
   function render(next, message = "") {
     state = next;
-    const complete = state === "ready";
     const pending = ["checking", "requesting", "registering"].includes(state);
-    document.body.dataset.permission = complete ? "granted" : "ungranted";
-    permission.hidden = complete;
-    ready.hidden = !complete;
-    heading.textContent = complete
-      ? "You’re ready to use Playlist Search."
-      : state === "error"
-        ? "Setup isn’t finished yet."
-        : state === "registering"
-          ? "Finishing YouTube setup…"
-          : "Enable search in YouTube’s Save menu.";
+    document.body.dataset.permission = restricted ? "restricted" : state === "ready" ? "granted" : "checking";
+    permission.hidden = !restricted;
     grantBtn.disabled = pending || requesting;
-    grantBtn.textContent = state === "error" ? "Try setup again" : "Grant YouTube access";
-    openBtn.disabled = !complete;
+    openBtn.disabled = state !== "ready";
+    retryBtn.hidden = state !== "error" || restricted;
     permission.setAttribute("aria-busy", String(pending));
-    setStatus(message, state === "error");
+    setStatus(message || (pending ? "Getting Playlist Search ready…" : ""), state === "error");
   }
 
   async function register(id) {
-    render("registering", "Setting up YouTube access…");
+    render("registering");
     const response = await chrome.runtime.sendMessage({ type: "permissionGranted" });
     if (id !== generation) return;
-    if (response?.ok !== true) {
-      throw new Error("Registration failed");
-    }
+    if (response?.ok !== true) throw new Error("Registration failed");
     // A successful worker response alone does not prove access is still allowed.
     const granted = await hasYouTubePermission();
     if (id !== generation) return;
+    restricted = !granted;
     if (!granted) {
-      render("ungranted", "YouTube access was removed. Grant access to continue.");
+      render("restricted", `YouTube access was removed. ${siteAccessHelp}`);
       return;
     }
-    render("ready", "YouTube access allowed. Setup complete.");
+    render("ready");
+  }
+
+  async function verifyAndRegister(id) {
+    const granted = await hasYouTubePermission();
+    if (id !== generation) return;
+    restricted = !granted;
+    if (!granted) {
+      render("restricted", siteAccessHelp);
+      return;
+    }
+    await register(id);
   }
 
   async function checkPermission() {
     const id = ++generation;
-    render("checking", "Checking YouTube access…");
+    render("checking");
     try {
-      const granted = await hasYouTubePermission();
-      if (id !== generation) return;
-      if (!granted) {
-        render("ungranted");
-        return;
-      }
-      await register(id);
+      await verifyAndRegister(id);
     } catch {
       if (id !== generation) return;
-      render("error", "Couldn’t verify setup. Try setup again. If it still fails, reload the extension in chrome://extensions, then reopen this page.");
+      render("error", "Couldn’t get Playlist Search ready. Try again. If it still fails, reload the extension in chrome://extensions, then reopen this page.");
     }
   }
 
   async function onGrantClick() {
-    if (requesting || ["checking", "requesting", "registering", "ready"].includes(state)) return;
+    if (!restricted || requesting || ["checking", "requesting", "registering"].includes(state)) return;
     const id = ++generation;
     requesting = true;
-    render("requesting", "Choose Allow in Chrome’s permission prompt…");
+    render("requesting", "If Chrome asks, choose Allow to restore YouTube access.");
     try {
       // Keep this call in the click gesture: no asynchronous preflight.
       const granted = await chrome.permissions.request({ origins: [YOUTUBE_ORIGIN] });
       if (id !== generation) return;
       requesting = false;
       if (!granted) {
-        render("ungranted", "Access wasn’t allowed. Click Grant YouTube access to try again, then choose Allow.");
+        render("restricted", `YouTube access wasn’t restored. ${siteAccessHelp}`);
         grantBtn.focus();
         return;
       }
-      await register(id);
+      await verifyAndRegister(id);
       if (id === generation) {
         if (state === "ready") heading.focus();
-        else grantBtn.focus();
+        else if (restricted) grantBtn.focus();
       }
     } catch {
       if (id !== generation) return;
       requesting = false;
-      render("error", "Setup couldn’t finish. Try setup again. If it still fails, reload the extension in chrome://extensions, then reopen this page.");
-      grantBtn.focus();
+      render("error", restricted
+        ? `YouTube access couldn’t be restored. ${siteAccessHelp}`
+        : "Couldn’t get Playlist Search ready. Try again. If it still fails, reload the extension in chrome://extensions, then reopen this page.");
+      if (restricted) grantBtn.focus();
+      else retryBtn.focus();
     } finally {
       requesting = false;
-      if (id !== generation && state === "ungranted") grantBtn.disabled = false;
+      if (id !== generation && restricted) grantBtn.disabled = false;
     }
   }
 
@@ -120,6 +121,9 @@ import { YOUTUBE_ORIGIN, hasYouTubePermission, touchesYouTube } from "./onboardi
   }
 
   grantBtn.addEventListener("click", onGrantClick);
+  retryBtn.addEventListener("click", () => {
+    if (state === "error" && !restricted) return checkPermission();
+  });
   openBtn.addEventListener("click", onOpenClick);
   chrome.permissions.onAdded.addListener((p) => {
     // The request path already verifies setup; do not race its own permission event.
@@ -128,7 +132,8 @@ import { YOUTUBE_ORIGIN, hasYouTubePermission, touchesYouTube } from "./onboardi
   chrome.permissions.onRemoved.addListener((p) => {
     if (!touchesYouTube(p)) return;
     ++generation;
-    render("ungranted", "YouTube access was removed. Grant access to continue.");
+    restricted = true;
+    render("restricted", `YouTube access was removed. ${siteAccessHelp}`);
   });
   void checkPermission();
 })();
