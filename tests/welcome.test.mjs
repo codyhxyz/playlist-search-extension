@@ -75,12 +75,15 @@ test('default HTML welcomes users to first success without a permission gate', (
   assert.match(html, /<body data-permission="checking">/);
   assert.match(html, /<section id="permission"[^>]* hidden>/);
   assert.doesNotMatch(html, /<section id="ready"[^>]* hidden>/);
-  assert.match(html, /Find the right playlist. Save the video./);
+  assert.match(html, /Less scrolling.<br><span>More saving./);
   assert.match(html, /Search all the playlists you own/);
-  assert.match(html, /Open a video → <strong>Save<\/strong> → <strong>type a playlist name<\/strong> → pick a playlist/);
+  assert.match(html, /<ol class="steps">/);
+  assert.match(html, /Find a video you like/);
+  assert.match(html, /Choose Save/);
+  assert.match(html, /Search, then pick/);
   assert.match(html, /Open YouTube and try it/);
   assert.match(html, /account with your playlists/);
-  assert.match(html, /fresh tab.*reload any YouTube tabs you already had open/);
+  assert.match(html, /fresh tab.*tabs already open.*reload YouTube/);
   assert.match(html, /Alt\+S.*Shorts too.*Alt\+P/);
   assert.match(html, /<details>\s*<summary>Keep it handy \(optional\)/);
   assert.match(html, /Extensions.*puzzle menu and pin/);
@@ -93,6 +96,16 @@ test('default HTML welcomes users to first success without a permission gate', (
   assert.match(html, /:focus-visible/);
   assert.match(html, /prefers-color-scheme: light/);
   assert.doesNotMatch(html, /<table|Required:|Setup isn’t finished|Checking YouTube access/);
+});
+
+test('welcome demonstration is explicitly illustrative, noninteractive and responsive', () => {
+  assert.match(html, /<figure class="demo" aria-label="Example: searching for cooking playlists in the Save sheet">/);
+  assert.match(html, /<div class="sheet" aria-hidden="true">/);
+  assert.match(html, /Example preview — your playlists appear on YouTube/);
+  assert.match(html, /@media \(max-width: 760px\)/);
+  assert.match(html, /prefers-reduced-motion: no-preference/);
+  assert.match(html, /body\[data-permission="restricted"\] \.no-setup \{ display: none; \}/);
+  assert.doesNotMatch(html, /<input|onclick=|<img[^>]+https:/);
 });
 
 test('permission checking preserves welcome without flashing the recovery warning', async () => {
