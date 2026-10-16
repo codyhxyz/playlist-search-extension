@@ -20,8 +20,8 @@ cd "$ROOT_DIR"
 echo "[run-all] build: production content bundle"
 npm run --silent build
 
-echo "[run-all] unit: intent resolution + InnerTube parsers"
-node --test tests/intent.test.mjs tests/innertube.test.mjs
+echo "[run-all] unit: intent, InnerTube, and onboarding"
+node --test tests/*.test.mjs
 
 echo "[run-all] smoke: the shipped bundle boots"
 node tests/test-bundle-boots.mjs

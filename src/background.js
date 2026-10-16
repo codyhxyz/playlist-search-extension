@@ -130,12 +130,11 @@ async function refreshActionAffordance() {
       await chrome.action.setTitle({ title: 'Save this video to a playlist' });
       return;
     }
-    // A quiet dot, not an alarm. "Unfinished setup" is not an error, and the
-    // red is reserved for a save that actually failed.
-    await chrome.action.setBadgeText({ text: '•' });
-    await chrome.action.setBadgeBackgroundColor({ color: '#6b7280' });
+    // Name the blocked state; a quiet dot looks like an unread notification.
+    await chrome.action.setBadgeText({ text: 'OFF' });
+    await chrome.action.setBadgeBackgroundColor({ color: '#9a3412' });
     await chrome.action.setTitle({
-      title: 'YouTube Playlist Search — click to finish setup.\nIt needs access to youtube.com before it can do anything.',
+      title: 'YouTube Playlist Search is OFF — click to allow YouTube access.\nThe extension will not work until you finish setup.',
     });
   } catch (err) {
     // Badge APIs are cosmetic; never let them take the worker down.
@@ -147,7 +146,16 @@ function welcomeUrl() {
   return chrome.runtime.getURL('welcome.html');
 }
 
-async function openOrFocusWelcome() {
+let _welcomeInFlight = null;
+
+function openOrFocusWelcome() {
+  // Several explicit entrypoints can arrive before Chrome finishes creating a tab.
+  if (_welcomeInFlight) return _welcomeInFlight;
+  _welcomeInFlight = focusOrCreateWelcome().finally(() => { _welcomeInFlight = null; });
+  return _welcomeInFlight;
+}
+
+async function focusOrCreateWelcome() {
   const url = welcomeUrl();
   if (chrome.runtime.getContexts) {
     const contexts = await chrome.runtime.getContexts({
@@ -181,6 +189,11 @@ async function openOrFocusWelcome() {
 async function dispatchIntent({ tabId, source, path, body = {}, linkUrl, srcUrl, tabUrl }) {
   if (typeof tabId !== 'number' || tabId < 0) {
     console.warn('[pls][sw] intent with no tab to deliver it to', { source });
+    return;
+  }
+  if (!(await hasYouTubePermission())) {
+    // Never turn a page-controlled hook message into an unsolicited setup tab.
+    if (source !== 'hook') await openOrFocusWelcome();
     return;
   }
   if (tabUrl === undefined) {
@@ -227,8 +240,12 @@ async function dispatchIntent({ tabId, source, path, body = {}, linkUrl, srcUrl,
  * @param {{id?: number} | undefined} tab
  * @param {string} source
  */
-function dispatchFind(tab, source) {
+async function dispatchFind(tab, source) {
   if (typeof tab?.id !== 'number') return;
+  if (!(await hasYouTubePermission())) {
+    await openOrFocusWelcome();
+    return;
+  }
   console.log(`[pls][sw] FIND_INTENT — source=${source}`);
   chrome.tabs
     .sendMessage(tab.id, { type: 'FIND_INTENT', source })
@@ -340,6 +357,11 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
 chrome.commands?.onCommand.addListener(async (command) => {
   if (command !== 'open-save-sheet' && command !== 'find-playlist') return;
+  // Without host access Chrome hides tab.url, so recover before URL routing.
+  if (!(await hasYouTubePermission())) {
+    await openOrFocusWelcome();
+    return;
+  }
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab) return;
   if (command === 'find-playlist' || (!videoIdFromUrl(tab.url) && isYouTube(tab.url))) {
@@ -388,7 +410,7 @@ chrome.permissions.onAdded.addListener((permissions) => {
 
 chrome.permissions.onRemoved.addListener((permissions) => {
   if (touchesYouTube(permissions)) {
-    void unregisterAll().then(() => refreshActionAffordance());
+    void reconcileContentScripts().catch(() => {});
   }
 });
 

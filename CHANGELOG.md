@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.7
+
+- **One click saves.** Playlist refreshes no longer replace a pressed row before its click completes. This also protects bookmark clicks.
+- **Shorter setup.** The page shows one required permission action, followed by clear instructions to open a fresh YouTube tab or reload an existing tab. Setup errors no longer appear as success.
+- **Recover missed setup.** An **OFF** toolbar badge identifies missing access. The toolbar, right-click menu, and YouTube shortcuts reopen the same setup tab. No recurring setup tabs or reminder dialogs.
+- The permission flow follows Chrome guidance and existing extension implementations. See [onboarding decisions](architecture/onboarding.md).
+- Automated unit, bundle, and browser UI checks passed. Live signed-in YouTube testing was skipped.
+
 ## 2.0.5
 
 - **Only playlists you can save to.** Liked videos, mixes, and playlists you saved from other channels no longer appear in the save sheet — adding to them could never work. With 200 or fewer playlists this follows YouTube's own picker exactly; past 200, playlists showing another channel's name are hidden, and only when YouTube's labels are in English, so no real playlist is hidden in other languages.
