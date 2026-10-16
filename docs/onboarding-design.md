@@ -1,44 +1,32 @@
-# Welcome page design
+# Welcome page: the actual product
 
-Scope: `src/welcome.html`; existing `welcome.js` state machine is unchanged.
+The identity comes from `src/icons/icon128.png`, displayed at 72 CSS pixels.
+Red is reserved for the primary Open YouTube action; neutral surfaces follow
+the browser’s light/dark preference. White on #c62828 exceeds 4.5:1 contrast.
+Amber appears only when the existing permission controller detects restricted
+YouTube access.
 
-## Direction contract
+The teaching surface is the existing recording, not a reconstructed Save
+dialog: `assets/onboarding-demo.gif`, with
+`assets/onboarding-demo-poster.webp` as its initial and stopped frame.
+There is no autoplay, including with reduced motion. The native Play demo /
+Stop demo button swaps those assets and exposes the playing state through
+`aria-pressed`. Stop returns to the poster rather than promising pause/resume.
+The image retains its aspect ratio on narrow screens.
 
-**Thesis:** Show what searching a playlist feels like, instead of asking users to
-read a setup checklist. Replace the narrow prose column with a side-by-side
-invitation and a recognizable Save-sheet example.
+The factual headline and brief description precede Open YouTube. A separate
+Shortcuts section gives Alt+S and Alt+P readable labels. There is no pinning
+disclosure, fake dialog, numbered explainer, setup reassurance, or reload copy.
 
-**Own-world:** Blue carries the example region and primary action; amber belongs
-only to withheld site access. Neutral system UI typography connects the example
-to the real YouTube-native sheet. This is a functional tutorial, not a campaign.
+The permission/registration controller, race guards, direct-gesture recovery,
+retry, live status, and fresh-tab action are unchanged. Version comes from
+`chrome.runtime.getManifest().version`, with an arbitrary-version regression.
+Browser validation fixtures must read `src/manifest.json`, never inject a
+release number as a literal.
 
-**Story:** Understand the search benefit, open a fresh YouTube tab, sign in to the
-correct account, choose Save, type, and pick. Existing tabs need a reload.
-Shortcuts and pinning remain optional.
-
-**First viewport:** A large two-line benefit and primary action on the left;
-a blue-backed, explicitly illustrative sheet on the right. A numbered workflow
-spans the next row. Narrow windows stack in reading order without shrinking text.
-
-**Form:** Product demonstration beside first-use invitation. The demo is static,
-not an imitation interactive form; it never requests or represents account data.
-
-**Finish:** Reviewed actual Chromium renders at 1360×1000 and 390×844 in both
-themes, plus narrow restricted-access state. No shipping raster assets.
-
-## Grounding and review
-
-- `src/lib/sheet.js` supplies the real sheet vocabulary: “Save to...”, video
-  title, search, count/order, playlist rows, bookmark indicators, New playlist.
-  The example simplifies these controls and labels itself as an example.
-- 1Password browser getting-started guidance is the precedent for teaching a
-  first useful action while keeping toolbar pinning secondary. Public
-  documentation research was used, not a live authenticated installation.
-- The user may close this page without disabling the extension. Required
-  installation access is not represented as an additional onboarding consent.
-- Existing registration acknowledgement, recovery gesture, retry, stale
-  generation checks, focus management and tab-opening logic remain untouched.
-- Keyboard check: the first tab stop is the primary action. The illustrative
-  sheet adds no tab stops. Narrow captures have no horizontal overflow.
-- Verdict: ready for parent/user visual review, not deployed. A static demo may
-  need updating if the actual Save-sheet structure changes.
+Validation: welcome VM tests cover static startup, real asset switching,
+accessible state, version, and existing permission races. Local Chromium
+captures cover desktop/narrow, light/dark, normal/restricted states, asset
+loading, keyboard operation, reduced-motion startup, and horizontal overflow.
+Screenshots are review artifacts outside the repository; no remote assets or
+new dependencies are used.

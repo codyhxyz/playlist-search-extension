@@ -15,13 +15,14 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
-function harness({ granted = true, contains = async () => granted } = {}) {
+function harness({ granted = true, contains = async () => granted, version = 'test' } = {}) {
   const nodes = {};
   let focused;
   for (const match of html.matchAll(/<([a-z0-9]+)\b([^>]*\bid="([^"]+)"[^>]*)>/g)) {
     nodes[match[3]] = {
       disabled: /\bdisabled\b/.test(match[2]), hidden: /\bhidden\b/.test(match[2]),
       dataset: {}, textContent: '', attributes: {}, listeners: {},
+      src: match[2].match(/\bsrc="([^"]+)"/)?.[1],
       addEventListener(type, fn) { this.listeners[type] = fn; },
       setAttribute(name, value) { this.attributes[name] = value; },
       focus() { focused = match[3]; },
@@ -37,7 +38,7 @@ function harness({ granted = true, contains = async () => granted } = {}) {
   };
   const chrome = {
     runtime: {
-      getManifest: () => ({ version: 'test' }),
+      getManifest: () => ({ version }),
       sendMessage: (message) => { calls.push(['register', message]); return behavior.register(); },
     },
     permissions: {
@@ -75,37 +76,46 @@ test('default HTML welcomes users to first success without a permission gate', (
   assert.match(html, /<body data-permission="checking">/);
   assert.match(html, /<section id="permission"[^>]* hidden>/);
   assert.doesNotMatch(html, /<section id="ready"[^>]* hidden>/);
-  assert.match(html, /Less scrolling.<br><span>More saving./);
-  assert.match(html, /Search all the playlists you own/);
-  assert.match(html, /<ol class="steps">/);
-  assert.match(html, /Find a video you like/);
-  assert.match(html, /Choose Save/);
-  assert.match(html, /Search, then pick/);
-  assert.match(html, /Open YouTube and try it/);
-  assert.match(html, /account with your playlists/);
-  assert.match(html, /fresh tab.*tabs already open.*reload YouTube/);
-  assert.match(html, /Alt\+S.*Shorts too.*Alt\+P/);
-  assert.match(html, /<details>\s*<summary>Keep it handy \(optional\)/);
-  assert.match(html, /Extensions.*puzzle menu and pin/);
+  assert.match(html, /Save to the right playlist\./);
+  assert.match(html, /Search your playlists right in YouTube’s Save menu/);
+  assert.match(html, />Open YouTube<\/button>/);
+  assert.match(html, /src="icons\/icon128.png" width="72" height="72"/);
+  assert.match(html, />Shortcuts<\/h2>/);
+  assert.match(html, /Alt\+S.*Save the current video or Short/);
+  assert.match(html, /Alt\+P.*Find a playlist/);
+  assert.doesNotMatch(html, /Keep it handy|jump right in|no extra setup|tabs already open|reload YouTube|Less scrolling|More saving|Optional shortcuts|<svg|class="sheet"|class="steps"|Type a name/);
   assert.match(html, /cannot work while YouTube site access is restricted/);
   assert.match(html, /Extensions → YouTube Playlist Search → Site access/);
   assert.match(html, /www\.youtube\.com/);
   assert.match(html, /background: var\(--required-bg\)/);
-  assert.match(html, /#open \{ background: var\(--success\)/);
+  assert.match(html, /#open \{ background: var\(--red\)/);
   assert.match(html, /role="status" aria-live="polite" aria-atomic="true"/);
   assert.match(html, /:focus-visible/);
   assert.match(html, /prefers-color-scheme: light/);
   assert.doesNotMatch(html, /<table|Required:|Setup isn’t finished|Checking YouTube access/);
 });
 
-test('welcome demonstration is explicitly illustrative, noninteractive and responsive', () => {
-  assert.match(html, /<figure class="demo" aria-label="Example: searching for cooking playlists in the Save sheet">/);
-  assert.match(html, /<div class="sheet" aria-hidden="true">/);
-  assert.match(html, /Example preview — your playlists appear on YouTube/);
-  assert.match(html, /@media \(max-width: 760px\)/);
-  assert.match(html, /prefers-reduced-motion: no-preference/);
-  assert.match(html, /body\[data-permission="restricted"\] \.no-setup \{ display: none; \}/);
+test('real recording starts static and toggles with truthful accessible state', async () => {
+  const h = harness();
+  await tick();
+  assert.equal(h.nodes['demo-image'].src, 'assets/onboarding-demo-poster.webp');
+  assert.match(html, /aria-controls="demo-image" aria-pressed="false">Play demo/);
+  await h.click('demo-toggle');
+  assert.equal(h.nodes['demo-image'].src, 'assets/onboarding-demo.gif');
+  assert.equal(h.nodes['demo-toggle'].textContent, 'Stop demo');
+  assert.equal(h.nodes['demo-toggle'].attributes['aria-pressed'], 'true');
+  await h.click('demo-toggle');
+  assert.equal(h.nodes['demo-image'].src, 'assets/onboarding-demo-poster.webp');
+  assert.equal(h.nodes['demo-toggle'].textContent, 'Play demo');
+  assert.equal(h.nodes['demo-toggle'].attributes['aria-pressed'], 'false');
+  assert.match(html, /@media \(max-width: 600px\)/);
   assert.doesNotMatch(html, /<input|onclick=|<img[^>]+https:/);
+});
+
+test('version is read from the runtime manifest rather than hardcoded', () => {
+  const h = harness({ version: '87.23.19.4' });
+  assert.equal(h.nodes.version.textContent, 'v87.23.19.4');
+  assert.match(html, /<span id="version"><\/span>/);
 });
 
 test('permission checking preserves welcome without flashing the recovery warning', async () => {

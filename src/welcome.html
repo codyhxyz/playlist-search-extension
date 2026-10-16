@@ -5,262 +5,106 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>YouTube Playlist Search — Welcome</title>
     <style>
-      /* Blue teaches the search workflow; amber only signals restricted access. */
       :root {
         color-scheme: light dark;
-        --bg: #17191e;
-        --demo-bg: #233e75;
-        --demo-ink: #e8efff;
-        --sheet: #26282d;
-        --field: #363940;
-        --fg: #eceef1;
-        --fg-2: rgba(236, 238, 241, 0.72);
-        --line: rgba(255, 255, 255, 0.14);
-        --ring: rgba(236, 238, 241, 0.6);
-        --sel: rgba(236, 238, 241, 0.24);
-        --ink-hover: #ffffff;
-        --bad: #ff7d72;
-        --required-bg: #2c2312;
-        --required-ink: #ffe3a3;
-        --required-muted: #e6c98b;
-        --required-edge: #8f6d29;
-        --action: #f5bf4f;
-        --action-ink: #241a08;
-        --action-hover: #ffd275;
-        --success: #abc8ff;
-        --success-ink: #102754;
-        --success-hover: #c6daff;
-        --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
-          sans-serif;
+        --bg: #181818; --fg: #f5f5f5; --muted: #bdbdbd;
+        --surface: #222; --line: #494949; --red: #c62828;
+        --required-bg: #332912; --required-ink: #ffe3a3;
       }
       @media (prefers-color-scheme: light) {
         :root {
-          --bg: #f7f8fc;
-          --demo-bg: #dce8ff;
-          --demo-ink: #183c78;
-          --sheet: #ffffff;
-          --field: #f0f1f3;
-          --fg: #14161a;
-          --fg-2: rgba(20, 22, 26, 0.72);
-          --line: rgba(0, 0, 0, 0.14);
-          --ring: rgba(20, 22, 26, 0.55);
-          --sel: rgba(20, 22, 26, 0.15);
-          --ink-hover: #2f333b;
-          --bad: #a82c22;
-          --required-bg: #fff6df;
-          --required-ink: #633c09;
-          --required-muted: #785017;
-          --required-edge: #c69a3c;
-          --action: #914700;
-          --action-ink: #ffffff;
-          --action-hover: #713700;
-          --success: #2359b8;
-          --success-ink: #ffffff;
-          --success-hover: #19458f;
+          --bg: #faf9f7; --fg: #202020; --muted: #606060;
+          --surface: #fff; --line: #d4d2ce;
+          --required-bg: #fff3d6; --required-ink: #633c09;
         }
       }
       * { box-sizing: border-box; }
       [hidden] { display: none !important; }
       html { scrollbar-color: var(--line) var(--bg); }
-      ::selection { background: var(--sel); }
-      :focus-visible {
-        outline: 2px solid var(--ring);
-        outline-offset: 4px;
-        border-radius: 4px;
-      }
-      body {
-        margin: 0;
-        min-height: 100dvh;
-        display: flex;
-        padding: 32px clamp(20px, 5vw, 64px);
-        background: var(--bg);
-        color: var(--fg);
-        font: 400 15px/1.55 var(--sans);
-        -webkit-font-smoothing: antialiased;
-      }
-      main { margin: auto; width: 100%; max-width: 1120px; }
-      header {
-        display: flex;
-        justify-content: space-between;
-        gap: 16px;
-        margin-bottom: 48px;
-        padding-bottom: 18px;
-        border-bottom: 1px solid var(--line);
-        color: var(--fg-2);
-        font-size: 14px;
-      }
-      h1 {
-        margin: 0 0 20px;
-        font-size: clamp(36px, 4.5vw, 56px);
-        font-weight: 600;
-        line-height: 1.15;
-        letter-spacing: -0.025em;
-        text-wrap: balance;
-      }
-      p { margin: 0 0 16px; color: var(--fg-2); }
-      strong { color: var(--fg); font-weight: 600; }
-      #permission {
-        padding: clamp(20px, 4vw, 28px);
-        border: 1px solid var(--required-edge);
-        border-radius: 12px;
-        background: var(--required-bg);
-        color: var(--required-ink);
-        margin: 24px 0;
-      }
-      .notice-title { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
-      .notice-title svg { flex: none; width: 24px; height: 24px; margin-top: 1px; }
-      h2 { margin: 0; font-size: 19px; line-height: 1.35; font-weight: 650; }
-      #permission p { color: var(--required-ink); }
-      #permission strong { color: inherit; }
-      #permission .prompt { color: var(--required-muted); margin-bottom: 0; }
-      button {
-        appearance: none;
-        min-height: 44px;
-        max-width: 100%;
-        padding: 12px 20px;
-        border: 1px solid transparent;
-        border-radius: 8px;
-        background: var(--action);
-        color: var(--action-ink);
-        font: 600 15px/1.3 var(--sans);
-        cursor: pointer;
-      }
-      button:hover:not(:disabled) { background: var(--action-hover); }
-      button:disabled { opacity: 0.6; cursor: default; }
-      #grant { width: 100%; }
-      #retry { background: transparent; border-color: var(--line); color: var(--fg); }
-      #retry:hover:not(:disabled) { background: var(--sel); }
-      #permission :focus-visible { outline-color: var(--required-ink); }
-      #open { background: var(--success); color: var(--success-ink); }
-      #open:hover:not(:disabled) { background: var(--success-hover); }
-      .prompt { margin-top: 10px; font-size: 13px; }
-      #status { margin: 0; font-size: 14px; }
-      #status:not(:empty) { margin-top: 16px; }
-      #status[data-state="err"] { color: var(--bad); }
-      body[data-permission="granted"] #status:not([data-state="err"]) { color: var(--success); }
-      .extras {
-        margin: 32px 0 0;
-        padding-top: 20px;
-        border-top: 1px solid var(--line);
-        font-size: 13px;
-      }
-      .extras p { margin-bottom: 12px; }
-      summary { cursor: pointer; width: fit-content; }
-      details p { margin: 10px 0 0; }
-      kbd { font: inherit; font-weight: 600; color: var(--fg); }
-      footer { display: flex; flex-wrap: wrap; gap: 12px 20px; margin-top: 16px; }
-      a { color: var(--fg-2); font-size: 13px; text-underline-offset: 3px; }
-      a:hover { color: var(--fg); }
-      .brand { color: var(--fg); font-weight: 650; display: flex; align-items: center; gap: 10px; }
-      .brand svg { width: 24px; height: 24px; color: var(--success); }
-      .intro { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; }
-      .lead { font-size: 18px; max-width: 36ch; margin-bottom: 28px; }
-      h1 span { color: var(--success); }
-      #ready .prompt { max-width: 42ch; margin-top: 16px; }
-      body[data-permission="restricted"] .no-setup { display: none; }
-      .demo { margin: 0; padding: 32px; background: var(--demo-bg); color: var(--demo-ink); border-radius: 24px; }
-      .sheet { background: var(--sheet); color: var(--fg); border-radius: 16px; padding: 24px; box-shadow: 0 16px 36px #10275424; }
-      .sheet-title { font-size: 22px; font-weight: 650; margin-bottom: 2px; }
-      .video-title { font-size: 12px; margin-bottom: 20px; }
-      .search { display: flex; align-items: center; gap: 10px; background: var(--field); padding: 12px; border-radius: 8px; font-size: 16px; }
-      .search svg { width: 20px; height: 20px; flex: none; }
-      .sort { display: flex; justify-content: space-between; font-size: 12px; color: var(--fg-2); padding: 12px 0 6px; }
-      .playlist { padding: 12px 0; display: flex; gap: 12px; align-items: center; }
-      .playlist svg { width: 20px; height: 20px; flex: none; }
-      .playlist small { display: block; color: var(--fg-2); font-size: 12px; margin-top: 2px; }
-      mark { background: var(--sel); color: inherit; border-radius: 2px; }
-      .new-playlist { text-align: center; background: var(--field); border-radius: 24px; padding: 9px; font-size: 14px; margin-top: 12px; }
-      figcaption { margin-top: 20px; font-size: 14px; text-align: center; }
-      figcaption strong { color: inherit; }
-      .workflow { margin-top: 48px; }
-      .workflow h2 { font-size: 22px; }
-      .steps { list-style: none; padding: 0; margin: 20px 0 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; counter-reset: steps; }
-      .steps li { counter-increment: steps; display: grid; grid-template-columns: 28px 1fr; gap: 10px; }
-      .steps li::before { content: counter(steps); color: var(--success); font-weight: 700; font-size: 20px; line-height: 1.3; }
-      .steps h3 { margin: 0 0 6px; font-size: 16px; }
-      .steps p { margin: 0; font-size: 14px; }
-      .extras { display: flex; justify-content: space-between; gap: 24px; margin-top: 32px; }
-      .extras details { max-width: 48ch; }
-      kbd { background: var(--field); padding: 3px 6px; border-radius: 4px; white-space: nowrap; }
-      footer { margin-top: 24px; }
-      @media (max-width: 760px) {
-        body { padding-top: 24px; }
-        header { margin-bottom: 32px; }
-        .intro { grid-template-columns: 1fr; gap: 32px; }
-        h1 { max-width: 15ch; }
-        .lead, #ready .prompt { max-width: none; }
-        .demo { padding: 24px; }
-        .steps { grid-template-columns: 1fr; gap: 24px; }
-        .workflow { margin-top: 32px; }
-        .extras { display: block; }
-        .extras details { margin-top: 20px; }
-      }
-      @media (prefers-reduced-motion: no-preference) {
-        #open { transition: background-color 150ms ease-out; }
+      body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 system-ui, sans-serif; }
+      ::selection { background: #c62828; color: white; }
+      :focus-visible { outline: 3px solid var(--fg); outline-offset: 4px; }
+      main { max-width: 1040px; margin: auto; padding: 32px 40px; }
+      header { display: flex; align-items: center; gap: 18px; }
+      .logo { width: 72px; height: 72px; flex: none; }
+      .brand { font-weight: 650; font-size: 18px; }
+      #version { margin-left: auto; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+      .intro { margin: 40px 0 28px; }
+      h1 { margin: 0 0 12px; font-size: clamp(34px, 5vw, 52px); line-height: 1.1; letter-spacing: -.03em; text-wrap: balance; }
+      p { margin: 0; }
+      .lead { color: var(--muted); font-size: 18px; max-width: 65ch; margin-bottom: 24px; }
+      button { min-height: 44px; padding: 12px 22px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--fg); font: 600 16px/1.3 system-ui, sans-serif; cursor: pointer; }
+      button:hover:not(:disabled) { border-color: var(--fg); }
+      button:disabled { opacity: .6; cursor: default; }
+      #open { background: var(--red); border-color: var(--red); color: #fff; }
+      #open:hover:not(:disabled) { background: #a91f1f; }
+      #permission { margin: 24px 0; padding: 24px; background: var(--required-bg); color: var(--required-ink); border: 1px solid #997630; border-radius: 12px; }
+      h2 { margin: 0 0 12px; font-size: 22px; line-height: 1.3; }
+      #permission p { max-width: 72ch; margin-bottom: 16px; }
+      #permission .prompt { margin: 16px 0 0; }
+      #status:not(:empty) { margin-top: 16px; max-width: 72ch; }
+      #status[data-state="err"] { font-weight: 600; }
+      #retry { margin-top: 12px; }
+      figure { margin: 0; }
+      #demo-image { display: block; width: 100%; height: auto; aspect-ratio: 960 / 515; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+      figcaption { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 14px; }
+      figcaption p { color: var(--muted); }
+      #demo-toggle { flex: none; }
+      .shortcuts { margin-top: 36px; padding-top: 26px; border-top: 1px solid var(--line); }
+      dl { display: flex; gap: 48px; margin: 0; }
+      dl div { display: flex; align-items: center; gap: 14px; }
+      dd { margin: 0; }
+      kbd { display: inline-block; white-space: nowrap; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); font: 600 15px system-ui, sans-serif; }
+      footer { display: flex; gap: 24px; margin-top: 36px; font-size: 14px; }
+      a { color: var(--muted); text-underline-offset: 4px; }
+      @media (max-width: 600px) {
+        main { padding: 24px 20px; }
+        header { flex-wrap: wrap; gap: 12px; }
+        .brand { max-width: 170px; }
+        #version { margin-left: 84px; margin-top: -18px; }
+        .intro { margin-top: 32px; }
+        figcaption { align-items: flex-start; }
+        figcaption p { font-size: 14px; }
+        dl { flex-direction: column; gap: 18px; }
       }
     </style>
   </head>
   <body data-permission="checking">
     <main>
       <header>
-        <span class="brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 5h14M3 10h9M3 15h6"/><circle cx="16" cy="15" r="4"/><path d="m19 18 3 3"/></svg>YouTube Playlist Search</span>
+        <img class="logo" src="icons/icon128.png" width="72" height="72" alt="" />
+        <span class="brand">YouTube Playlist Search</span>
         <span id="version"></span>
       </header>
-
       <div class="intro">
-      <div>
-      <h1 id="heading" tabindex="-1">Less scrolling.<br><span>More saving.</span></h1>
-      <p class="lead">Search all the playlists you own, right in YouTube’s Save menu.</p>
-
-      <section id="permission" aria-label="Restore YouTube access" hidden>
-        <div class="notice-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-            <path d="M10.3 4.1 2.6 17.4a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.1a2 2 0 0 0-3.4 0Z"/>
-            <path d="M12 9v4.5M12 16.5v.1" stroke-linecap="round"/>
-          </svg>
+        <h1 id="heading" tabindex="-1">Save to the right playlist.</h1>
+        <p class="lead">Search your playlists right in YouTube’s Save menu.</p>
+        <section id="permission" aria-label="Restore YouTube access" hidden>
           <h2>YouTube access is turned off</h2>
-        </div>
-        <p>The extension cannot work while YouTube site access is restricted. <strong>Restore access to search your playlists.</strong></p>
-        <button id="grant" type="button" disabled>Grant YouTube access</button>
-        <p class="prompt">If Chrome asks, choose <strong>Allow</strong>. If access stays off, go to Chrome’s <strong>Extensions → YouTube Playlist Search → Site access</strong> and allow access to <strong>www.youtube.com</strong>.</p>
-      </section>
-      <section id="ready" aria-label="Try your first save">
-        <button id="open" type="button" disabled>Open YouTube and try it</button>
-        <p class="prompt no-setup">You’re welcome to jump right in. There’s no extra setup on this page.</p>
-        <p class="prompt">This opens a fresh tab. For tabs already open, <strong>reload YouTube</strong> first.</p>
-      </section>
-
-      <p id="status" role="status" aria-live="polite" aria-atomic="true"></p>
-      <button id="retry" type="button" hidden>Try again</button>
+          <p>The extension cannot work while YouTube site access is restricted. Restore access to search your playlists.</p>
+          <button id="grant" type="button" disabled>Grant YouTube access</button>
+          <p class="prompt">If Chrome asks, choose Allow. If access stays off, go to Chrome’s <strong>Extensions → YouTube Playlist Search → Site access</strong> and allow access to <strong>www.youtube.com</strong>.</p>
+        </section>
+        <section id="ready" aria-label="Try your first save">
+          <button id="open" type="button" disabled>Open YouTube</button>
+        </section>
+        <p id="status" role="status" aria-live="polite" aria-atomic="true"></p>
+        <button id="retry" type="button" hidden>Try again</button>
       </div>
-      <figure class="demo" aria-label="Example: searching for cooking playlists in the Save sheet">
-        <div class="sheet" aria-hidden="true">
-          <div class="sheet-title">Save to...</div>
-          <p class="video-title">A better bowl of noodles</p>
-          <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg>cooking</div>
-          <div class="sort"><span>2 playlists</span><span>Recent</span></div>
-          <div class="playlist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h12v18l-6-4-6 4Z"/></svg><div><mark>Cooking</mark> this week<small>Private</small></div></div>
-          <div class="playlist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h12v18l-6-4-6 4Z"/></svg><div><mark>Cooking</mark> / keepers<small>Private</small></div></div>
-          <div class="new-playlist">+ New playlist</div>
-        </div>
-        <figcaption>Type a name. <strong>There’s your playlist.</strong><br>Example preview — your playlists appear on YouTube.</figcaption>
+      <figure aria-label="Playlist Search on YouTube">
+        <img id="demo-image" src="assets/onboarding-demo-poster.webp" width="960" height="515" alt="Playlist Search’s Save menu on YouTube, with playlist search and playlist choices." />
+        <figcaption>
+          <p>See Playlist Search in action.</p>
+          <button id="demo-toggle" type="button" aria-controls="demo-image" aria-pressed="false">Play demo</button>
+        </figcaption>
       </figure>
-      </div>
-      <section class="workflow" aria-labelledby="workflow-title">
-        <h2 id="workflow-title">Your first save, in three small steps.</h2>
-        <ol class="steps">
-          <li><div><h3>Find a video you like</h3><p>Sign in to the YouTube account with your playlists, then open a video.</p></div></li>
-          <li><div><h3>Choose Save</h3><p>Under the video, click <strong>Save</strong>. It may be inside YouTube’s three-dot menu.</p></div></li>
-          <li><div><h3>Search, then pick</h3><p>Type a playlist name in the Save sheet. Choose the playlist to save your video.</p></div></li>
-        </ol>
+      <section class="shortcuts" aria-labelledby="shortcuts-title">
+        <h2 id="shortcuts-title">Shortcuts</h2>
+        <dl>
+          <div><dt><kbd>Alt+S</kbd></dt><dd>Save the current video or Short</dd></div>
+          <div><dt><kbd>Alt+P</kbd></dt><dd>Find a playlist</dd></div>
+        </dl>
       </section>
-      <div class="extras">
-        <p>Optional shortcuts: <kbd>Alt+S</kbd> to save (Shorts too), <kbd>Alt+P</kbd> to find a playlist.</p>
-        <details>
-          <summary>Keep it handy (optional)</summary>
-          <p>Open Chrome’s <strong>Extensions</strong> puzzle menu and pin <strong>YouTube Playlist Search</strong>. On YouTube, click its icon to save the current video or find a playlist.</p>
-        </details>
-      </div>
       <footer>
         <a href="https://playlist.codyh.xyz/privacy-policy.html" target="_blank" rel="noopener">Privacy</a>
         <a href="https://github.com/codyhxyz/playlist-search-extension/issues" target="_blank" rel="noopener">Get help</a>

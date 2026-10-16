@@ -10,6 +10,17 @@ import { YOUTUBE_ORIGIN, hasYouTubePermission, touchesYouTube } from "./onboardi
   const version = document.getElementById("version");
   version.textContent = `v${chrome.runtime.getManifest().version}`;
 
+  const demo = /** @type {HTMLImageElement} */ (document.getElementById("demo-image"));
+  const demoToggle = document.getElementById("demo-toggle");
+  let playing = false;
+  // Static for everyone, including reduced-motion users, until explicitly played.
+  demoToggle.addEventListener("click", () => {
+    playing = !playing;
+    demo.src = playing ? "assets/onboarding-demo.gif" : "assets/onboarding-demo-poster.webp";
+    demoToggle.textContent = playing ? "Stop demo" : "Play demo";
+    demoToggle.setAttribute("aria-pressed", String(playing));
+  });
+
   let generation = 0;
   let state = "checking";
   let requesting = false;
