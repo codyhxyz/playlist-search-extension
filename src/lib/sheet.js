@@ -855,6 +855,10 @@ export function createSheet({
   let nodes = [];                // row elements for shown[0 .. nodes.length - 1]
   let active = 0;
   let lastQ = null;
+  /** @type {number | null} */
+  let pressedPointer = null;
+  let renderPending = false;
+  let releaseTimer;
   // The status line is an aria-live region, so what it currently asserts matters
   // beyond the pixels. `restingStatus` is the last thing the caller set: an
   // operation's own line (a failure, "Saved to …", a removal prompt) may
@@ -884,6 +888,9 @@ export function createSheet({
     if (dead) return;
     dead = true;
     clearTimeout(patienceTimer);
+    clearTimeout(releaseTimer);
+    window.removeEventListener('pointerup', releaseRows, true);
+    window.removeEventListener('pointercancel', releaseRows, true);
     host.remove();
     onClose?.();
   }
@@ -1004,6 +1011,8 @@ export function createSheet({
 
   function render() {
     if (dead) return;
+    // Keep the pressed row (including its SVG) attached until the native click.
+    if (pressedPointer !== null) { renderPending = true; return; }
     const raw = input.value.trim();
     const toks = plsTokens(raw);
     const q = toks.join(' ');
@@ -1260,6 +1269,8 @@ export function createSheet({
     render();
     await settle('add', p.id, () => onPick(p), (r) => {
       p.member = true;
+      const current = byId(p.id);
+      if (current) current.member = true;
       // The caller found the video already there (its membership answer landed
       // after the sheet drew the row): nothing was written, so nothing to undo.
       if (r?.already) {
@@ -1277,6 +1288,9 @@ export function createSheet({
   }
 
   async function pick(p) {
+    // A background refresh may have replaced the pressed row's model object.
+    p = byId(p.id);
+    if (!p) return;
     if (finding) { onOpen?.(p, false); return; }
     if (!canPick(p)) return;
     const cur = state.get(p.id);
@@ -1287,6 +1301,22 @@ export function createSheet({
     }
     await add(p);
   }
+
+  list.addEventListener('pointerdown', (e) => {
+    if (!e.isPrimary || e.button > 1 || !/** @type {Element} */ (e.target).closest('.row')) return;
+    clearTimeout(releaseTimer);
+    pressedPointer = e.pointerId;
+  });
+  function releaseRows(e) {
+    if (e.pointerId !== pressedPointer) return;
+    // pointerup precedes click; also flush when released outside or cancelled.
+    releaseTimer = setTimeout(() => {
+      pressedPointer = null;
+      if (renderPending) { renderPending = false; render(); }
+    }, 0);
+  }
+  window.addEventListener('pointerup', releaseRows, true);
+  window.addEventListener('pointercancel', releaseRows, true);
 
   input.addEventListener('input', () => { cancelRemoval(false); steered = false; render(); });
   list.addEventListener('pointermove', () => list.classList.remove('kb'), { passive: true });

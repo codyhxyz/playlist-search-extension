@@ -1304,6 +1304,96 @@ try {
   });
   await run("return window.h.key('Escape');");
 
+  // Trusted pointer input: DOM .click() skips the down/up window where the
+  // cache refresh and membership tail can otherwise detach the pressed row.
+  console.log("\nSaving during background updates");
+  for (const target of ["title", "bookmark"]) {
+    const point = await run(`
+      window.__reopen(window.__three());
+      const row = window.__shadow.querySelector('[aria-label="Alpha"]');
+      const node = row.querySelector(${JSON.stringify(target === "title" ? ".t" : ".gut svg")});
+      const box = node.getBoundingClientRect();
+      return { x: box.x + box.width / 2, y: box.y + box.height / 2, before: window.__picks.length };
+    `);
+    await ab("mouse", "move", String(Math.round(point.x)), String(Math.round(point.y)));
+    await ab("mouse", "down");
+    await run(`
+      window.__sheet.setData(window.__three().reverse());
+      window.__sheet.setMember('PLcharlie', true);
+      return null;
+    `);
+    await ab("mouse", "up");
+    await ab("wait", "100");
+    const result = await run("return window.h.snapshot();");
+    check(`one trusted ${target} click saves the intended playlist through refresh and membership updates`, () => {
+      assert.deepEqual(result.picks.slice(point.before), ["PLalpha"]);
+      assert.match(result.listText, /Alpha\s*Saved/);
+      assert.match(result.statusText, /Saved to “Alpha”/);
+    });
+    await run("window.__sheet.destroy(); return null;");
+  }
+
+  for (const update of ["member", "removed", "outside", "cancelled"]) {
+    const point = await run(`
+      window.__reopen(window.__three());
+      const row = window.__shadow.querySelector('[aria-label="Alpha"]');
+      row.addEventListener('pointerdown', (e) => { window.__pressedId = e.pointerId; }, { once: true });
+      const box = row.querySelector('.gut svg').getBoundingClientRect();
+      return { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2),
+        picks: window.__picks.length, removes: window.__removes.length };
+    `);
+    await ab("mouse", "move", String(point.x), String(point.y));
+    await ab("mouse", "down");
+    await run(`
+      const rows = window.__three();
+      if (${JSON.stringify(update)} === 'member') rows[0].member = true;
+      if (${JSON.stringify(update)} === 'removed') rows.shift();
+      window.__sheet.setData(rows.reverse());
+      if (${JSON.stringify(update)} === 'cancelled') {
+        window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: window.__pressedId }));
+      }
+      return null;
+    `);
+    if (update === "outside") {
+      const input = await run("const box = window.__shadow.querySelector('input').getBoundingClientRect(); return { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) };");
+      await ab("mouse", "move", String(input.x), String(input.y));
+    }
+    await ab("mouse", "up");
+    await ab("wait", "100");
+    const result = await run("return { titles: window.h.titles(), ...window.h.snapshot() };");
+    check(`a bookmark press with a ${update} update does not save or remove accidentally`, () => {
+      assert.equal(result.picks.length, point.picks);
+      assert.equal(result.removes.length, point.removes);
+      if (update === "member") assert.match(result.statusText, /Remove from “Alpha”/);
+      if (update === "removed") assert.equal(result.rowCount, 2);
+      if (update === "outside" || update === "cancelled") {
+        assert.deepEqual(result.titles, ["Charlie", "Bravo", "Alpha"], "deferred rendering must resume after an abandoned press");
+        assert.equal(result.activeIsRealRow, true);
+      }
+    });
+    await run("window.__sheet.destroy(); return null;");
+  }
+
+  const refreshedSave = await run(`
+    let finish;
+    window.__reopen(window.__three(), { onPick: (p) => {
+      window.__picks.push(p.id);
+      return new Promise((resolve) => { finish = resolve; });
+    }});
+    const before = window.__picks.length;
+    window.__shadow.querySelector('[aria-label="Alpha"]').click();
+    window.__sheet.setData(window.__three());
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    await window.h.clickTitle('Alpha');
+    return { before, ...window.h.snapshot() };
+  `);
+  check("a refresh during the save preserves membership so the next click cannot add twice", () => {
+    assert.deepEqual(refreshedSave.picks.slice(refreshedSave.before), ["PLalpha"]);
+    assert.match(refreshedSave.statusText, /Remove from “Alpha”/);
+  });
+  await run("window.__sheet.destroy(); return null;");
+
   // ── 11. Nothing threw along the way ───────────────────────────────────────
   const final = await run("return { errors: window.__errors };");
   check("no uncaught errors or rejections during the whole session", () =>
