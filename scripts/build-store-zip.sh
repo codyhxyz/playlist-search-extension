@@ -58,6 +58,7 @@ cp -R \
   "$SRC_DIR/content.bundle.js" \
   "$SRC_DIR/welcome.html" \
   "$SRC_DIR/welcome.js" \
+  "$SRC_DIR/assets" \
   "$SRC_DIR/icons" \
   "$STAGE_DIR/"
 
@@ -77,6 +78,7 @@ zip -r "$OUT" \
   content.bundle.js \
   welcome.html \
   welcome.js \
+  assets \
   icons \
   lib \
   -x "*.DS_Store"

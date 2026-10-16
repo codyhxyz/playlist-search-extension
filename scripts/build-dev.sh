@@ -3,18 +3,10 @@ set -euo pipefail
 
 # Build a load-unpacked-ready copy of the CURRENT source under dist/unpacked/.
 #
-# Why this exists: `src/` cannot be loaded directly and just work. It declares
-# youtube.com as an OPTIONAL host permission, so a fresh dev install injects
-# nothing until you click through the welcome page — which looks exactly like
-# "the extension is broken". (The repo used to carry `overhaul/`, the original
-# spike, which WAS directly loadable, was named "pls spike — sidecar save sheet",
-# and predated every fix in src/. Loading that and concluding a bug is unfixed
-# cost real time; it was deleted in 2.0.4, but old unpacked copies may linger.)
+# This keeps the current bundled source separate from older unpacked builds.
 #
-# This build changes exactly two things from what ships:
-#   1. optional_host_permissions -> mandatory host_permissions, so it works the
-#      moment Chrome loads it, with no onboarding click
-#   2. drops `key`, so it does not claim the production listing's identity
+# It drops `key`, so it does not claim the production listing's identity.
+# The required YouTube host permission stays identical to production.
 #
 # The name is suffixed so it is unmistakable in chrome://extensions.
 #
@@ -39,6 +31,7 @@ cp -R \
   "$SRC_DIR/content.bundle.js" \
   "$SRC_DIR/welcome.html" \
   "$SRC_DIR/welcome.js" \
+  "$SRC_DIR/assets" \
   "$SRC_DIR/icons" \
   "$OUT_DIR/"
 cp "$SRC_DIR/lib/intent.js" "$OUT_DIR/lib/intent.js"
@@ -47,8 +40,6 @@ SRC_DIR="$SRC_DIR" OUT_DIR="$OUT_DIR" node -e '
   const fs = require("fs");
   const path = require("path");
   const m = JSON.parse(fs.readFileSync(path.join(process.env.SRC_DIR, "manifest.json"), "utf8"));
-  delete m.optional_host_permissions;
-  m.host_permissions = ["https://www.youtube.com/*"];
   delete m.key;
   m.name = m.name + " (dev)";
   fs.writeFileSync(path.join(process.env.OUT_DIR, "manifest.json"), JSON.stringify(m, null, 2) + "\n");

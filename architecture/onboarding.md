@@ -6,11 +6,17 @@ The extension works without reading, acknowledging, or completing the welcome pa
 
 ## First use
 
-The welcome page introduces the real workflow: open a video, select Save, search, and pick a playlist.
+The welcome page uses the existing recorded demonstration of opening Save, searching, and selecting a playlist.
 Its primary action opens a fresh YouTube tab.
 Existing YouTube tabs need a reload because registration does not retrofit the early request observer into an existing document.
 The user must sign in to the account that contains their playlists.
-Pinning and keyboard shortcuts are optional convenience features.
+Keyboard shortcuts have a separate section.
+
+The logo is the extension's existing `icons/icon128.png`, not a recreated mark.
+The GIF and poster are packaged locally under `src/assets/`, without a remote media request.
+They derive from `private/demo-videos/demo1.gif`; the private directory is not part of the package.
+The animation keeps the existing recording, reduced to 960 pixels wide, 10 frames per second, and a 64-color palette.
+The poster comes from its seven-second frame. The original recording remains unchanged.
 
 The page checks actual site access and waits for content-script registration before it claims readiness.
 It shows an amber recovery notice only if Chrome blocks access.

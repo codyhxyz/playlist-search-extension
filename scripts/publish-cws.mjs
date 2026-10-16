@@ -53,13 +53,17 @@ function validateZipAgainstSource(zipPath) {
   // Files the extension cannot run without, that aren't top-level. lib/intent.js
   // is imported by the module service worker at runtime, so a zip missing it
   // installs cleanly and then does nothing at all.
-  const requiredNested = ["lib/intent.js", "icons/icon128.png"];
+  const requiredNested = [
+    "lib/intent.js", "icons/icon128.png",
+    "assets/onboarding-demo.gif", "assets/onboarding-demo-poster.webp",
+  ];
   const files = list.stdout.split("\n").filter((name) => name && !name.endsWith("/"));
   for (const file of files) {
     if (
       !allowedTopLevel.has(file) &&
       !file.startsWith("icons/") &&
-      !file.startsWith("lib/")
+      !file.startsWith("lib/") &&
+      !requiredNested.includes(file)
     ) {
       throw new Error(`unexpected file in upload zip: ${file}`);
     }

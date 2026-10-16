@@ -3,13 +3,8 @@ set -euo pipefail
 
 # Build a test-only copy of the extension under e2e-build/.
 #
-# The shipped extension uses optional_host_permissions, which a fresh
-# agent-browser profile never grants — so nothing would ever register and
-# every live test would fail. This variant changes exactly two things:
-#
-#   1. optional_host_permissions -> mandatory host_permissions
-#   2. drops `key` (the signing key asserts the production CWS identity;
-#      an unpacked test build must not claim it)
+# This variant drops `key` (the signing key asserts the production CWS identity;
+# an unpacked test build must not claim it). Required host access is unchanged.
 #
 # Deliberately NOT changed, and this is the point: the real background.js
 # ships as-is and does its own `chrome.scripting.registerContentScripts` call.
@@ -42,6 +37,7 @@ cp -R \
   "$SRC_DIR/content.bundle.js" \
   "$SRC_DIR/welcome.html" \
   "$SRC_DIR/welcome.js" \
+  "$SRC_DIR/assets" \
   "$SRC_DIR/icons" \
   "$OUT_DIR/"
 cp "$SRC_DIR/lib/intent.js" "$OUT_DIR/lib/intent.js"
@@ -52,8 +48,6 @@ SRC_DIR="$SRC_DIR" OUT_DIR="$OUT_DIR" node -e '
   const src = path.join(process.env.SRC_DIR, "manifest.json");
   const dst = path.join(process.env.OUT_DIR, "manifest.json");
   const m = JSON.parse(fs.readFileSync(src, "utf8"));
-  delete m.optional_host_permissions;
-  m.host_permissions = ["https://www.youtube.com/*"];
   delete m.key;
   m.name = m.name + " (E2E TEST BUILD)";
   fs.writeFileSync(dst, JSON.stringify(m, null, 2) + "\n");
