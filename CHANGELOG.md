@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.9
+
+- **Onboarding uses the real product assets.** The existing logo and recorded demo replace the recreated interface and tutorial text.
+- **The demo plays automatically.** A muted, looping MP4 replaces the GIF and manual play button. Reduced-motion users get a static preview.
+- **No desktop scrolling.** The main action, recording, shortcuts, and help fit on one screen, tested down to 800×600 without shrinking text or controls.
+- No new permissions or data collection.
+
 ## 2.0.8
 
 - **Ready after installation.** Chrome requests the required `www.youtube.com` access during installation. There is no separate permission step, and ignoring the welcome page does not prevent the extension from working.
