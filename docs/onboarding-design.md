@@ -17,6 +17,12 @@ The factual headline and brief description precede Open YouTube. A separate
 Shortcuts section gives Alt+S and Alt+P readable labels. There is no pinning
 disclosure, fake dialog, numbered explainer, setup reassurance, or reload copy.
 
+On desktop, the introduction and recording share a row. Shortcuts and help
+remain visible below them without scrolling, including at 800×600 and 1366×768.
+The layout keeps 16px body text, the 72px logo, and full-size action buttons.
+Narrow windows stack naturally. Expanded recovery notices remain scrollable
+rather than being clipped to force a one-screen layout.
+
 The permission/registration controller, race guards, direct-gesture recovery,
 retry, live status, and fresh-tab action are unchanged. Version comes from
 `chrome.runtime.getManifest().version`, with an arbitrary-version regression.
@@ -29,3 +35,5 @@ captures cover desktop/narrow, light/dark, normal/restricted states, asset
 loading, keyboard operation, reduced-motion startup, and horizontal overflow.
 Screenshots are review artifacts outside the repository; no remote assets or
 new dependencies are used.
+`tests/test-welcome-layout.mjs` prevents desktop scrolling and horizontal
+overflow, and runs as part of `npm test`.

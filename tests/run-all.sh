@@ -28,6 +28,7 @@ node tests/test-bundle-boots.mjs
 
 echo "[run-all] contract: save-sheet UI in a real engine"
 node tests/test-sheet-render.mjs
+node tests/test-welcome-layout.mjs
 
 if [[ "${PLS_SKIP_E2E:-}" == "1" ]]; then
   echo
