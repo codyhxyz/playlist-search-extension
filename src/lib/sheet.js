@@ -51,8 +51,19 @@
 //           status, Undo, or removal confirmation. Rows carry a video count when
 //           YouTube reported one. Top-anchored, so the sheet grows down to a
 //           ceiling and shrinks with the query.
-// MOTION    YouTube's: a short fade in, a spinner while a save is in flight, and
-//           nothing else. No weight changes on hover or cursor: reflowing a
+// WRITES    Optimistic. A save, removal, Undo or new playlist is drawn as done the
+//           moment it is made; aria-busy and the spoken name still say it is in
+//           flight, and a failure rolls the row back and says why. Writes to one
+//           playlist reach YouTube in the order they were made. A write that
+//           fails after the sheet has closed is reported by a toast instead.
+// MOTION    Exact values, after jakubkrehel/skills better-ui: the sheet enters in
+//           300ms and leaves in 150ms (opacity, 12px); a bookmark that changes
+//           cross-fades (scale .25, blur 4px, 300ms, cubic-bezier(.2,0,0,1)); a
+//           pressed control scales to .96; rows that move glide to their new
+//           place; the sheet eases to its new height. Typing, hovering and the
+//           arrow keys stay instant: they happen too often to wait on. Movement,
+//           scale and blur run only without prefers-reduced-motion, which gets
+//           opacity alone. No weight changes on hover or cursor: reflowing a
 //           clipped title under the arrow keys is a defect, not a flourish.
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -67,6 +78,10 @@ const PLS_SVGNS = 'http://www.w3.org/2000/svg';
 const PLS_PAD = 8; // the scroll margin the cursor keeps
 const PLS_MIN_HL = 2; // shortest query worth marking inside a title
 const PLS_UNDO_KEY = /Mac|iP(hone|ad)/.test(globalThis.navigator?.platform ?? '') ? '⌘Z' : 'Ctrl+Z';
+const PLS_ROW_H = 54; // .row height; the arrow keys and the glide both rely on it
+const PLS_EASE = 'cubic-bezier(0.2, 0, 0, 1)';
+const PLS_SWAP_MS = 300; // a bookmark's cross-fade, and a row's glide
+const PLS_OUT_MS = 150; // the sheet's (and the toast's) exit
 // YouTube's own 24px icons, copied from the paths it renders (2026-09).
 const PLS_BOOKMARK = 'M19 2H5a2 2 0 00-2 2v16.887c0 1.266 1.382 2.048 2.469 1.399L12 18.366l6.531 3.919c1.087.652 2.469-.131 2.469-1.397V4a2 2 0 00-2-2ZM5 20.233V4h14v16.233l-6.485-3.89-.515-.309-.515.309L5 20.233Z';
 const PLS_BOOKMARKED = 'M19 2H5a2 2 0 00-2 2v16.887c0 1.266 1.382 2.048 2.469 1.399L12 18.366l6.531 3.919c1.087.652 2.469-.131 2.469-1.397V4a2 2 0 00-2-2Z';
@@ -79,6 +94,34 @@ const PLS_SORT = 'M21 5H3a1 1 0 000 2h18a1 1 0 100-2Zm-6 6H3a1 1 0 000 2h12a1 1 
 // Wrap emoji runs so they stop out-shouting the text they sit beside.
 let PLS_EMOJI = null;
 try { PLS_EMOJI = new RegExp('\\p{RGI_Emoji}', 'gv'); } catch { /* older engine: skip */ }
+
+// Read when used, not at load: the preference can change while the sheet is open.
+const plsCalm = () => !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+// One-shot motion through the Web Animations API. Never awaited: a row rebuilt
+// mid-flight simply drops its animation along with the old node.
+/** @param {Element | null | undefined} node @param {Keyframe[]} frames */
+function plsAnimate(node, frames, ms, easing = PLS_EASE) {
+  return node?.animate?.(frames, { duration: ms, easing }) ?? null;
+}
+
+// The entrance (opacity, 4px blur, 12px rise) and the reduced-motion
+// cross-fade that replaces it. A line of text rises less and stays sharp.
+/** @returns {Keyframe[]} */
+const plsEnter = (y = 12, blur = true) => plsCalm()
+  ? [{ opacity: 0 }, { opacity: 1 }]
+  : [
+    { opacity: 0, translate: `0 ${y}px`, ...(blur ? { filter: 'blur(4px)' } : {}) },
+    { opacity: 1, translate: '0 0', ...(blur ? { filter: 'blur(0px)' } : {}) },
+  ];
+const plsPop = () => plsCalm()
+  ? [{ opacity: 0 }, { opacity: 1 }]
+  : [{ opacity: 0, scale: 0.96 }, { opacity: 1, scale: 1 }];
+
+// Thumbnails this page has already shown. Rows are rebuilt on every render, so
+// without this every save would fade every picture in again.
+/** @type {Set<string>} */
+const plsSeen = new Set();
 
 const PLS_CSS = `
 :host { all: initial; }
@@ -133,10 +176,19 @@ dialog {
   border: 0; border-radius: 12px;
   /* tp-yt-paper-dialog's shadow: this is a modal, like YouTube's own dialogs. */
   box-shadow: 0 0 24px 12px rgba(0,0,0,.15);
-  transition: opacity .15s ease;
+  /* Enters in 300ms, leaves in 150ms. display and overlay ride along so a
+     closing sheet stays in the top layer until it has faded out; destroy()
+     removes the host only after that. */
+  transition-property: opacity, translate, display, overlay;
+  transition-duration: 300ms; transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
 }
-dialog:not([open]) { display: none; }
+dialog:not([open]) { display: none; opacity: 0; pointer-events: none; transition-duration: 150ms; }
 @starting-style { dialog[open] { opacity: 0; } }
+@media (prefers-reduced-motion: no-preference) {
+  dialog:not([open]) { translate: 0 12px; }
+  @starting-style { dialog[open] { translate: 0 12px; } }
+}
 /* Blurred, deliberately NOT YouTube's flat 30% black. The blur is what hides
    YouTube's own Save popup, which stays open underneath since 2.0.2 stopped
    dismissing it with a synthetic Escape. Removing the blur puts two playlist
@@ -146,8 +198,11 @@ dialog:not([open]) { display: none; }
 dialog::backdrop {
   background: rgba(6,7,10,.58);
   backdrop-filter: blur(6px) saturate(.9);
-  transition: opacity .18s ease;
+  transition-property: opacity, display, overlay;
+  transition-duration: 300ms; transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
 }
+dialog:not([open])::backdrop { opacity: 0; transition-duration: 150ms; }
 @starting-style { dialog[open]::backdrop { opacity: 0; } }
 @media (prefers-color-scheme: light) { dialog::backdrop {
   background: rgba(16,18,24,.28); backdrop-filter: blur(4px) saturate(.95);
@@ -172,24 +227,32 @@ svg.i { display: block; width: 24px; height: 24px; fill: currentColor; flex: non
   text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2);
   font: 400 12px/18px var(--sans);
 }
-.vid:empty { display: none; }
+/* A Save sheet holds the line for the video's name even before it arrives, so
+   the name landing late cannot push the search field down mid-keystroke. */
+.vid:empty:not(.hold) { display: none; }
+.vid.hold:empty { height: 18px; }
 /* Text-mono icon button, size M: 40px round, hover wash is the outline token. */
 .x {
   all: initial; grid-area: x; align-self: start;
   display: grid; place-items: center; width: 40px; height: 40px;
   border-radius: 20px; cursor: pointer; color: var(--fg);
 }
-.x:hover { background-color: var(--line); }
+@media (hover: hover) { .x:hover { background-color: var(--line); } }
 
 /* textarea-shape, outlined, label hidden: 8px radius, 1px rest border, 2px
-   primary border on focus with the padding pulled in so nothing shifts. */
+   primary border on focus. The second pixel is an inset ring, so the focus
+   change can ease and nothing inside the field shifts. */
 input {
   all: initial; grid-area: q; box-sizing: border-box; min-width: 0;
   margin: 12px 0 0; height: 40px; padding: 0 12px;
   border: 1px solid var(--field); border-radius: 8px;
   font: 400 16px/22px var(--sans); color: var(--fg); caret-color: var(--fg);
+  transition-property: border-color, box-shadow;
+  transition-duration: 150ms; transition-timing-function: ease-out;
 }
-input:focus { border: 2px solid var(--fg); padding: 0 11px; }
+input:focus { border-color: var(--fg); box-shadow: inset 0 0 0 1px var(--fg); }
+/* Forced colours drop box-shadow, which would leave focus at one pixel. */
+@media (forced-colors: active) { input:focus { outline: 2px solid CanvasText; outline-offset: -2px; } }
 input::placeholder { color: var(--fg-2); }
 
 .readout {
@@ -208,13 +271,27 @@ input::placeholder { color: var(--fg-2); }
   color: var(--fg); cursor: pointer;
 }
 .sort, .priv { background-color: var(--tonal); }              /* tonal */
-.sort:hover, .priv:hover { background-color: var(--tonal-hov); }
 .sort { grid-area: sort; margin: 12px 8px 0 0; }
 .sort svg.i, .priv svg.i { width: 16px; height: 16px; margin: 0 4px 0 -4px; }
-.confirm button:hover, .undo:hover { background-color: var(--line); } /* text */
 .confirm .danger { background-color: var(--filled); color: var(--on-filled); } /* filled */
-.confirm .danger:hover { background-color: var(--filled-hov); }
 .undo { color: var(--cta); }
+/* Hover only where there is a pointer that hovers: on touch, :hover latches
+   after a tap and reads as a stuck selection. */
+@media (hover: hover) {
+  .sort:hover, .priv:hover { background-color: var(--tonal-hov); }
+  .confirm button:hover, .undo:hover { background-color: var(--line); } /* text */
+  .confirm .danger:hover { background-color: var(--filled-hov); }
+}
+/* Every pill and the close button: the wash eases, and a press scales to .96
+   over 150ms. Never while disabled or busy. */
+:is(.x, .sort, .priv, .confirm button, .undo, .new-btn, .create-btn) {
+  transition-property: scale, background-color;
+  transition-duration: 150ms; transition-timing-function: ease-out;
+  -webkit-tap-highlight-color: transparent;
+}
+@media (prefers-reduced-motion: no-preference) {
+  :is(.x, .sort, .priv, .confirm button, .undo, .new-btn, .create-btn):not(:disabled, .busy):active { scale: .96; }
+}
 /* Focus rings: pills wear theirs outside; the full-bleed list items and the
    round close button wear theirs inset, where nothing clips it. */
 :is(.sort, .priv, .confirm button, .undo, .new-btn, .create-btn):focus-visible {
@@ -232,8 +309,11 @@ input::placeholder { color: var(--fg-2); }
      narrows the list below one screenful. Typing must not move the results. */
   scrollbar-gutter: stable;
   scrollbar-width: thin; scrollbar-color: transparent transparent;
+  /* sizeList() sets the height; easing it is what keeps a narrowing query from
+     yanking the sheet's bottom edge up a row at a time. */
+  transition: height 150ms cubic-bezier(0.2, 0, 0, 1);
 }
-.list:hover { scrollbar-color: var(--thumb) transparent; }
+@media (hover: hover) { .list:hover { scrollbar-color: var(--thumb) transparent; } }
 /* A centred empty state should be centred in the sheet, not in the sheet minus
    a scrollbar it will never need. */
 .list:has(.note) { scrollbar-gutter: auto; }
@@ -247,11 +327,24 @@ input::placeholder { color: var(--fg-2); }
   width: 100%; height: 54px; padding: 6px 16px;
   font: 400 14px/20px var(--sans);
   color: var(--fg); cursor: pointer; background-color: transparent;
+  transition: background-color 100ms ease-out;
+  -webkit-tap-highlight-color: transparent;
 }
 .row.busy, .row.removed { cursor: default; }
 /* Full-bleed and square, exactly as YouTube's own rows hover. The keyboard
-   cursor wears the same wash — it is the same "you are here". */
-:where(.list:not(.kb)) .row:not(.busy,.removed):hover, .row.on { background-color: var(--hov); }
+   cursor wears the same wash — it is the same "you are here" — and moves
+   instantly: a fading wash trails behind a held arrow key. */
+.row.on { background-color: var(--hov); }
+@media (hover: hover) { :where(.list:not(.kb)) .row:not(.busy,.removed):hover { background-color: var(--hov); } }
+.list.kb .row { transition: none; }
+.row:not(.busy,.removed):active { background-color: var(--tonal-hov); }
+/* A row gliding past others rides above them on the sheet's own colour, so two
+   titles never overprint mid-move. */
+/* No transition into it: the colour has to be there on the first frame of the
+   move, which is when the rows cross. */
+.row.lift { position: relative; z-index: 1; background-color: var(--bg) !important; transition: none; }
+.row.lift.far { z-index: 2; }
+.row.lift.on { background-image: linear-gradient(var(--hov), var(--hov)); }
 
 /* yt-collection-thumbnail-view-model, small: a 56x32 thumbnail with the
    playlist's own coloured card peeking out 6px above it, both 4px-rounded and
@@ -265,6 +358,9 @@ input::placeholder { color: var(--fg-2); }
 .th { left: 0; top: 7px; width: 56px; height: 32px; overflow: hidden;
       background-color: var(--tonal); }
 .th img { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* A picture fetched for the first time fades in instead of popping. */
+.th img.fresh { opacity: 0; transition: opacity 200ms ease-out; }
+.th img.fresh.shown { opacity: 1; }
 .txt { flex: 1 1 auto; min-width: 0; }
 /* ytListItemViewModelSingleLineTitle — one line, so the height holds. */
 .t { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -277,11 +373,16 @@ input::placeholder { color: var(--fg-2); }
 .row.fail .tag { color: var(--bad); }
 
 /* The trailing accessory: YouTube's own bookmark — outline for a target,
-   filled for a playlist this video is in. */
+   filled for a playlist this video is in. A bookmark that just changed holds
+   both glyphs in one cell and cross-fades them; the state word fades in. These
+   run once per change, and swap() resumes them across rebuilds. */
 .gut { display: grid; place-items: center; width: 24px; height: 24px; flex: none; }
-.spin { animation: spin .8s linear infinite; }
-.spin circle { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round;
-               stroke-dasharray: 40 17; }
+.gut > svg { grid-area: 1 / 1; }
+.swap-in { animation: pls-swap-in 300ms cubic-bezier(0.2, 0, 0, 1) both; }
+.swap-out { animation: pls-swap-out 300ms cubic-bezier(0.2, 0, 0, 1) both; }
+.tag.swap-in { animation-name: pls-fade-in; }
+@keyframes pls-swap-in { from { opacity: 0; scale: .25; filter: blur(4px); } }
+@keyframes pls-swap-out { to { opacity: 0; scale: .25; filter: blur(4px); } }
 
 /* YouTube type scale: 16/22 medium for the line that matters, 14/20 secondary. */
 .note { padding: 40px 24px; text-align: center; text-wrap: balance;
@@ -298,7 +399,7 @@ input::placeholder { color: var(--fg-2); }
   background-color: var(--tonal); color: var(--fg);
   font: 500 14px/40px var(--sans); white-space: nowrap; cursor: pointer;
 }
-.create-btn:hover, .new-btn:hover { background-color: var(--tonal-hov); }
+@media (hover: hover) { .create-btn:hover, .new-btn:hover { background-color: var(--tonal-hov); } }
 .create-btn svg.i, .new-btn svg.i { margin: 0 6px 0 -6px; }
 .create-btn.busy { opacity: .6; cursor: default; }
 .new-btn { width: 100%; }
@@ -310,8 +411,11 @@ input::placeholder { color: var(--fg-2); }
   display: flex; align-items: center; gap: 12px;
   min-height: 40px; padding: 2px 16px;
   font: 400 14px/20px var(--sans); color: var(--fg); cursor: pointer;
+  transition: background-color 100ms ease-out;
+  -webkit-tap-highlight-color: transparent;
 }
-.create-action:hover { background-color: var(--hov); }
+@media (hover: hover) { .create-action:hover { background-color: var(--hov); } }
+.create-action:not(.busy):active { background-color: var(--tonal-hov); }
 .create-action.busy { opacity: .6; cursor: default; }
 
 /* The create control plus the privacy it will create with, side by side. The
@@ -325,8 +429,10 @@ input::placeholder { color: var(--fg-2); }
 
 /* Row-height placeholders, so the list resolves into place instead of popping.
    The resting opacity is declared, not implied by the keyframes — otherwise
-   reduced-motion would leave solid bars behind. */
-.sk { display: flex; align-items: center; height: 54px; padding: 0 16px; }
+   reduced-motion would leave solid bars behind. They hold off for 150ms, so a
+   library that arrives that fast never flashes them at all. */
+.sk { display: flex; align-items: center; height: 54px; padding: 0 16px;
+      animation: pls-fade-in 200ms ease-out 150ms both; }
 .sk span { display: block; height: 14px; border-radius: 4px;
            background-color: var(--hov); opacity: .6;
            animation: shimmer 1.8s ease-in-out infinite; }
@@ -340,24 +446,41 @@ input::placeholder { color: var(--fg-2); }
 
 /* ── footers ───────────────────────────────────────────────────────────────── */
 /* Transient status, Undo and removal confirmation — only while there is one. */
+/* It opens out of the sheet's bottom edge and folds back into it, rather than
+   jumping the sheet a row taller. Height eases where interpolate-size exists
+   and snaps where it does not; the fade runs everywhere. */
 .foot {
   flex: none; display: flex; align-items: center; gap: 8px;
   padding: 8px 12px 8px 16px; border-top: 1px solid var(--line);
   font: 400 14px/20px var(--sans); color: var(--fg-2);
+  overflow: clip; interpolate-size: allow-keywords;
+  transition-property: opacity, height, padding-block, border-top-color, display;
+  transition-duration: 200ms; transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
 }
-.foot:has(.status:empty):not(:has(.undo:not([hidden]))) { display: none; }
+.foot:has(.status:empty):not(:has(.undo:not([hidden]))) {
+  display: none; opacity: 0; height: 0; padding-block: 0; border-top-color: transparent;
+  transition-duration: 150ms;
+}
+@starting-style { .foot { opacity: 0; height: 0; padding-block: 0; border-top-color: transparent; } }
 .status { flex: 1 1 auto; min-width: 0; overflow: hidden;
           display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .confirm { flex: none; display: flex; gap: 8px; }
 /* yt-panel-footer-view-model: divider, 12px, one full-width button. */
 .pfoot { flex: none; display: flex; padding: 12px; border-top: 1px solid var(--line); }
 
-@keyframes spin    { to { transform: rotate(1turn) } }
 @keyframes shimmer { 0%,100% { opacity: .55 } 50% { opacity: 1 } }
+@keyframes pls-fade-in { from { opacity: 0; } }
+@keyframes pls-fade-out { to { opacity: 0; } }
 
+/* Reduced motion keeps every fade and drops every movement, scale and blur;
+   the height eases are layout motion, so they go too. */
 @media (prefers-reduced-motion: reduce) {
-  dialog, dialog::backdrop { transition-duration: 1ms; }
-  .spin, .sk span { animation: none; }
+  .swap-in { animation-name: pls-fade-in; }
+  .swap-out { animation-name: pls-fade-out; }
+  .sk span { animation: none; }
+  .list { transition: none; }
+  .foot { transition-property: opacity, display; }
 }
 `;
 
@@ -393,14 +516,90 @@ function plsIcon(d) {
   return svg;
 }
 
-// An arc, not a pulsing bookmark — a mark that means "saved" has no business
-// standing in for "in flight".
-function plsSpinner() {
-  const svg = plsSvg('i spin');
-  const c = document.createElementNS(PLS_SVGNS, 'circle');
-  c.setAttribute('cx', '12'); c.setAttribute('cy', '12'); c.setAttribute('r', '9');
-  svg.append(c);
-  return svg;
+// ── Toast ───────────────────────────────────────────────────────────────────
+// Writes are optimistic, so closing the sheet straight after a save is the
+// normal path, and a save can fail after the sheet is gone. That failure still
+// has to reach the user. It arrives the way YouTube's own notices do: bottom
+// left, one at a time, in YouTube's colours, with a way to try again. Like the
+// sheet, it lives in a closed shadow root on <html>, in the top layer.
+const PLS_TOAST_CSS = `
+:host { all: initial; }
+:host {
+  --t-bg:#0f0f0f; --t-fg:#fff; --t-act:#3ea6ff; --t-hov:rgba(255,255,255,.1);
+  --sans:Roboto,Arial,sans-serif;
+}
+:host-context(html[dark]) { --t-bg:#f1f1f1; --t-fg:#0f0f0f; --t-act:#065fd4; --t-hov:rgba(0,0,0,.05); }
+.toast {
+  box-sizing: border-box; position: fixed; inset: auto auto 24px 24px; margin: 0;
+  max-width: min(480px, calc(100vw - 48px)); min-height: 48px; padding: 6px 8px 6px 16px;
+  display: flex; align-items: center; gap: 12px; overflow: visible;
+  border: 0; border-radius: 8px; background: var(--t-bg); color: var(--t-fg);
+  font: 400 14px/20px var(--sans);
+  transition-property: opacity, translate, display, overlay;
+  transition-duration: 300ms; transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
+}
+.toast:not(:popover-open) { display: none; opacity: 0; transition-duration: 150ms; }
+@starting-style { .toast:popover-open { opacity: 0; } }
+@media (prefers-reduced-motion: no-preference) {
+  .toast:not(:popover-open) { translate: 0 12px; }
+  @starting-style { .toast:popover-open { translate: 0 12px; } }
+}
+.msg { flex: 1 1 auto; min-width: 0; }
+.act {
+  all: initial; box-sizing: border-box; flex: none; height: 36px; padding: 0 12px;
+  border-radius: 18px; color: var(--t-act); font: 500 14px/36px var(--sans);
+  cursor: pointer; white-space: nowrap;
+  transition-property: scale, background-color;
+  transition-duration: 150ms; transition-timing-function: ease-out;
+  -webkit-tap-highlight-color: transparent;
+}
+.act:focus-visible { outline: 2px solid var(--t-fg); outline-offset: 2px; }
+@media (hover: hover) { .act:hover { background-color: var(--t-hov); } }
+@media (prefers-reduced-motion: no-preference) { .act:active { scale: .96; } }
+`;
+
+/** @type {(() => void) | null} */
+let plsToastDismiss = null;
+
+/** @param {string} text @param {{label: string, run: () => void}} [action] */
+function plsToast(text, action) {
+  plsToastDismiss?.();
+  const host = document.createElement('pls-toast');
+  const shadow = host.attachShadow({ mode: 'closed' });
+  const css = new CSSStyleSheet();
+  css.replaceSync(PLS_TOAST_CSS);
+  shadow.adoptedStyleSheets = [css];
+  // Same containment as the sheet: Space on the toast's button must not reach
+  // YouTube's play/pause shortcut on the way out of the shadow root.
+  for (const type of ['keydown', 'keyup', 'keypress']) host.addEventListener(type, (e) => e.stopPropagation());
+  const box = plsEl('div', 'toast');
+  box.setAttribute('popover', 'manual');
+  // A failure interrupts; a confirmation waits its turn.
+  box.setAttribute('role', action ? 'alert' : 'status');
+  box.append(plsEl('span', 'msg', text));
+  let timer;
+  function dismiss() {
+    clearTimeout(timer);
+    if (plsToastDismiss === dismiss) plsToastDismiss = null;
+    try { box.hidePopover(); } catch { /* already hidden */ }
+    setTimeout(() => host.remove(), PLS_OUT_MS + 50);
+  }
+  if (action) {
+    const b = plsEl('button', 'act', action.label);
+    b.type = 'button';
+    b.addEventListener('click', () => { dismiss(); action.run(); });
+    box.append(b);
+  }
+  shadow.append(box);
+  document.documentElement.append(host);
+  try { box.showPopover(); } catch { /* no popover support: it still renders in place */ }
+  // Long enough to read and reach the button; held while the pointer is on it.
+  const arm = (ms) => { clearTimeout(timer); timer = setTimeout(dismiss, ms); };
+  box.addEventListener('pointerenter', () => clearTimeout(timer));
+  box.addEventListener('pointerleave', () => arm(3000));
+  arm(action ? 10000 : 4000);
+  plsToastDismiss = dismiss;
 }
 
 // The playlist's picture, as YouTube draws it in its own sheet. The URLs are the
@@ -432,6 +631,11 @@ function plsThumb(p) {
     img.src = src[0].url;
     // A dead link shows YouTube's empty tile rather than a broken-image glyph.
     img.addEventListener('error', () => img.remove(), { once: true });
+    const key = src[0].url;
+    if (!plsSeen.has(key)) {
+      img.classList.add('fresh');
+      img.addEventListener('load', () => { plsSeen.add(key); img.classList.add('shown'); }, { once: true });
+    }
     th.append(img);
   }
   lead.append(stk, th);
@@ -578,20 +782,23 @@ const PLS_PRIVACY = [
 //   cls        extra class on the row
 //   busy       aria-busy: a write is in flight
 //   disabled   aria-disabled: nothing to do here until it settles
-//   mark       the trailing bookmark path; null draws the spinner instead
+//   mark       the trailing bookmark path
 //   word       the state word in the subtitle, so colour is never the sole carrier
 //   say        what the accessible name adds after the title
 //   sayCount   whether the accessible name repeats privacy and count. The removal
 //              states do not, and that is kept exactly as shipped.
 //   tip        what the tooltip adds after the title, for the failures only
+// The two in-flight states are optimistic: on screen they already look like
+// the outcome, while aria-busy and the spoken name still say "saving" and
+// "removing" until YouTube answers.
 const PLS_ROW_STATES = {
-  adding: { cls: 'busy', busy: true, disabled: true, mark: null, word: 'Saving', say: ', saving', sayCount: true },
+  adding: { cls: 'busy', busy: true, disabled: true, mark: PLS_BOOKMARKED, word: 'Saved', say: ', saving', sayCount: true },
   added: { cls: 'done', mark: PLS_BOOKMARKED, word: 'Saved', say: ', saved. Activate to remove', sayCount: true },
   error: {
     cls: 'fail', mark: PLS_BOOKMARK, word: 'Retry', say: ', could not be saved. Activate to try again', sayCount: true,
     tip: ' — couldn’t be saved. Click to try again.',
   },
-  removing: { cls: 'busy', busy: true, disabled: true, mark: null, word: 'Removing', say: ', removing', sayCount: false },
+  removing: { cls: 'busy', busy: true, disabled: true, mark: PLS_BOOKMARK, word: 'Removed', say: ', removing', sayCount: false },
   removed: { cls: 'removed', disabled: true, mark: PLS_BOOKMARK, word: 'Removed', say: ', removed', sayCount: false },
   'remove-error': {
     cls: 'fail', mark: PLS_BOOKMARKED, word: 'Retry remove', say: ', could not be removed. Activate to try again',
@@ -620,16 +827,19 @@ const plsSortAt = (i) => PLS_SORTS[((i % PLS_SORTS.length) + PLS_SORTS.length) %
  * @param {Array<{id: string, title: string, member?: boolean}>} rows
  * @param {number} sortIdx
  * @param {string[]} q folded query words, or []
+ * @param {(p: any) => boolean} [isIn] which group a row is drawn in. The sheet
+ *        passes one that counts a write in flight as already landed, so an
+ *        optimistic save moves its row once, when it is made.
  */
-function plsOrder(rows, sortIdx, q) {
+function plsOrder(rows, sortIdx, q, isIn = (p) => p.member === true) {
   const mode = plsSortAt(sortIdx);
   // Decorate once: the match position is O(title) to compute and a sort would
   // otherwise ask for it O(n log n) times. Ranked by where the FIRST word lands —
   // the word typed first is the one the user is leading with.
-  const dec = rows.map((p, i) => ({ p, i, pos: q.length ? plsFolded(p).s.indexOf(q[0]) : -1 }));
+  const dec = rows.map((p, i) => ({ p, i, pos: q.length ? plsFolded(p).s.indexOf(q[0]) : -1, m: Number(isIn(p)) }));
   dec.sort(
     (x, y) =>
-      (mode.asGiven ? 0 : Number(y.p.member === true) - Number(x.p.member === true)) ||
+      (mode.asGiven ? 0 : y.m - x.m) ||
       mode.cmp(x, y, q) ||
       x.i - y.i,
   );
@@ -760,13 +970,17 @@ export function createSheet({
   // console-poking and e2e specs can still reach it, and never on screen.
   if (videoId) host.setAttribute('data-video-id', videoId);
   const vid = plsEl('div', 'vid');
+  if (videoId) vid.classList.add('hold');
   // `setTitle` lets the caller fill this in once the name has been fetched,
   // which happens after the sheet is already on screen — the sheet must open
-  // instantly on intent, so nothing in it waits on a network round trip.
+  // instantly on intent, so nothing in it waits on a network round trip. A name
+  // that lands late fades into the line held for it.
   function setTitle(t) {
     const name = t == null ? '' : String(t).trim();
+    const late = !vid.textContent && name && dlg.open;
     vid.textContent = name;
     plsAttr(vid, 'title', name);
+    if (late) plsAnimate(vid, [{ opacity: 0 }, { opacity: 1 }], 200, 'ease-out');
   }
   setTitle(videoTitle);
 
@@ -799,9 +1013,10 @@ export function createSheet({
     sortIdx = (next + PLS_SORTS.length) % PLS_SORTS.length;
     paintSort();
     // Every row just moved, so the cursor cannot keep its index — treat it like a
-    // new query and reopen on the top target.
+    // new query and reopen on the top target. Unlike a new query, the rows that
+    // stay on screen glide to their new places, so the reorder can be followed.
     lastQ = null;
-    render();
+    render({ glide: true });
     onSort?.(plsSortAt(sortIdx).id);
   }
   paintSort();
@@ -843,9 +1058,17 @@ export function createSheet({
   // Every save and removal this sheet made, newest last. Undo (the footer button,
   // or Ctrl/⌘+Z while the query is empty) reverses the newest and exposes the one
   // before it, so a run of saves can be walked back one at a time. Entries hold
-  // ids, not row objects: a background refresh replaces the objects.
-  /** @type {Array<{kind: 'add' | 'remove', id: string}>} */
+  // ids, not row objects: a background refresh replaces the objects. An entry is
+  // pushed when its write is made, not when YouTube confirms it, so Undo is there
+  // at once; `wrote` records whether the write actually landed, which is what an
+  // Undo queued behind it checks before reversing anything.
+  /** @typedef {{kind: 'add' | 'remove', id: string, wrote?: boolean}} PlsUndo */
+  /** @type {PlsUndo[]} */
   const undoStack = [];
+  // Playlists made in this sheet, drafts included. A refresh fetched before one
+  // existed must not erase it.
+  /** @type {any[]} */
+  const made = [];
   let steered = false;           // the user has put the cursor somewhere themselves
   let privIdx = Math.max(0, PLS_PRIVACY.findIndex((x) => x.id === privacy));
   let dead = false;
@@ -855,6 +1078,7 @@ export function createSheet({
   let nodes = [];                // row elements for shown[0 .. nodes.length - 1]
   let active = 0;
   let lastQ = null;
+  let rest = false;
   /** @type {number | null} */
   let pressedPointer = null;
   let renderPending = false;
@@ -866,14 +1090,28 @@ export function createSheet({
   // removal, puts it back.
   let restingStatus = '';
 
+  // ── Motion bookkeeping ────────────────────────────────────────────────────
+  // Rows are rebuilt on every render, so nothing on a row can transition. What
+  // has to move is carried across rebuilds instead: `swaps` remembers each row's
+  // last bookmark and state word, and when they changed, so a row rebuilt in the
+  // middle of a cross-fade resumes it rather than restarting or snapping.
+  /** @type {Map<string, {mark: string, word: string, from: string, at: number, wordAt: number}>} */
+  const swaps = new Map();
+  const openedAt = performance.now();
+  let lastKind = '';             // skeleton | rows | note: what the list last held
+  let sized = false;             // the first height is set, not eased
+
   const patienceTimer = setTimeout(() => { patience = true; render(); }, PLS_LOAD_PATIENCE);
 
   function setStatus(t) {
     if (dead) return;
     const s = t == null ? '' : String(t);
+    if (status.textContent === s) return;
     status.textContent = s;
     // The line clamps at two; the tooltip never truncates.
     plsAttr(status, 'title', s);
+    // A new line arrives instead of overwriting the old one in place.
+    if (s) plsAnimate(status, plsEnter(4, false), 200);
   }
 
   // The placeholder names the job until the library lands, then names the
@@ -884,6 +1122,9 @@ export function createSheet({
       : job;
   }
 
+  // The session ends at once; the pixels leave in 150ms. onClose fires now and
+  // the sheet takes no further updates, but the host stays until the exit has
+  // played, closing the dialog first if a caller tore it down while open.
   function destroy() {
     if (dead) return;
     dead = true;
@@ -891,11 +1132,116 @@ export function createSheet({
     clearTimeout(releaseTimer);
     window.removeEventListener('pointerup', releaseRows, true);
     window.removeEventListener('pointercancel', releaseRows, true);
-    host.remove();
+    window.removeEventListener('resize', sizeList);
+    resized?.disconnect();
+    if (dlg.open) dlg.close();
+    setTimeout(() => host.remove(), PLS_OUT_MS + 50);
     onClose?.();
   }
 
-  function rowNode(p, i, toks) {
+  // Has this row's bookmark or state word changed within the last cross-fade?
+  // `live` is false for a render that is a new query: rows appearing because the
+  // query changed are not changing, so they draw settled.
+  function swap(id, mark, word, live) {
+    const now = performance.now();
+    let s = swaps.get(id);
+    if (!s) swaps.set(id, (s = { mark, word, from: mark, at: -Infinity, wordAt: -Infinity }));
+    if (s.mark !== mark) {
+      // Reversed mid-fade (a save failing at once): the new fade starts where the
+      // old one had got to, so nothing flashes back to full strength.
+      const t = Math.min(1, (now - s.at) / PLS_SWAP_MS);
+      s.at = !live ? -Infinity : mark === s.from ? now - (1 - t) * PLS_SWAP_MS : now;
+      s.from = s.mark;
+      s.mark = mark;
+    }
+    if (s.word !== word) {
+      s.wordAt = live && word ? now : -Infinity;
+      s.word = word;
+    }
+    return { from: now - s.at < PLS_SWAP_MS ? s.from : null, markMs: now - s.at, wordMs: now - s.wordAt };
+  }
+
+  // The sheet eases to its new height instead of jumping when a query narrows or
+  // widens the list. Only the box moves; the rows inside are already final. The
+  // height is capped at the room the dialog has, so a shrink from a long list
+  // starts moving at once instead of easing through pixels the cap would hide.
+  function sizeList() {
+    if (dead || !dlg.open) return;
+    const last = /** @type {HTMLElement | null} */ (list.lastElementChild);
+    const content = last ? last.offsetTop + last.offsetHeight : 0;
+    const room = parseFloat(getComputedStyle(dlg).maxHeight) - (dlg.offsetHeight - list.offsetHeight);
+    const h = `${Math.max(0, Math.min(content, room))}px`;
+    if (list.style.height === h) return;
+    if (!sized) list.style.transition = 'none';
+    list.style.height = h;
+    if (!sized) { void list.offsetHeight; list.style.transition = ''; sized = true; }
+  }
+  // The footer, header and New playlist bar change the room the list has. When
+  // the footer opens under a save, it must not cover the row that was saved: a
+  // cursor row it starts to clip rides up with it, frame by frame. A row already
+  // scrolled out of view is left there.
+  function keepCursor() {
+    const cur = nodes[active];
+    if (!cur) return;
+    const bottom = cur.offsetTop + cur.offsetHeight;
+    const edge = list.scrollTop + list.clientHeight;
+    if (bottom > edge && cur.offsetTop < edge) list.scrollTop = bottom + PLS_PAD - list.clientHeight;
+  }
+  const resized = typeof ResizeObserver === 'function'
+    ? new ResizeObserver(() => { sizeList(); keepCursor(); })
+    : null;
+  // The list too: its own height eases after the footer settles, and that last
+  // stretch can clip the row just as well.
+  for (const n of [head, list, foot, pfoot]) resized?.observe(n);
+  window.addEventListener('resize', sizeList);
+
+  // Where each on-screen row is now, by playlist. Measured with transforms, so a
+  // glide interrupted mid-flight carries on from where the row really is.
+  function onScreen() {
+    const a = Math.max(0, Math.floor(list.scrollTop / PLS_ROW_H) - 1);
+    const b = Math.min(nodes.length, Math.ceil((list.scrollTop + list.clientHeight) / PLS_ROW_H) + 1);
+    return [a, b];
+  }
+  function measure() {
+    /** @type {Map<string, number>} */
+    const m = new Map();
+    const [a, b] = onScreen();
+    for (let i = a; i < b; i++) m.set(shown[i].id, nodes[i].getBoundingClientRect().top);
+    return m;
+  }
+
+  // Rows that moved slide from where they were to where they are (FLIP). A row
+  // that was not on screen before fades in. Reduced motion: every moved row
+  // cross-fades in place instead.
+  /** @param {Map<string, number>} before */
+  function glide(before) {
+    if (!before.size) return;
+    const calm = plsCalm();
+    const reach = list.clientHeight + PLS_ROW_H;
+    const [a, b] = onScreen();
+    for (let i = a; i < b; i++) {
+      const n = nodes[i];
+      const was = before.get(shown[i].id);
+      if (was === undefined) { plsAnimate(n, [{ opacity: 0 }, { opacity: 1 }], 200, 'ease-out'); continue; }
+      const dy = Math.max(-reach, Math.min(reach, was - n.getBoundingClientRect().top));
+      if (Math.abs(dy) < 1) continue;
+      if (calm) { plsAnimate(n, [{ opacity: 0 }, { opacity: 1 }], 150, 'ease-out'); continue; }
+      // Every moving row rides on the sheet's own colour, so two rows crossing
+      // occlude rather than overprint; one jumping several places rides highest.
+      n.classList.add('lift');
+      if (Math.abs(dy) > PLS_ROW_H) n.classList.add('far');
+      const go = plsAnimate(n, [{ transform: `translateY(${dy}px)` }, { transform: 'none' }], PLS_SWAP_MS);
+      if (go) go.onfinish = () => n.classList.remove('lift', 'far');
+    }
+  }
+
+  // An undo button or removal prompt that appears in a footer already showing
+  // scales in from the press size rather than popping.
+  function popIn(n) { plsAnimate(n, plsPop(), 150, 'ease-out'); }
+
+  // `live`: this render is not a new query, so a state that changed since the
+  // last one is a change the user is watching, and it animates.
+  function rowNode(p, i, toks, live = false) {
     const st = state.get(p.id);
     // Tri-state: only an explicit `true` is a claim. `false` and `undefined`
     // both render bare — we will not draw an affordance for an answer we do
@@ -939,24 +1285,41 @@ export function createSheet({
     if (priv) facts.push(plsEl('span', 'pv', priv));
     if (vids) facts.push(plsEl('span', 'cnt', vids));
     for (const f of facts) f.setAttribute('aria-hidden', 'true');
-    if (rs.word) facts.push(plsEl('span', 'tag', rs.word));
+    const sw = finding ? null : swap(p.id, rs.mark, rs.word, live);
+    if (rs.word) {
+      const tag = plsEl('span', 'tag', rs.word);
+      if (sw && sw.wordMs < PLS_SWAP_MS) { tag.classList.add('swap-in'); tag.style.animationDelay = `${-sw.wordMs}ms`; }
+      facts.push(tag);
+    }
     facts.forEach((f, k) => { if (k) line.append(plsEl('span', 'sep')); line.append(f); });
     if (line.firstChild) txt.append(line);
     // A finder's row is a link to the playlist, not a save target: no bookmark.
-    if (!finding) gut.append(rs.mark ? plsIcon(rs.mark) : plsSpinner());
+    if (sw?.from) {
+      // Both glyphs in one cell, the old fading out under the new, each resumed
+      // at the point the fade had reached when this row was last built.
+      const delay = `${-sw.markMs}ms`;
+      const out = plsIcon(sw.from);
+      const now = plsIcon(rs.mark);
+      out.classList.add('swap-out');
+      now.classList.add('swap-in');
+      out.style.animationDelay = delay;
+      now.style.animationDelay = delay;
+      gut.append(out, now);
+    } else if (!finding) gut.append(plsIcon(rs.mark));
 
     // Names the row for assistive tech and, via the tooltip, un-truncates it.
     b.setAttribute('aria-label', p.title + (rs.sayCount ? sayCount : '') + rs.say);
     b.title = p.title + (rs.tip ?? '');
     b.addEventListener('click', (e) => {
-      if ((e.metaKey || e.ctrlKey) && onOpen) { onOpen(p, true); return; }
+      // A playlist still being created has no YouTube id to open yet.
+      if ((e.metaKey || e.ctrlKey) && onOpen) { if (!p.draft) onOpen(p, true); return; }
       active = i; steered = true; paint(false); pick(p);
     });
     // Middle-click opens, as it does on any link. mousedown's default for the
     // middle button is autoscroll, which would otherwise fire alongside.
     if (onOpen) {
       b.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); });
-      b.addEventListener('auxclick', (e) => { if (e.button === 1) { e.preventDefault(); onOpen(p, true); } });
+      b.addEventListener('auxclick', (e) => { if (e.button === 1) { e.preventDefault(); if (!p.draft) onOpen(p, true); } });
     }
     return b;
   }
@@ -1009,14 +1372,32 @@ export function createSheet({
     return row;
   }
 
-  function render() {
+  // A row is drawn in the member group while a save to it is in flight, and out
+  // of it while a removal is: the optimistic answer, decided once per write.
+  function isIn(p) {
+    const st = state.get(p.id);
+    if (st === 'adding' || st === 'added' || st === 'remove-error') return true;
+    if (st === 'removing' || st === 'removed' || st === 'error') return false;
+    return p.member === true;
+  }
+
+  // `glide`: rows still on screen afterwards slide to their new places. On by
+  // default for a render that is not a new query (a write, a refresh, a late
+  // membership answer); typing never glides, because it happens per keystroke.
+  /** @param {{glide?: boolean}} [how] */
+  function render(how = {}) {
     if (dead) return;
     // Keep the pressed row (including its SVG) attached until the native click.
     if (pressedPointer !== null) { renderPending = true; return; }
     const raw = input.value.trim();
     const toks = plsTokens(raw);
     const q = toks.join(' ');
-    const fresh = q !== lastQ;
+    // `rest`: a refresh the user has not steered re-rests the cursor like a new
+    // query does, but it is still the same query, so its changes animate.
+    const same = q === lastQ;
+    const fresh = !same || rest;
+    rest = false;
+    const before = (how.glide ?? same) && dlg.open ? measure() : null;
     const keepScroll = fresh ? 0 : list.scrollTop;
     // A re-render that is not a new query (a save landing, membership arriving
     // late) can move rows. The cursor follows the PLAYLIST, not the index —
@@ -1029,11 +1410,12 @@ export function createSheet({
       toks.length ? data.filter((p) => plsMatches(p, toks)) : data,
       sortIdx,
       toks,
+      isIn,
     );
     // Ordering happens BEFORE paging, so the first page is the best rows under
     // the current mode rather than the ones that happened to arrive first.
     shown = matches;
-    nodes = shown.slice(0, Math.max(PLS_PAGE, keepRendered)).map((p, i) => rowNode(p, i, toks));
+    nodes = shown.slice(0, Math.max(PLS_PAGE, keepRendered)).map((p, i) => rowNode(p, i, toks, same));
 
     const kids = [...nodes];
     if (!loaded && !patience) kids.push(...skeletons());
@@ -1073,6 +1455,23 @@ export function createSheet({
     if (active >= nodes.length) grow(active + 1);
     list.scrollTop = keepScroll;
     paint(false);
+    if (before) glide(before);
+    reveal();
+    sizeList();
+  }
+
+  // What the list holds changing kind gets a little motion; within a kind, the
+  // contents simply update. The first load, if the skeletons were ever visible,
+  // resolves as one piece. An empty or no-match note fades in when it appears.
+  function reveal() {
+    const kind = !loaded && !patience ? 'skeleton' : nodes.length ? 'rows' : 'note';
+    if (kind === lastKind) return;
+    if (lastKind === 'skeleton' && performance.now() - openedAt > 150) {
+      plsAnimate(list, plsEnter(), 300, 'ease-out');
+    } else if (kind === 'note' && lastKind) {
+      plsAnimate(list.querySelector('.note'), [{ opacity: 0 }, { opacity: 1 }], 150, 'ease-out');
+    }
+    lastKind = kind;
   }
 
   // Build rows up to index `to` (exclusive), a page at a time, and splice them in
@@ -1086,6 +1485,7 @@ export function createSheet({
     const after = nodes[nodes.length - 1];
     if (after) after.after(...more); else list.prepend(...more);
     nodes.push(...more);
+    sizeList();
   }
 
   function paint(scroll) {
@@ -1137,21 +1537,25 @@ export function createSheet({
   function paintUndo() {
     const top = undoStack[undoStack.length - 1];
     const p = top && byId(top.id);
+    const was = undoBtn.hidden;
     undoBtn.hidden = !p || !onRemove || !onPick;
     plsAttr(undoBtn, 'aria-label', p ? (top.kind === 'add' ? `Undo save to ${p.title}` : `Undo removal from ${p.title}`) : '');
     plsAttr(undoBtn, 'title', p ? `${undoBtn.getAttribute('aria-label')} (${PLS_UNDO_KEY})` : '');
+    if (was && !undoBtn.hidden) popIn(undoBtn);
   }
 
   // Reverse the newest entry. No confirmation either way: it puts back exactly
-  // what the user changed a moment ago, which is the opposite of a surprise.
+  // what the user changed a moment ago, which is the opposite of a surprise. It
+  // works the instant a write is made; if that write is still in flight, the
+  // reversal queues behind it (see enqueue).
   function undo() {
     if (armedRemove) cancelRemoval(false);
     const top = undoStack.pop();
     paintUndo();
     const p = top && byId(top.id);
     if (!p) return;
-    if (top.kind === 'add') remove(p, true);
-    else add(p, true);
+    if (top.kind === 'add') remove(p, top);
+    else add(p, top);
   }
 
   // Put the cursor on a playlist that just changed, wherever the re-render
@@ -1161,60 +1565,109 @@ export function createSheet({
     if (i > -1) { active = i; paint(false); }
   }
 
-  // The tail every optimistic write shares. `work` is the request; `done` applies
-  // its result to the model and returns the status line and the playlist to put
-  // the cursor on; `failed` marks the failure on the model and returns the line
-  // that says so. A sheet closed mid-request is left alone. `done` runs inside the
-  // try on purpose: if applying a result throws, that is reported as a failure
-  // rather than escaping as an unhandled rejection.
-  async function settle(label, key, work, done, failed) {
-    try {
-      const r = await work();
-      if (dead) return;
-      const { say, focus } = done(r);
-      setStatus(say);
-      render();
-      focusRow(focus);
-    } catch (e) {
-      console.warn(`[pls] ${label} failed`, key, e);
-      if (dead) return;
-      setStatus(failed(e));
-      render();
-    }
+  // ── Writes ────────────────────────────────────────────────────────────────
+  // Optimistic: each write redraws its row as done before the request leaves.
+  // Writes to one playlist reach YouTube in the order they were made, so an Undo
+  // pressed while its save is in flight waits for that save rather than racing
+  // it, and when they settle only the newest write for a playlist may redraw it.
+  /** @type {Map<string, Promise<unknown>>} */
+  const queues = new Map();
+  /** @type {Map<string, object>} */
+  const newest = new Map();
+
+  /** @template T @param {string} id @param {() => Promise<T>} job @returns {Promise<T>} */
+  function enqueue(id, job) {
+    // Nothing ahead of it: the request leaves now, in the same task as the click.
+    const prev = queues.get(id);
+    const run = prev ? prev.then(job) : job();
+    const tail = run.then(() => {}, () => {});
+    queues.set(id, tail);
+    tail.then(() => { if (queues.get(id) === tail) queues.delete(id); });
+    return run;
+  }
+
+  // A fact YouTube just confirmed, set on the row object the write was made with
+  // and on whichever object a refresh has since put in its place.
+  function know(p, member) {
+    p.member = member;
+    const now = byId(p.id);
+    if (now) now.member = member;
+  }
+
+  function drop(entry) {
+    const i = entry ? undoStack.indexOf(entry) : -1;
+    if (i > -1) { undoStack.splice(i, 1); paintUndo(); }
+  }
+
+  // After the sheet has gone, a failed write is reported by a toast, which can
+  // try it again. Its outcome is reported the same way.
+  function lateFailure(base, e, work, ok) {
+    plsToast(base + why(e), {
+      label: 'Try again',
+      run: () => work().then(() => plsToast(ok), (e2) => {
+        console.warn('[pls] retry failed', e2);
+        lateFailure(base, e2, work, ok);
+      }),
+    });
   }
 
   let creating = false;
+  let drafts = 0;
 
   async function create(title) {
     const name = (title || '').trim();
     if (!name || !onCreate || creating) return;
     cancelRemoval(false);
     creating = true;
-    setStatus(`Creating “${name}”…`);
-    render();
     // Read once: the chip can be cycled while the request is in flight.
     const chosen = PLS_PRIVACY[privIdx];
-    await settle('create playlist', name, () => onCreate(name, chosen.id), (created) => {
-      const newPl = {
-        id: created.id, title: created.title || name, member: Boolean(videoId),
-        privacy: chosen.label,
-      };
-      data.unshift(newPl);
+    // The playlist joins the list at once, under a stand-in id until YouTube
+    // answers with the real one. Until then it cannot be picked or opened.
+    const pl = {
+      id: `${uid}-new${++drafts}`, title: name, member: false, privacy: chosen.label, draft: true,
+    };
+    made.unshift(pl);
+    data.unshift(pl);
+    if (videoId) state.set(pl.id, 'adding');
+    input.value = '';
+    setPlaceholder();
+    setStatus(videoId ? `Saved to “${name}”.` : `Created “${name}”.`);
+    render();
+    focusRow(pl.id);
+    plsAnimate(nodes[shown.indexOf(pl)], plsEnter(), 300, 'ease-out');
+    try {
+      const created = await onCreate(name, chosen.id);
+      const draftId = pl.id;
+      Object.assign(pl, { id: created.id, title: created.title || name, member: Boolean(videoId), draft: false });
+      const sw = swaps.get(draftId);
+      if (sw) swaps.set(pl.id, sw);
+      state.delete(draftId);
+      if (!data.includes(pl)) data.unshift(pl);
       if (videoId) {
-        state.set(newPl.id, 'added');
+        state.set(pl.id, 'added');
         // Undo takes the video back out; the (now empty) playlist stays, because
         // deleting a playlist is not something a sheet should do on one keypress.
-        undoStack.push({ kind: 'add', id: newPl.id });
+        undoStack.push({ kind: 'add', id: pl.id, wrote: true });
         paintUndo();
       }
       creating = false;
-      input.value = '';
-      setPlaceholder();
-      return { say: restingStatus, focus: newPl.id };
-    }, (e) => {
+      render();
+    } catch (e) {
+      console.warn('[pls] create playlist failed', name, e);
       creating = false;
-      return `Couldn’t create “${name}”.${why(e)} Try again.`;
-    });
+      made.splice(made.indexOf(pl), 1);
+      data = data.filter((x) => x !== pl);
+      state.delete(pl.id);
+      const base = `Couldn’t create “${name}”.`;
+      if (dead) {
+        lateFailure(base, e, () => onCreate(name, chosen.id), `Created “${name}”.`);
+        return;
+      }
+      // The name comes back, so trying again is one Enter.
+      if (!input.value) input.value = name;
+      setStatus(`${base}${why(e)} Try again.`);
+      render();
+    }
   }
 
   function canAdd(p) {
@@ -1237,60 +1690,112 @@ export function createSheet({
   function armRemoval(p) {
     if (armedRemove === p) return;
     armedRemove = p;
-    confirmRemove.hidden = false;
+    if (confirmRemove.hidden) { confirmRemove.hidden = false; popIn(confirmRemove); }
     confirmRemoveBtn.setAttribute('aria-label', `Remove from ${p.title}`);
     setStatus(`Remove from “${p.title}”?`);
     cancelRemoveBtn.focus();
   }
 
-  // `undoing`: this write reverses an Undo entry, so it says so and does not push
-  // a new one — Undo walks back, it does not ping-pong.
-  async function remove(p, undoing = false) {
+  // `cause`: the Undo entry this write reverses. It pushes no entry of its own,
+  // because Undo walks back rather than ping-ponging, and it reverses only what
+  // actually landed: if the write it undoes failed, there is nothing to undo.
+  /** @param {any} p @param {PlsUndo | null} [cause] */
+  async function remove(p, cause = null) {
     disarm();
     input.focus();
-    state.set(p.id, 'removing');
-    setStatus(`Removing from “${p.title}”…`);
+    const { id, title } = p;
+    const op = {};
+    newest.set(id, op);
+    state.set(id, 'removing');
+    /** @type {PlsUndo | null} */
+    const entry = cause ? null : { kind: 'remove', id };
+    if (entry) undoStack.push(entry);
+    paintUndo();
+    setStatus(`Removed from “${title}”.`);
     render();
-    await settle('remove', p.id, () => onRemove(p), () => {
-      p.member = false;
-      state.set(p.id, 'removed');
-      if (!undoing) undoStack.push({ kind: 'remove', id: p.id });
-      paintUndo();
-      return { say: undoing ? `Removed from “${p.title}”.` : restingStatus, focus: p.id };
-    }, (e) => {
-      state.set(p.id, 'remove-error');
-      return `Couldn’t remove from “${p.title}”.${why(e)} Select it again to retry.`;
-    });
+    focusRow(id);
+    try {
+      const skipped = await enqueue(id, async () => {
+        try {
+          if (cause?.wrote === false) return true;
+          await onRemove(byId(id) ?? p);
+          if (entry) entry.wrote = true;
+          return false;
+        } catch (e) {
+          if (entry) entry.wrote = false;
+          throw e;
+        }
+      });
+      if (!skipped) know(p, false);
+      if (newest.get(id) !== op || dead) return;
+      if (skipped) state.delete(id); else state.set(id, 'removed');
+      render();
+    } catch (e) {
+      console.warn('[pls] remove failed', id, e);
+      drop(entry);
+      const base = `Couldn’t remove from “${title}”.`;
+      if (newest.get(id) !== op) return;
+      if (dead) { lateFailure(base, e, () => onRemove(byId(id) ?? p), `Removed from “${title}”.`); return; }
+      state.set(id, 'remove-error');
+      setStatus(`${base}${why(e)} Select it again to retry.`);
+      render();
+    }
   }
 
-  async function add(p, undoing = false) {
+  /** @param {any} p @param {PlsUndo | null} [cause] */
+  async function add(p, cause = null) {
     cancelRemoval(false);
-    state.set(p.id, 'adding');
+    const { id, title } = p;
+    const op = {};
+    newest.set(id, op);
+    state.set(id, 'adding');
+    /** @type {PlsUndo | null} */
+    const entry = cause ? null : { kind: 'add', id };
+    if (entry) undoStack.push(entry);
+    paintUndo();
+    setStatus(`Saved to “${title}”${cause ? ' again' : ''}.`);
     render();
-    await settle('add', p.id, () => onPick(p), (r) => {
-      p.member = true;
-      const current = byId(p.id);
-      if (current) current.member = true;
+    focusRow(id);
+    try {
+      const r = await enqueue(id, async () => {
+        try {
+          // Undoing a removal that never landed: the video is still there.
+          const res = cause?.wrote === false ? { already: true } : await onPick(byId(id) ?? p);
+          if (entry) entry.wrote = !res?.already;
+          return res;
+        } catch (e) {
+          if (entry) entry.wrote = false;
+          throw e;
+        }
+      });
+      know(p, true);
       // The caller found the video already there (its membership answer landed
       // after the sheet drew the row): nothing was written, so nothing to undo.
+      if (r?.already) drop(entry);
+      if (newest.get(id) !== op || dead) return;
       if (r?.already) {
-        state.delete(p.id);
-        return { say: `Already in “${p.title}”.`, focus: p.id };
+        state.delete(id);
+        setStatus(`Already in “${title}”.`);
+      } else {
+        state.set(id, 'added');
       }
-      state.set(p.id, 'added');
-      if (!undoing) undoStack.push({ kind: 'add', id: p.id });
-      paintUndo();
-      return { say: `Saved to “${p.title}”${undoing ? ' again' : ''}.`, focus: p.id };
-    }, (e) => {
-      state.set(p.id, 'error');
-      return `Couldn’t save to “${p.title}”.${why(e)} Select it again to retry.`;
-    });
+      render();
+    } catch (e) {
+      console.warn('[pls] add failed', id, e);
+      drop(entry);
+      const base = `Couldn’t save to “${title}”.`;
+      if (newest.get(id) !== op) return;
+      if (dead) { lateFailure(base, e, () => onPick(byId(id) ?? p), `Saved to “${title}”.`); return; }
+      state.set(id, 'error');
+      setStatus(`${base}${why(e)} Select it again to retry.`);
+      render();
+    }
   }
 
   async function pick(p) {
     // A background refresh may have replaced the pressed row's model object.
     p = byId(p.id);
-    if (!p) return;
+    if (!p || p.draft) return;
     if (finding) { onOpen?.(p, false); return; }
     if (!canPick(p)) return;
     const cur = state.get(p.id);
@@ -1336,7 +1841,7 @@ export function createSheet({
     // Ctrl/⌘+Enter opens the cursor's playlist, as Ctrl/⌘-click does. Only from
     // the query field: on a focused button, Enter is that button's activation.
     if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'Enter' && e.target === input) {
-      if (shown[active] && onOpen && !e.isComposing) { onOpen(shown[active], true); e.preventDefault(); }
+      if (shown[active] && !shown[active].draft && onOpen && !e.isComposing) { onOpen(shown[active], true); e.preventDefault(); }
       return;
     }
     // Ctrl/⌘+Z undoes the last save or removal — but only while the query is
@@ -1431,6 +1936,7 @@ export function createSheet({
   render();
   dlg.showModal();
   input.focus();
+  sizeList();
 
   return {
     setTitle: (t) => { if (!dead) setTitle(t); },
@@ -1450,6 +1956,9 @@ export function createSheet({
       if (dead) return;
       // A finder has no video, so "already in" means nothing there.
       if (finding) rows = rows.map(({ member, ...p }) => p);
+      // Playlists made here stay put, even in a list fetched before they existed.
+      const got = new Set(rows.map((r) => r.id));
+      rows = [...made.filter((m) => !got.has(m.id)), ...rows];
       for (const p of rows) {
         const st = state.get(p.id);
         if (st === 'added' || st === 'removing' || st === 'remove-error') p.member = true;
@@ -1460,7 +1969,7 @@ export function createSheet({
         if (again) armedRemove = again; else cancelRemoval(false);
       }
       data = rows;
-      if (!steered) lastQ = null;
+      if (!steered) rest = true;
       loaded = true;
       clearTimeout(patienceTimer);
       setPlaceholder();

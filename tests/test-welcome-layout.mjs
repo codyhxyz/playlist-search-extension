@@ -41,6 +41,9 @@ try {
     await ab('set', 'media', width < 760 ? 'dark' : 'light');
     await ab('open', `http://127.0.0.1:${server.address().port}/welcome.html`);
     await ab('wait', '--fn', 'document.body.dataset.permission === "granted"');
+    // The staged entrance moves sections by up to 12px for its first 800ms; the
+    // layout under test is the one it settles into.
+    await ab('wait', '--fn', 'document.getAnimations().every((a) => a.playState !== "running")');
     const result = JSON.parse(JSON.parse(await ab('eval', `JSON.stringify({
       width: innerWidth, height: innerHeight,
       scrollWidth: document.documentElement.scrollWidth,

@@ -1179,7 +1179,9 @@ try {
   const closed = await run("return window.h.clickOutside();");
   check("clicking outside the dialog closes it and fires onClose exactly once", () =>
     assert.equal(closed.closes, beforeClose + 1));
-  const after = await run("return { hostConnected: window.__shadow.host.isConnected, closes: window.__closes };");
+  // onClose fires at once (checked above), but the host stays for the 150ms the
+  // exit takes to play, so wait it out before asserting it is gone.
+  const after = await run("await new Promise((r) => setTimeout(r, 300)); return { hostConnected: window.__shadow.host.isConnected, closes: window.__closes };");
   check("closing removes the host element — no state outlives the sheet", () =>
     assert.equal(after.hostConnected, false));
 
@@ -1393,6 +1395,137 @@ try {
     assert.match(refreshedSave.statusText, /Remove from “Alpha”/);
   });
   await run("window.__sheet.destroy(); return null;");
+
+  // ── Optimistic writes ─────────────────────────────────────────────────────
+  // Every request below is held open by a gate the test releases, so what the
+  // sheet draws BEFORE YouTube answers can be asserted, not just the outcome.
+  console.log("\nOptimistic writes");
+  const opt = await run(`
+    const gates = [];
+    window.__gates = gates;
+    const gated = (list) => (p) => { list.push(p.id); return new Promise((resolve, reject) => gates.push({ resolve, reject })); };
+    window.__reopen(window.__three(), { onPick: gated(window.__picks), onRemove: gated(window.__removes) });
+    await new Promise((r) => setTimeout(r, 60));
+    window.__shadow.querySelector('[aria-label="Alpha"]').click();
+    await new Promise((r) => setTimeout(r, 20));
+    const row = Array.from(window.__shadow.querySelectorAll('[role="option"]')).find((r) => r.getAttribute('title') === 'Alpha');
+    return { text: window.h.rowText('Alpha'), busy: row.getAttribute('aria-busy'), label: row.getAttribute('aria-label'),
+      status: window.h.snapshot().statusText, undo: window.h.undoLabel(), pending: gates.length };
+  `);
+  check("a save is drawn as done before YouTube answers", () => {
+    assert.equal(opt.pending, 1, "the request must already be in flight");
+    assert.match(opt.text, /Alpha\s*Saved/);
+    assert.match(opt.status, /Saved to “Alpha”/);
+    assert.equal(opt.undo, "Undo save to Alpha", "Undo must be there at once");
+  });
+  check("…while assistive tech is still told it is in flight", () => {
+    assert.equal(opt.busy, "true");
+    assert.match(opt.label, /saving/);
+  });
+  const queued = await run(`
+    const before = window.__removes.length;
+    await window.h.clickControl('Undo');
+    const whileInFlight = window.__removes.length - before;
+    const text = window.h.rowText('Alpha');
+    window.__gates[0].resolve();
+    await new Promise((r) => setTimeout(r, 40));
+    const afterSave = window.__removes.length - before;
+    window.__gates[1]?.resolve();
+    await new Promise((r) => setTimeout(r, 40));
+    return { whileInFlight, afterSave, text, final: window.h.rowText('Alpha') };
+  `);
+  check("Undo pressed mid-save waits for the save instead of racing it", () => {
+    assert.equal(queued.whileInFlight, 0, "the removal must not leave before the save has landed");
+    assert.equal(queued.afterSave, 1);
+    assert.match(queued.text, /Alpha\s*Removed/, "the undo is drawn at once too");
+    assert.match(queued.final, /Alpha\s*Removed/);
+  });
+  const rolled = await run(`
+    window.__shadow.querySelector('[aria-label="Charlie"]').click();
+    await new Promise((r) => setTimeout(r, 20));
+    const during = window.h.rowText('Charlie');
+    window.__gates[window.__gates.length - 1].reject(Object.assign(new Error('x'), { userMessage: 'You’re offline.' }));
+    await new Promise((r) => setTimeout(r, 40));
+    return { during, after: window.h.rowText('Charlie'), status: window.h.snapshot().statusText, undo: window.h.undoLabel() };
+  `);
+  check("a failed save rolls its row back and says why", () => {
+    assert.match(rolled.during, /Charlie\s*Saved/);
+    assert.match(rolled.after, /Charlie\s*Retry/);
+    assert.match(rolled.status, /Couldn’t save to “Charlie”\. You’re offline\./);
+    assert.notEqual(rolled.undo, "Undo save to Charlie", "nothing landed, so there is nothing to undo");
+  });
+  const moot = await run(`
+    const before = window.__removes.length;
+    await window.h.clickTitle('Charlie');
+    await window.h.clickControl('Undo');
+    window.__gates[window.__gates.length - 1].reject(new Error('x'));
+    await new Promise((r) => setTimeout(r, 60));
+    return { removes: window.__removes.length - before, text: window.h.rowText('Charlie') };
+  `);
+  check("undoing a save that then fails sends no removal", () => {
+    assert.equal(moot.removes, 0);
+    assert.doesNotMatch(moot.text, /Saved|Removed/);
+  });
+  await run("window.__sheet.destroy(); return null;");
+
+  const draft = await run(`
+    let done;
+    window.__reopen(window.__three(), { onCreate: (title) => new Promise((r) => { done = () => r({ id: 'PLmade', title }); }) });
+    await new Promise((r) => setTimeout(r, 60));
+    await window.h.type('Road Trip');
+    await window.h.key('Enter');
+    const during = { text: window.h.rowText('Road Trip'), input: window.__shadow.querySelector('input').value,
+      opens: window.__opens.length };
+    await window.h.openGesture('Road Trip', 'ctrl');
+    const openedDraft = window.__opens.length - during.opens;
+    done();
+    await new Promise((r) => setTimeout(r, 40));
+    return { during, openedDraft, after: window.h.rowText('Road Trip'), undo: window.h.undoLabel() };
+  `);
+  check("a new playlist joins the list before YouTube answers", () => {
+    assert.match(draft.during.text, /Road Trip\s*Private\s*Saved/);
+    assert.equal(draft.during.input, "");
+  });
+  check("…cannot be opened while it has no YouTube id", () => assert.equal(draft.openedDraft, 0));
+  check("…and becomes an ordinary saved, undoable row once it does", () => {
+    assert.match(draft.after, /Road Trip\s*Private\s*Saved/);
+    assert.equal(draft.undo, "Undo save to Road Trip");
+  });
+  await run("window.__sheet.destroy(); return null;");
+
+  // Last on purpose: the harness's attachShadow hook points window.__shadow at
+  // whatever root was attached most recently, and the toast attaches its own.
+  const afterClose = await run(`
+    let fail, n = 0;
+    window.__reopen(window.__three(), {
+      onPick: () => (++n === 1 ? new Promise((_, rej) => { fail = rej; }) : Promise.resolve()),
+    });
+    await new Promise((r) => setTimeout(r, 60));
+    window.__shadow.querySelector('[aria-label="Alpha"]').click();
+    await window.h.key('Escape');
+    fail(Object.assign(new Error('x'), { userMessage: 'You’re offline.' }));
+    await new Promise((r) => setTimeout(r, 60));
+    const t = document.querySelector('pls-toast');
+    const root = t && t.shadowRoot;
+    const first = { present: !!t, text: root && root.textContent, onHtml: !!t && t.parentElement === document.documentElement,
+      role: root && root.querySelector('.toast').getAttribute('role'), open: !!root && root.querySelector('.toast').matches(':popover-open') };
+    root.querySelector('button').click();
+    await new Promise((r) => setTimeout(r, 60));
+    const all = document.querySelectorAll('pls-toast');
+    return { first, retried: n, then: all[all.length - 1].shadowRoot.textContent };
+  `);
+  check("a save that fails after the sheet has closed still says so, in a toast", () => {
+    assert.equal(afterClose.first.present, true);
+    assert.match(afterClose.first.text, /Couldn’t save to “Alpha”\. You’re offline\./);
+    assert.match(afterClose.first.text, /Try again/);
+    assert.equal(afterClose.first.role, "alert");
+    assert.equal(afterClose.first.open, true, "the toast must sit in the top layer, above YouTube");
+    assert.equal(afterClose.first.onHtml, true, "like the sheet, it lives outside YouTube's tree");
+  });
+  check("…and Try again retries the save and reports the result", () => {
+    assert.equal(afterClose.retried, 2);
+    assert.match(afterClose.then, /Saved to “Alpha”/);
+  });
 
   // ── 11. Nothing threw along the way ───────────────────────────────────────
   const final = await run("return { errors: window.__errors };");

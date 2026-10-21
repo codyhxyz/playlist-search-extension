@@ -14,6 +14,7 @@ This extension replaces that picker with a searchable one covering **every** pla
 - **Shows what's already saved**, and is honest about what it can't know: past 200 playlists YouTube reports membership to nobody, so those rows are drawn unmarked rather than claimed as "not in".
 - **Brand-channel accounts work.** If your playlists live on a channel rather than your personal account, the extension acts as that channel.
 - **Search by words, in any order**, ignoring case and accents. Rows show each playlist's video count.
+- **Instant saves.** A save shows as done the moment you click, and rolls back with the reason if YouTube refuses it.
 - **Undo** any save from the footer. Create playlists as Private, Unlisted or Public.
 - **Open a playlist** with Ctrl/⌘-click, middle-click, or Ctrl/⌘+Enter.
 - Light and dark, keyboard-driven, no third-party code.

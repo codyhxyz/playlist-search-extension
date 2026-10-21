@@ -30,8 +30,16 @@ import { YOUTUBE_ORIGIN, hasYouTubePermission, touchesYouTube } from "./onboardi
   const siteAccessHelp = "In Chrome’s Extensions → YouTube Playlist Search → Site access, allow access to www.youtube.com.";
 
   function setStatus(text, error = false) {
+    const changed = status.textContent !== text;
     status.textContent = text;
     status.dataset.state = error ? "err" : "";
+    // A new line arrives rather than replacing the old one in place.
+    if (changed && text) {
+      status.animate?.(reducedMotion.matches
+        ? [{ opacity: 0 }, { opacity: 1 }]
+        : [{ opacity: 0, translate: "0 4px" }, { opacity: 1, translate: "0 0" }],
+      { duration: 200, easing: "cubic-bezier(0.2, 0, 0, 1)" });
+    }
   }
 
   function render(next, message = "") {

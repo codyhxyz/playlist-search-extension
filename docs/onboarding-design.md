@@ -23,6 +23,8 @@ The layout keeps 16px body text, the 72px logo, and full-size action buttons.
 Narrow windows stack naturally. Expanded recovery notices remain scrollable
 rather than being clipped to force a one-screen layout.
 
+On load the page arrives in stages, 100ms apart: header, headline, description, Open YouTube, recording, then shortcuts and help. Each fades in with 4px of blur and a 12px rise over 300ms. Reduced motion keeps only the fade. `main` clips overflow so a section mid-rise never makes the page scrollable. Buttons scale to 0.96 when pressed, and hover styles apply only on hover-capable pointers.
+
 The permission/registration controller, race guards, direct-gesture recovery,
 retry, live status, and fresh-tab action are unchanged. Version comes from
 `chrome.runtime.getManifest().version`, with an arbitrary-version regression.
