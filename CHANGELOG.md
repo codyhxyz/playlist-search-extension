@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.10
+
+- **Saves are instant.** A save, removal, Undo, or new playlist shows as done the moment you click. If YouTube rejects it, the row rolls back and the footer says why. Screen readers still hear "saving" until YouTube confirms.
+- **Undo works straight away.** Undo is available as soon as you save. If the save is still in flight, the undo waits for it rather than racing it to YouTube.
+- **Failures after closing are reported.** A save that fails after the sheet has closed appears as a YouTube-style notice at the bottom left, with Try again.
+- **Smoother motion throughout.** The sheet eases in and out. Bookmarks cross-fade when a row's state changes, and rows glide to their new place when the order changes. The sheet's height eases as a search narrows, the footer opens out of the sheet's bottom edge, and pressed buttons give a little. The welcome page arrives in stages. Values follow the `better-ui` skill from jakubkrehel/skills.
+- **Reduced motion respected.** With reduced motion turned on, every movement, scale, and blur becomes a plain fade.
+- **Steadier layout.** The search field no longer jumps down when the video's name loads late, and the row you just saved stays in view when the footer opens.
+- No new permissions, data collection, or third-party code.
+- Automated unit, bundle, and browser UI checks passed. Signed-out live YouTube checks passed; a live signed-in save was not tested.
+
 ## 2.0.9
 
 - **Onboarding uses the real product assets.** The existing logo and recorded demo replace the recreated interface and tutorial text.
