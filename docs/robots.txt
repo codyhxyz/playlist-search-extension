@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://playlist.codyh.xyz/sitemap.xml
