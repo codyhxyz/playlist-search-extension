@@ -1,8 +1,8 @@
 # YouTube Playlist Search
 
-YouTube's "Save to playlist" picker has no search, and it loads at most 200 playlists. If you have more than that, the rest are simply not reachable from it — not scrolled past, not paginated, *absent*. YouTube's own client is equally blind: for a video whose only playlist sits outside that window, YouTube's popover shows every row unchecked and doesn't list the playlist at all.
+YouTube's "Save to playlist" picker has no search, and it loads at most 200 playlists. If you have more than that, the rest are not reachable from it at all: not scrolled past, not paginated, *absent*. YouTube's own client is equally blind. For a video whose only playlist sits outside that window, YouTube's popover shows every row unchecked and doesn't list the playlist.
 
-This extension replaces that picker with a searchable one covering **every** playlist you own.
+This extension opens a searchable picker covering **every** playlist you own, in front of YouTube's.
 
 ![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-YouTube%20Playlist%20Search-blue) ![License](https://img.shields.io/badge/license-AGPL--3.0-green)
 
@@ -10,28 +10,44 @@ This extension replaces that picker with a searchable one covering **every** pla
 
 - **Search every playlist you own.** The library comes from an endpoint that isn't capped, so the 200 ceiling doesn't apply. Type to narrow; with hundreds of playlists you type rather than scroll.
 - **Works from every save surface.** The watch page, the home feed `⋮`, search results, channel pages, the watch sidebar, subscriptions, history, playlist rows.
-- **Three ways in that don't depend on YouTube's page at all** — the toolbar icon, right-click on any video link, and `Alt`+`S`. These use only the URL, so they survive any YouTube redesign, and they're the only way to save a Short (which has no Save button of its own).
-- **Shows what's already saved**, and is honest about what it can't know: past 200 playlists YouTube reports membership to nobody, so those rows are drawn unmarked rather than claimed as "not in".
+- **Ways in that don't depend on YouTube's page:** the toolbar icon, right-click on a video link or a watch page, and `Alt`+`S`. These use only the URL, so they survive a YouTube redesign, and they're the only way to save a Short (which has no Save button of its own).
+- **Find a playlist** with `Alt`+`P`, or the toolbar icon on a YouTube page with no video. Same picker; choosing a row opens the playlist.
+- **Shows what's already saved.** YouTube reports membership for 200 playlists. The rest are checked in the background by reading each playlist, and rows gain their "already in" mark as answers arrive.
 - **Brand-channel accounts work.** If your playlists live on a channel rather than your personal account, the extension acts as that channel.
-- **Search by words, in any order**, ignoring case and accents. Rows show each playlist's video count.
-- **Instant saves.** A save shows as done the moment you click, and rolls back with the reason if YouTube refuses it.
-- **Undo** any save from the footer. Create playlists as Private, Unlisted or Public.
-- **Open a playlist** with Ctrl/⌘-click, middle-click, or Ctrl/⌘+Enter.
-- Light and dark, keyboard-driven, no third-party code.
+- **Search by words, in any order**, ignoring case and accents. Rows show each playlist's privacy and video count.
+- **Sort** by YouTube's recent order, A to Z, or Z to A.
+- **Instant saves.** A save shows as done the moment you click, and rolls back with the reason if YouTube refuses it. A save that fails after the picker has closed is reported with Try again.
+- **Undo** any save from the footer, or with `Ctrl`/`⌘`+`Z` while the search field is empty. Create playlists as Private, Unlisted or Public.
+- **Open a playlist** with `Ctrl`/`⌘`-click, middle-click, or `Ctrl`/`⌘`+`Enter`.
+- **Opens instantly.** The last playlist list is kept in memory and refreshed in the background on every open.
+- **One review request, ever.** After regular use, a confirmed save can show a small "Rate extension" prompt. It never asks again, whether you rate, dismiss, or close it.
+- Light and dark, keyboard-driven, respects reduced motion, no third-party code.
 
 ## The one rule
 
-> **It never reads data from YouTube's DOM, and never writes a node into YouTube's DOM.**
+> **It never reads playlist data from YouTube's DOM, and never writes a node into YouTube's app.**
 
-Version 1.x did both, and every recurring bug traced back to it: a search bar appearing inside unrelated menus, lists changing length on their own, having to close and reopen the dialog to recover, breaking every few weeks. Those weren't separate bugs — they were one decision with several symptoms.
+Version 1.x did both, and every recurring bug traced back to it: a search bar appearing inside unrelated menus, lists changing length on their own, having to close and reopen the dialog to recover, breaking every few weeks. Those weren't separate bugs. They were one decision with several symptoms.
 
-So 2.0.0 doesn't mitigate them, it deletes the possibility. The UI is drawn in a closed shadow root attached outside YouTube's app tree; the data comes from YouTube's own JSON API rather than from rendered markup; and the trigger is YouTube's own network request rather than a guess based on class names. The remaining contact with YouTube's page is a single synthetic `Escape` keypress to dismiss their dialog, and if that ever stops working the failure is cosmetic.
+So 2.0 doesn't mitigate them, it removes the possibility:
 
-When something does break, the extension **fails closed** — it says it couldn't load your playlists and does nothing. There is deliberately no fallback to reading the page, because that fallback is the disease, not the cure.
+- **UI:** a closed shadow root attached to `<html>`, outside YouTube's app tree.
+- **Data:** YouTube's own InnerTube JSON API, not rendered markup.
+- **Trigger:** YouTube's own network request, not a guess based on class names.
+
+What's left of contact with YouTube's page:
+
+- A script in the page's `MAIN` world wraps `fetch` and XHR to observe the Save request. It reads a clone of the body and always passes the original through.
+- The InnerTube session config (`ytcfg`) is read from the page's script text. It's the config blob YouTube's own client reads, not rendered markup.
+- `yt-navigate-finish` and `popstate` listeners close the picker when you navigate.
+
+YouTube's own Save popup still opens underneath. The picker's blurred backdrop hides it. (Dismissing it with a synthetic `Escape` was removed in 2.0.2.)
+
+When something breaks, the extension **fails closed**. If it can't tell which video you meant, it does nothing and logs why. If your playlists can't load, the picker says so. There is deliberately no fallback to reading the page, because that fallback is the disease, not the cure.
 
 ## Install
 
-Available on the [Chrome Web Store](https://chromewebstore.google.com/) (search "YouTube Playlist Search"), or load it locally:
+Available on the [Chrome Web Store](https://chromewebstore.google.com/detail/efgbkmnooapcpdpgmihemfpedchhmmek), or load it locally:
 
 ```bash
 git clone https://github.com/codyhxyz/playlist-search-extension.git
@@ -46,12 +62,11 @@ Then in Chrome:
 2. Enable **Developer mode** (top right)
 3. Click **Load unpacked** and select the `src/` folder
 
-The build step is what Chrome actually injects — skip it and the extension fails to register its content scripts (loudly: it writes an actionable error to the service-worker console). `src/content.bundle.js` is gitignored, so every clone builds its own.
+The build step produces what Chrome actually injects. Skip it and the extension fails to register its content scripts, loudly: it writes an actionable error to the service-worker console. `src/content.bundle.js` is gitignored, so every clone builds its own.
 
 Requires Chrome 123 or later.
 
-Chrome requests access to `www.youtube.com` during installation because the extension runs there.
-There is no separate permission step on the welcome page.
+Chrome requests access to `www.youtube.com` during installation. The welcome page is a short guide, not a permission step; it only asks for access if Chrome's site controls are blocking the extension.
 If YouTube was already open, reload that tab or open a fresh YouTube tab before using the extension.
 
 ## How it works
@@ -60,18 +75,22 @@ Four layers, dependencies pointing one way:
 
 | | |
 |---|---|
-| **Intent** | A `MAIN`-world script watches two YouTube API paths. When YouTube's own client POSTs `get_panel` with `panelId: "PAadd_to_playlist"`, the user has asked to save something — that's a behavioural fact rather than a structural guess. Plus three URL-only entry points that need nothing from the page. |
-| **Data** | A hand-rolled InnerTube client, ~300 lines, same-origin from the YouTube tab using your existing session. Three endpoints: list the library, read membership, add/remove. |
-| **Session** | Created on intent, destroyed on close. Nothing outlives the sheet — which is a one-line answer to "why did I have to close and reopen it". |
+| **Intent** | A `MAIN`-world script watches two YouTube API paths, `get_panel` and `playlist/get_add_to_playlist`. When YouTube's own client asks for the add-to-playlist panel, the user has asked to save something: a behavioural fact rather than a structural guess. Other uses of `get_panel`, like the Ask panel, are ignored. The toolbar icon, right-click menu, and keyboard shortcuts are URL-only entry points that need nothing from the page. |
+| **Data** | A hand-rolled InnerTube client, same-origin from the YouTube tab using your existing session. It lists the library, reads membership, adds and removes videos, and creates playlists. |
+| **Session** | Created on intent, destroyed on close or navigation. Membership is fetched fresh on every open. Only the playlist list is cached, in memory, so the next open is instant. |
 | **UI** | A closed shadow root on `<html>`, a `<dialog>` in the browser's top layer, styles via `adoptedStyleSheets`, nodes built with `createElement` and never `innerHTML`. It knows nothing about YouTube; hand it a list and it renders one. |
 
-Full write-up in [`architecture/overview.md`](architecture/overview.md), and an honest per-surface status matrix — including what's verified, what's known broken, and what has never been tested — in [`architecture/coverage.md`](architecture/coverage.md).
+Full write-up in [`architecture/overview.md`](architecture/overview.md), and a per-surface status matrix (what's verified, what's known broken, what has never been tested) in [`architecture/coverage.md`](architecture/coverage.md).
 
 ## Privacy
 
-The extension talks only to `youtube.com`, using the session you already have, and never to the developer or any third party. It ships no third-party code and stores nothing about your playlists — only two display preferences (sort order, and the privacy new playlists are created with).
+The extension talks only to YouTube, using the session you already have, and never to the developer or any third party. It ships no third-party code.
 
-The one thing worth reading about is how it detects that you clicked Save: it observes YouTube's own request for that action, from a script running in the page. That's a real tradeoff and it's described in full — including why the less invasive approach doesn't work — in the [privacy policy](https://playlist.codyh.xyz/privacy-policy.html).
+On disk it stores two display preferences (sort order, and the privacy new playlists are created with) and local counters for the one-time review request. The counters hold no video, playlist, or account identifiers. Your last playlist list (titles, counts, privacy, thumbnails, YouTube's order) is kept in `chrome.storage.session`, which is memory-only and cleared when the browser quits. It never stores which videos are in which playlist, or your searches.
+
+The review request appears after a confirmed save, once you have made at least five successful saves across three days and seven days have passed since the first. Failed saves, already-present videos, removals, and Undo do not count. It does not replace Undo or move focus, and the reviews page opens only when you click "Rate extension".
+
+The one thing worth reading about is how it detects that you clicked Save: it observes YouTube's own request for that action, from a script running in the page. That's a real tradeoff, and the [privacy policy](https://playlist.codyh.xyz/privacy-policy.html) describes it in full, including why the less invasive approach doesn't work.
 
 ## Contributing
 
