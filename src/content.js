@@ -25,9 +25,9 @@ import {
 /** @type {{ sheet: ReturnType<typeof createSheet>, videoId: string | null } | null} */
 let plsCurrent = null;
 // Two display preferences, remembered across page loads: the sort order and the
-// privacy new playlists are created with. They are the only things this extension
-// writes to disk — two enum strings, no playlist ids, titles or queries — and
-// PRIVACY.md lists them by name. (The library cache below lives in memory only.)
+// privacy new playlists are created with. No playlist ids, titles or queries.
+// PRIVACY.md also lists the worker's local-only review-prompt counters.
+// (The library cache below lives in memory only.)
 // Read once at startup; a sheet opened in the few milliseconds before the read
 // lands just gets the defaults.
 const PLS_PREFS_KEY = 'plsPrefs';
@@ -246,12 +246,27 @@ async function plsHandleIntent(videoId, source) {
     });
 
   const openUrl = (p) => `https://www.youtube.com/playlist?list=${encodeURIComponent(p.id)}`;
+  // Never await review bookkeeping in a save's success path. Storage failure
+  // must not turn a successful YouTube write into a failed save.
+  const onSaved = () => {
+    void (async () => {
+      const r = await chrome.runtime.sendMessage({ type: 'REVIEW_SAVE' });
+      if (!r?.eligible || document.visibilityState !== 'visible' || !sheet.canOfferReview) return;
+      const claim = await chrome.runtime.sendMessage({ type: 'REVIEW_CLAIM' });
+      if (claim?.eligible && document.visibilityState === 'visible') {
+        sheet.offerReview(() => {
+          window.open('https://chromewebstore.google.com/detail/efgbkmnooapcpdpgmihemfpedchhmmek/reviews', '_blank', 'noopener');
+        });
+      }
+    })().catch((e) => console.warn('[pls] skipping review prompt', e));
+  };
   const sheet = createSheet({
     videoId: videoId ?? undefined,
     sort: plsPrefs.sort,
     onSort: (mode) => plsSavePref('sort', mode),
     privacy: plsPrefs.privacy,
     onPrivacy: (privacy) => plsSavePref('privacy', privacy),
+    onSaved,
     onPick: finding ? undefined : async (p) => {
       // A row drawn from the cache before membership landed has `member`
       // undefined. If YouTube says the video is already there, adding would put

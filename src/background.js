@@ -21,8 +21,10 @@
 
 import { YOUTUBE_ORIGIN, hasYouTubePermission, touchesYouTube } from './onboarding-state.js';
 import { isAddToPlaylist, resolveVideoId, videoIdFromUrl } from './lib/intent.js';
+import { createReviewTracker } from './lib/review.js';
 
 const DEDUPE_MS = 1500;
+const review = createReviewTracker(chrome.storage.local);
 
 /** `${tabId}:${videoId}` -> timestamp, so one click can't open two sheets. */
 const recent = new Map();
@@ -246,6 +248,21 @@ const isYouTube = (url) => typeof url === 'string' && url.startsWith('https://ww
 // Primary. This is the only path that can read YouTube's request bodies.
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type === 'REVIEW_SAVE' || msg?.type === 'REVIEW_CLAIM') {
+    // Only our top-frame YouTube content script may record use; the MAIN-world
+    // hook relay accepts PANEL_REQUEST only and cannot forward these messages.
+    if (sender.id !== chrome.runtime.id || sender.frameId !== 0 || !isYouTube(sender.url) || !sender.tab) {
+      return false;
+    }
+    review(msg.type === 'REVIEW_SAVE' ? 'save' : 'claim').then(
+      (eligible) => sendResponse({ eligible }),
+      (e) => {
+        console.warn('[pls][sw] review state unavailable — skipping prompt', e);
+        sendResponse({ eligible: false });
+      },
+    );
+    return true;
+  }
   // — welcome page —
   if (msg?.type === 'permissionGranted') {
     // Always answer. reconcileContentScripts() rethrows on a registration

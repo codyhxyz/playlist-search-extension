@@ -263,7 +263,7 @@ input::placeholder { color: var(--fg-2); }
 .readout:empty { display: none; }
 
 /* ── buttons: button-shape-next, mono ──────────────────────────────────────── */
-.sort, .priv, .confirm button, .undo {
+.sort, .priv, .confirm button, .undo, .review-button {
   all: initial; box-sizing: border-box; flex: none;
   display: inline-flex; align-items: center; justify-content: center;
   height: 32px; padding: 0 12px; border-radius: 16px;       /* size S */
@@ -274,27 +274,30 @@ input::placeholder { color: var(--fg-2); }
 .sort { grid-area: sort; margin: 12px 8px 0 0; }
 .sort svg.i, .priv svg.i { width: 16px; height: 16px; margin: 0 4px 0 -4px; }
 .confirm .danger { background-color: var(--filled); color: var(--on-filled); } /* filled */
-.undo { color: var(--cta); }
+.undo, .review-button:first-child { color: var(--cta); }
+.review-prompt { flex: none; padding: 12px 16px; border-top: 1px solid var(--line); }
+.review-prompt p { margin: 0; color: var(--fg-2); }
+.review-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 /* Hover only where there is a pointer that hovers: on touch, :hover latches
    after a tap and reads as a stuck selection. */
 @media (hover: hover) {
   .sort:hover, .priv:hover { background-color: var(--tonal-hov); }
-  .confirm button:hover, .undo:hover { background-color: var(--line); } /* text */
+  .confirm button:hover, .undo:hover, .review-button:hover { background-color: var(--line); } /* text */
   .confirm .danger:hover { background-color: var(--filled-hov); }
 }
 /* Every pill and the close button: the wash eases, and a press scales to .96
    over 150ms. Never while disabled or busy. */
-:is(.x, .sort, .priv, .confirm button, .undo, .new-btn, .create-btn) {
+:is(.x, .sort, .priv, .confirm button, .undo, .new-btn, .create-btn, .review-button) {
   transition-property: scale, background-color;
   transition-duration: 150ms; transition-timing-function: ease-out;
   -webkit-tap-highlight-color: transparent;
 }
 @media (prefers-reduced-motion: no-preference) {
-  :is(.x, .sort, .priv, .confirm button, .undo, .new-btn, .create-btn):not(:disabled, .busy):active { scale: .96; }
+  :is(.x, .sort, .priv, .confirm button, .undo, .new-btn, .create-btn, .review-button):not(:disabled, .busy):active { scale: .96; }
 }
 /* Focus rings: pills wear theirs outside; the full-bleed list items and the
    round close button wear theirs inset, where nothing clips it. */
-:is(.sort, .priv, .confirm button, .undo, .new-btn, .create-btn):focus-visible {
+:is(.sort, .priv, .confirm button, .undo, .new-btn, .create-btn, .review-button):focus-visible {
   outline: 2px solid var(--fg); outline-offset: 2px;
 }
 :is(.x, .row, .create-action):focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
@@ -860,6 +863,7 @@ function plsOrder(rows, sortIdx, q, isIn = (p) => p.member === true) {
  *                                           video turned out to be in it already
  * @param {(p: any) => Promise<any>} [opts.onRemove]
  * @param {() => void} [opts.onClose]        fires exactly once
+ * @param {() => void} [opts.onSaved]        confirmed new save, not Undo or already-present
  * @param {(title: string, privacy: string) => Promise<any>} [opts.onCreate]
  * @param {string} [opts.sort]               initial ordering: recent (default) | match | az | za
  * @param {(id: string) => void} [opts.onSort]  fires when the user changes it
@@ -869,7 +873,7 @@ function plsOrder(rows, sortIdx, q, isIn = (p) => p.member === true) {
  *                                           Ctrl/⌘+Enter on a row (newTab); any pick in a finder
  */
 export function createSheet({
-  videoId, videoTitle, onPick, onRemove, onCreate, onClose, sort, onSort, privacy, onPrivacy, onOpen,
+  videoId, videoTitle, onPick, onRemove, onCreate, onClose, sort, onSort, privacy, onPrivacy, onOpen, onSaved,
 }) {
   const finding = !onPick;
   if (finding) { onRemove = undefined; onCreate = undefined; }
@@ -1048,7 +1052,20 @@ export function createSheet({
   const pfoot = plsEl('div', 'pfoot');
   if (newBtn) pfoot.append(newBtn);
 
-  dlg.append(head, list, foot, ...(newBtn ? [pfoot] : []));
+  const reviewPrompt = plsEl('section', 'review-prompt');
+  reviewPrompt.hidden = true;
+  reviewPrompt.setAttribute('aria-label', 'Rate YouTube Playlist Search');
+  const reviewText = plsEl('p', null, 'Finding your playlists faster? Share an honest review of YouTube Playlist Search.');
+  const reviewActions = plsEl('div', 'review-actions');
+  const rateBtn = plsEl('button', 'review-button', 'Rate extension');
+  rateBtn.type = 'button';
+  const dismissReviewBtn = plsEl('button', 'review-button', 'No thanks');
+  dismissReviewBtn.type = 'button';
+  dismissReviewBtn.addEventListener('click', hideReview);
+  reviewActions.append(rateBtn, dismissReviewBtn);
+  reviewPrompt.append(reviewText, reviewActions);
+
+  dlg.append(head, list, foot, ...(newBtn ? [pfoot] : []), reviewPrompt);
   shadow.append(dlg);
   document.documentElement.append(host);
 
@@ -1089,6 +1106,21 @@ export function createSheet({
   // overwrite it for a while; a successful create or removal, or a cancelled
   // removal, puts it back.
   let restingStatus = '';
+  let reviewOffered = false;
+
+  function hideReview() {
+    if (reviewPrompt.contains(shadow.activeElement)) input.focus();
+    reviewPrompt.hidden = true;
+    sizeList();
+  }
+
+  function canOfferReview() {
+    return !finding && !dead && loaded && !creating && !armedRemove && !restingStatus && !reviewOffered &&
+      pressedPointer === null &&
+      reviewPrompt.hidden && ![...state.values()].some(
+        (s) => s === 'adding' || s === 'removing' || s === 'error' || s === 'remove-error',
+      );
+  }
 
   // ── Motion bookkeeping ────────────────────────────────────────────────────
   // Rows are rebuilt on every render, so nothing on a row can transition. What
@@ -1192,7 +1224,7 @@ export function createSheet({
     : null;
   // The list too: its own height eases after the footer settles, and that last
   // stretch can clip the row just as well.
-  for (const n of [head, list, foot, pfoot]) resized?.observe(n);
+  for (const n of [head, list, foot, pfoot, reviewPrompt]) resized?.observe(n);
   window.addEventListener('resize', sizeList);
 
   // Where each on-screen row is now, by playlist. Measured with transforms, so a
@@ -1617,6 +1649,7 @@ export function createSheet({
   async function create(title) {
     const name = (title || '').trim();
     if (!name || !onCreate || creating) return;
+    hideReview();
     cancelRemoval(false);
     creating = true;
     // Read once: the chip can be cycled while the request is in flight.
@@ -1652,6 +1685,7 @@ export function createSheet({
       }
       creating = false;
       render();
+      if (videoId) onSaved?.();
     } catch (e) {
       console.warn('[pls] create playlist failed', name, e);
       creating = false;
@@ -1689,6 +1723,7 @@ export function createSheet({
 
   function armRemoval(p) {
     if (armedRemove === p) return;
+    hideReview();
     armedRemove = p;
     if (confirmRemove.hidden) { confirmRemove.hidden = false; popIn(confirmRemove); }
     confirmRemoveBtn.setAttribute('aria-label', `Remove from ${p.title}`);
@@ -1701,6 +1736,7 @@ export function createSheet({
   // actually landed: if the write it undoes failed, there is nothing to undo.
   /** @param {any} p @param {PlsUndo | null} [cause] */
   async function remove(p, cause = null) {
+    hideReview();
     disarm();
     input.focus();
     const { id, title } = p;
@@ -1744,6 +1780,7 @@ export function createSheet({
 
   /** @param {any} p @param {PlsUndo | null} [cause] */
   async function add(p, cause = null) {
+    hideReview();
     cancelRemoval(false);
     const { id, title } = p;
     const op = {};
@@ -1772,6 +1809,9 @@ export function createSheet({
       // The caller found the video already there (its membership answer landed
       // after the sheet drew the row): nothing was written, so nothing to undo.
       if (r?.already) drop(entry);
+      // Undo restorations, already-present videos and saves already undone
+      // are not new successes. Count confirmed writes even if the sheet closed.
+      if (!r?.already && entry && undoStack.includes(entry)) onSaved?.();
       if (newest.get(id) !== op || dead) return;
       if (r?.already) {
         state.delete(id);
@@ -1939,12 +1979,23 @@ export function createSheet({
   sizeList();
 
   return {
+    get canOfferReview() { return canOfferReview(); },
+    /** @param {() => void} onReview */
+    offerReview: (onReview) => {
+      if (!canOfferReview()) return;
+      reviewOffered = true;
+      rateBtn.onclick = () => { hideReview(); onReview(); };
+      reviewPrompt.hidden = false;
+      sizeList();
+      // No focus movement, modal, timer, or unsolicited store tab.
+    },
     setTitle: (t) => { if (!dead) setTitle(t); },
     // The caller's status is the resting truth — the line a transient save
     // failure temporarily overwrites, and the one a successful retry restores.
     setStatus: (t) => {
       if (dead) return;
       restingStatus = t == null ? '' : String(t);
+      if (restingStatus) hideReview();
       setStatus(restingStatus);
     },
     // May be called more than once: a cached list first, then the fresh one. A later

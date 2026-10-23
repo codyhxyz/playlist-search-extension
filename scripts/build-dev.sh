@@ -35,6 +35,7 @@ cp -R \
   "$SRC_DIR/icons" \
   "$OUT_DIR/"
 cp "$SRC_DIR/lib/intent.js" "$OUT_DIR/lib/intent.js"
+cp "$SRC_DIR/lib/review.js" "$OUT_DIR/lib/review.js"
 
 SRC_DIR="$SRC_DIR" OUT_DIR="$OUT_DIR" node -e '
   const fs = require("fs");

@@ -1495,6 +1495,118 @@ try {
 
   // Last on purpose: the harness's attachShadow hook points window.__shadow at
   // whatever root was attached most recently, and the toast attaches its own.
+  console.log("\nReview request");
+  const review = await run(`
+    let finish;
+    window.__confirmed = 0;
+    window.__reviewClicks = 0;
+    window.__reopen(window.__three(), {
+      onPick: () => new Promise((resolve) => { finish = resolve; }),
+      onSaved: () => { window.__confirmed++; },
+    });
+    await new Promise((r) => setTimeout(r, 60));
+    window.__shadow.querySelector('[aria-label="Alpha"]').click();
+    const prompt = () => window.__shadow.querySelector('section[aria-label="Rate YouTube Playlist Search"]');
+    window.__sheet.offerReview(() => { window.__reviewClicks++; });
+    const pending = { count: window.__confirmed, hidden: prompt().hidden, eligible: window.__sheet.canOfferReview };
+    finish();
+    await new Promise((r) => setTimeout(r, 60));
+    window.__shadow.querySelector('input').focus();
+    const before = window.__shadow.activeElement;
+    window.__sheet.offerReview(() => { window.__reviewClicks++; });
+    const shown = { hidden: prompt().hidden, focusKept: before === window.__shadow.activeElement,
+      status: window.h.snapshot().statusText, undo: window.h.undoLabel(), count: window.__confirmed,
+      clicks: window.__reviewClicks };
+    const btn = Array.from(prompt().querySelectorAll('button')).find((b) => b.textContent === 'Rate extension');
+    btn.focus();
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, composed: true, cancelable: true });
+    const nativeActivation = btn.dispatchEvent(event);
+    btn.click();
+    const clicked = { count: window.__reviewClicks, hidden: prompt().hidden, eligible: window.__sheet.canOfferReview };
+    window.__sheet.offerReview(() => { window.__reviewClicks++; });
+    const repeated = !prompt().hidden;
+    window.__sheet.destroy();
+    return { pending, shown, clicked, repeated, nativeActivation };
+  `);
+  check("review requests never interrupt a pending save or count optimistic success", () => {
+    assert.deepEqual(review.pending, { count: 0, hidden: true, eligible: false });
+    assert.equal(review.shown.count, 1);
+  });
+  check("the inline review request preserves focus, save status and Undo", () => {
+    assert.equal(review.shown.hidden, false);
+    assert.equal(review.shown.focusKept, true);
+    assert.match(review.shown.status, /Saved to “Alpha”/);
+    assert.equal(review.shown.undo, "Undo save to Alpha");
+    assert.equal(review.shown.clicks, 0, "showing must not open a store tab");
+  });
+  check("only explicit activation opens reviews; keyboard activation is not swallowed", () => {
+    assert.equal(review.nativeActivation, true);
+    assert.deepEqual(review.clicked, { count: 1, hidden: true, eligible: false });
+    assert.equal(review.repeated, false);
+  });
+  const reviewEdges = await run(`
+    const prompt = () => window.__shadow.querySelector('section[aria-label="Rate YouTube Playlist Search"]');
+    window.__reopen(window.__three());
+    window.__sheet.setStatus('Couldn’t refresh your playlists.');
+    window.__sheet.offerReview(() => {});
+    const errorHidden = prompt().hidden;
+    window.__sheet.setStatus('');
+    await window.h.clickTitle('Bravo');
+    window.__sheet.offerReview(() => {});
+    const removalHidden = prompt().hidden;
+    window.__sheet.destroy();
+    window.__reopen(window.__three(), { onPick: undefined });
+    window.__sheet.offerReview(() => {});
+    const finderHidden = prompt().hidden;
+    window.__sheet.destroy();
+    window.__reopen(window.__three());
+    window.__sheet.offerReview(() => { window.__reviewClicks++; });
+    await window.h.clickControl('No thanks');
+    const dismissed = prompt().hidden && !window.__sheet.canOfferReview;
+    window.__sheet.destroy();
+    return { errorHidden, removalHidden, finderHidden, dismissed };
+  `);
+  check("errors, removal confirmation, finder mode and dismissal suppress requests", () => {
+    assert.deepEqual(reviewEdges, { errorHidden: true, removalHidden: true, finderHidden: true, dismissed: true });
+  });
+  const confirmations = await run(`
+    let fail, finish;
+    let count = 0;
+    window.__reopen(window.__three(), {
+      onPick: () => new Promise((resolve, reject) => { finish = resolve; fail = reject; }),
+      onSaved: () => { count++; },
+    });
+    window.__shadow.querySelector('[aria-label="Alpha"]').click();
+    fail(new Error('offline'));
+    await new Promise((r) => setTimeout(r, 40));
+    const failed = count;
+    await window.h.clickTitle('Alpha');
+    finish({ already: true });
+    await new Promise((r) => setTimeout(r, 40));
+    const already = count;
+    window.__sheet.destroy();
+    window.__reopen(window.__three(), {
+      onPick: () => new Promise((resolve) => { finish = resolve; }),
+      onSaved: () => { count++; },
+    });
+    window.__shadow.querySelector('[aria-label="Alpha"]').click();
+    await window.h.clickControl('Undo');
+    finish();
+    await new Promise((r) => setTimeout(r, 60));
+    const undone = count;
+    window.__sheet.destroy();
+    window.__reopen(window.__three(), { onSaved: () => { count++; } });
+    await window.h.type('New destination');
+    await window.h.key('Enter');
+    const created = count;
+    window.__sheet.destroy();
+    return { failed, already, undone, created };
+  `);
+  check("failed, already-present and undone saves do not count; new-playlist saves do", () => {
+    assert.deepEqual(confirmations, { failed: 0, already: 0, undone: 0, created: 1 });
+  });
+
+  // Last: the toast attaches its own shadow root.
   const afterClose = await run(`
     let fail, n = 0;
     window.__reopen(window.__three(), {

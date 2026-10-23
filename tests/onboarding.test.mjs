@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
+import { createReviewTracker } from '../src/lib/review.js';
 
 const origin = 'https://www.youtube.com/*';
 const manifest = JSON.parse(readFileSync(new URL('../src/manifest.json', import.meta.url), 'utf8'));
@@ -11,7 +12,7 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 function harness({ granted = false, existingWelcome = false } = {}) {
   const handlers = {};
-  const calls = { tabs: [], focused: [], windows: [], badges: [], titles: [], messages: [], registrations: [] };
+  const calls = { tabs: [], focused: [], windows: [], badges: [], titles: [], messages: [], registrations: [], local: {} };
   const event = (name) => ({ addListener: (fn) => { handlers[name] = fn; } });
   const chrome = {
     permissions: { onAdded: event('added'), onRemoved: event('removed') },
@@ -27,6 +28,7 @@ function harness({ granted = false, existingWelcome = false } = {}) {
       setTitle: async (value) => { calls.titles.push(value.title); },
     },
     runtime: {
+      id: 'test',
       getURL: (path) => `chrome-extension://test/${path}`,
       getManifest: () => ({ version: 'test' }),
       getContexts: async () => existingWelcome ? [{ tabId: 20, windowId: 4 }] : [],
@@ -50,7 +52,11 @@ function harness({ granted = false, existingWelcome = false } = {}) {
     },
     commands: { onCommand: event('command') },
     storage: {
-      local: { remove: async () => {} },
+      local: {
+        remove: async () => {},
+        get: async () => structuredClone(calls.local),
+        set: async (value) => { Object.assign(calls.local, value); },
+      },
       session: { setAccessLevel: async () => {} },
     },
   };
@@ -62,6 +68,7 @@ function harness({ granted = false, existingWelcome = false } = {}) {
     isAddToPlaylist: () => true,
     videoIdFromUrl: (url) => url?.includes('watch?v=') ? 'jNQXAC9IVRw' : null,
     resolveVideoId: () => ({ videoId: 'jNQXAC9IVRw', from: 'test' }),
+    createReviewTracker,
   });
   return { calls, handlers, setGranted: (value) => { granted = value; } };
 }
@@ -71,6 +78,23 @@ test('YouTube-only access is required at installation, with no optional host gra
   assert.equal(manifest.optional_host_permissions, undefined);
   assert.equal(manifest.permissions.includes('tabs'), false);
   assert.equal(manifest.permissions.includes('activeTab'), false);
+});
+
+test('only the extension’s top-frame YouTube content script can record review engagement', async () => {
+  const { calls, handlers } = harness();
+  const valid = { id: 'test', url: 'https://www.youtube.com/watch?v=jNQXAC9IVRw', frameId: 0, tab: { id: 1 } };
+  for (const sender of [
+    { ...valid, id: 'other' }, { ...valid, frameId: 1 },
+    { ...valid, url: 'https://www.youtube.com.evil.test/' }, { ...valid, tab: undefined },
+  ]) {
+    assert.equal(handlers.message({ type: 'REVIEW_SAVE' }, sender, () => assert.fail('untrusted sender replied')), false);
+  }
+  const response = await new Promise((resolve) => {
+    assert.equal(handlers.message({ type: 'REVIEW_SAVE' }, valid, resolve), true);
+  });
+  assert.equal(response.eligible, false);
+  assert.equal(calls.local.plsReview.saves, 1);
+  assert.equal(calls.tabs.length, 0);
 });
 
 test('a normal install registers scripts and saves without acknowledging the welcome page', async () => {

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.11
+
+- **One quiet review request after repeat use.** After five successful saves across three days and at least a week, a confirmed save can show a small prompt. It preserves Undo and keyboard focus.
+- "Rate extension" opens the Chrome Web Store reviews page on click. "No thanks" dismisses it. The extension asks at most once per local installation, without incentives or a required rating.
+- Local counters contain no video, playlist, or account identifiers. No new permissions, analytics, or third-party code.
+
 ## 2.0.10
 
 - **Saves are instant.** A save, removal, Undo, or new playlist shows as done the moment you click. If YouTube rejects it, the row rolls back and the footer says why. Screen readers still hear "saving" until YouTube confirms.

@@ -10,7 +10,7 @@ set -euo pipefail
 #
 # 2.0.0 layout: the extension is the save sheet and nothing else.
 #   background.js       module service worker; imports onboarding-state.js
-#                       and lib/intent.js at runtime, so BOTH must ship
+#                       and lib/{intent,review}.js at runtime, so all three ship
 #                       unbundled alongside it
 #   intent-hook.js      MAIN-world content script, no imports, ships as-is
 #   content.bundle.js   esbuild output of content.js + lib/{innertube,sheet}.js
@@ -30,7 +30,7 @@ echo "[build] Gate 1/4: esbuild bundle (src/content.js + src/lib/*.js → src/co
 
 echo "[build] Gate 2/4: node --check on every shipped script"
 for f in content.bundle.js background.js intent-hook.js onboarding-state.js welcome.js \
-         lib/intent.js lib/innertube.js lib/sheet.js; do
+         lib/intent.js lib/review.js lib/innertube.js lib/sheet.js; do
   node --check "$SRC_DIR/$f"
 done
 
@@ -62,12 +62,13 @@ cp -R \
   "$SRC_DIR/icons" \
   "$STAGE_DIR/"
 
-# lib/ ships too, but ONLY the module the service worker imports at runtime.
+# lib/ ships too, but ONLY the modules the service worker imports at runtime.
 # lib/innertube.js and lib/sheet.js are already inlined into content.bundle.js;
 # shipping them again would put two copies of the same code in front of a
 # reviewer for no benefit.
 mkdir -p "$STAGE_DIR/lib"
 cp "$SRC_DIR/lib/intent.js" "$STAGE_DIR/lib/intent.js"
+cp "$SRC_DIR/lib/review.js" "$STAGE_DIR/lib/review.js"
 
 cd "$STAGE_DIR"
 zip -r "$OUT" \
