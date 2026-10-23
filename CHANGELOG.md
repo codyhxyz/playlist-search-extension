@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.12
+
+- Store listing summary now names the keyboard shortcuts. No code changes.
+
 ## 2.0.11
 
 - **One quiet review request after repeat use.** After five successful saves across three days and at least a week, a confirmed save can show a small prompt. It preserves Undo and keyboard focus.
