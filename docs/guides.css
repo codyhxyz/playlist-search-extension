@@ -1,0 +1,214 @@
+/* Shared styles for the guide pages (find, add, limits).
+   Same palette and type as index.html, minus the parallax slabs. */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --yt-red: #FF0000;
+  --yt-dark-red: #CC0000;
+  --yt-bg: #0a0a0a;
+  --yt-surface: #181818;
+  --yt-text: #f1f1f1;
+  --yt-muted: rgba(255,255,255,0.62);
+  --yt-faint: rgba(255,255,255,0.38);
+  --yt-line: rgba(255,255,255,0.08);
+}
+
+html { scroll-behavior: smooth; overflow-x: hidden; }
+
+body {
+  background: var(--yt-bg);
+  background-image:
+    radial-gradient(ellipse at 10% 0%, rgba(255,0,0,0.09) 0%, transparent 45%),
+    radial-gradient(ellipse at 95% 40%, rgba(204,0,0,0.05) 0%, transparent 40%);
+  background-attachment: fixed;
+  font-family: 'Inter', system-ui, sans-serif;
+  color: var(--yt-text);
+  line-height: 1.7;
+  font-size: 17px;
+  overflow-x: hidden;
+}
+
+a { color: #ff5a5a; text-decoration: underline; text-decoration-color: rgba(255,90,90,0.35); text-underline-offset: 3px; }
+a:hover { color: var(--yt-text); text-decoration-color: var(--yt-text); }
+
+/* ── Top bar ── */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  max-width: 1080px; margin: 0 auto; padding: 20px 24px;
+}
+.brand { display: inline-flex; align-items: center; gap: 10px; color: var(--yt-text); text-decoration: none; font-weight: 700; font-size: 15px; }
+.brand img { width: 28px; height: 28px; border-radius: 6px; }
+.topbar .cta-sm {
+  display: inline-block; padding: 9px 18px; background: var(--yt-red); color: #fff;
+  font-size: 14px; font-weight: 700; border-radius: 8px; text-decoration: none;
+  transition: background 0.2s;
+}
+.topbar .cta-sm:hover { background: var(--yt-dark-red); color: #fff; }
+
+/* ── Article ── */
+main.article { max-width: 760px; margin: 0 auto; padding: 24px 24px 80px; }
+
+.crumbs { font-size: 13px; color: var(--yt-faint); margin-bottom: 18px; }
+.crumbs a { color: var(--yt-faint); text-decoration: none; }
+.crumbs a:hover { color: var(--yt-text); }
+
+.article h1 {
+  font-size: 44px; font-weight: 900; line-height: 1.1; letter-spacing: -1.5px;
+  margin-bottom: 16px;
+}
+.byline { font-size: 14px; color: var(--yt-faint); margin-bottom: 32px; }
+.byline a { color: var(--yt-muted); }
+
+.article h2 {
+  font-size: 28px; font-weight: 800; line-height: 1.25; letter-spacing: -0.5px;
+  margin: 56px 0 16px; scroll-margin-top: 24px;
+}
+.article h3 { font-size: 20px; font-weight: 700; line-height: 1.35; margin: 32px 0 10px; scroll-margin-top: 24px; }
+.article p { margin: 0 0 16px; color: rgba(255,255,255,0.86); }
+.article ul, .article ol { margin: 0 0 18px 24px; color: rgba(255,255,255,0.86); }
+.article li { margin: 6px 0; padding-left: 4px; }
+.article strong { color: var(--yt-text); }
+.article code { background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-size: 0.88em; }
+
+kbd {
+  display: inline-block; min-width: 22px; padding: 1px 7px; font: 600 0.82em/1.6 'Inter', system-ui, sans-serif;
+  color: var(--yt-text); background: #222; border: 1px solid #3a3a3a; border-bottom-width: 2px;
+  border-radius: 5px; text-align: center;
+}
+
+/* Direct answer box, first thing under the byline */
+.answer {
+  background: rgba(24,24,24,0.85); border: 1px solid var(--yt-line); border-left: 3px solid var(--yt-red);
+  border-radius: 12px; padding: 20px 24px; margin: 0 0 32px;
+}
+.answer .answer-label {
+  font-size: 11px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: var(--yt-red); margin-bottom: 8px;
+}
+.answer p:last-child, .answer ol:last-child, .answer ul:last-child { margin-bottom: 0; }
+
+/* Table of contents */
+.toc { border: 1px solid var(--yt-line); border-radius: 12px; padding: 18px 24px; margin: 0 0 8px; }
+.toc .toc-label { font-size: 12px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: var(--yt-faint); margin-bottom: 8px; }
+.toc ol { margin: 0 0 0 20px; }
+.toc li { margin: 4px 0; font-size: 15px; }
+.toc a { color: var(--yt-muted); text-decoration: none; }
+.toc a:hover { color: var(--yt-text); }
+
+/* Numbered steps */
+ol.steps { list-style: none; counter-reset: step; margin: 8px 0 24px; padding: 0; }
+ol.steps > li { counter-increment: step; position: relative; padding: 2px 0 2px 46px; margin: 0 0 14px; }
+ol.steps > li::before {
+  content: counter(step); position: absolute; left: 0; top: 2px;
+  width: 30px; height: 30px; border-radius: 50%;
+  background: rgba(255,0,0,0.14); border: 1px solid rgba(255,0,0,0.45); color: #ff6b6b;
+  font-weight: 800; font-size: 14px; display: flex; align-items: center; justify-content: center;
+}
+
+/* Device tag next to a heading, e.g. "Desktop" */
+.tag {
+  display: inline-block; vertical-align: middle; margin-left: 8px; padding: 2px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
+  color: var(--yt-muted); border: 1px solid var(--yt-line); background: rgba(255,255,255,0.03);
+}
+
+/* Product callout: use at most twice per guide */
+.callout {
+  display: flex; gap: 20px; align-items: center;
+  background: linear-gradient(135deg, rgba(255,0,0,0.12), rgba(255,0,0,0.03));
+  border: 1px solid rgba(255,0,0,0.35); border-radius: 14px; padding: 22px 24px; margin: 32px 0;
+}
+.callout img { width: 48px; height: 48px; border-radius: 10px; flex-shrink: 0; }
+.callout .callout-body p { margin: 0 0 12px; }
+.callout .callout-title { font-weight: 800; font-size: 17px; margin-bottom: 4px; color: var(--yt-text); }
+.callout .cta-sm {
+  display: inline-block; padding: 9px 18px; background: var(--yt-red); color: #fff; font-size: 14px; font-weight: 700;
+  border-radius: 8px; text-decoration: none;
+}
+.callout .cta-sm:hover { background: var(--yt-dark-red); color: #fff; }
+
+/* Plain note / warning */
+.note {
+  background: rgba(255,255,255,0.03); border: 1px solid var(--yt-line); border-radius: 10px;
+  padding: 14px 18px; margin: 0 0 20px; font-size: 15px; color: var(--yt-muted);
+}
+.note strong { color: var(--yt-text); }
+
+/* Tables */
+.table-wrap { overflow-x: auto; margin: 8px 0 24px; border: 1px solid var(--yt-line); border-radius: 12px; }
+table { width: 100%; border-collapse: collapse; font-size: 15px; }
+th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--yt-line); vertical-align: top; }
+th { font-size: 12px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--yt-faint); background: rgba(255,255,255,0.02); }
+tr:last-child td { border-bottom: none; }
+td strong { white-space: nowrap; }
+
+/* UI mockup figure: a drawn YouTube Save sheet, never a real screenshot */
+figure.ui { margin: 24px 0 32px; }
+figure.ui figcaption { font-size: 13px; color: var(--yt-faint); margin-top: 10px; text-align: center; }
+.sheet {
+  width: min(380px, 100%); margin: 0 auto; background: rgba(24,24,24,0.95); border: 1px solid var(--yt-line);
+  border-radius: 14px; box-shadow: 0 18px 60px rgba(0,0,0,0.55); overflow: hidden; font-size: 14px; line-height: 1.4;
+}
+.sheet-head { padding: 14px 18px 10px; font-weight: 600; border-bottom: 1px solid var(--yt-line); }
+.sheet-search { padding: 10px 14px 6px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.sheet-search .field {
+  height: 34px; border: 1px solid rgba(255,0,0,0.45); border-radius: 17px; padding: 0 14px;
+  display: flex; align-items: center; color: var(--yt-text); background: rgba(255,255,255,0.04);
+}
+.sheet-search .meta { font-size: 11px; color: var(--yt-faint); margin-top: 5px; }
+.sheet-row { display: flex; align-items: center; gap: 12px; padding: 9px 18px; }
+.sheet-row .box { width: 16px; height: 16px; border: 2px solid #555; border-radius: 3px; flex-shrink: 0; position: relative; }
+.sheet-row .box.on { background: var(--yt-red); border-color: var(--yt-red); }
+.sheet-row .box.on::after { content: '\2713'; color: #fff; font-size: 10px; position: absolute; top: -1px; left: 2px; }
+.sheet-row .muted { color: var(--yt-faint); margin-left: auto; font-size: 12px; }
+.sheet-row.fade { opacity: 0.35; }
+.sheet-row mark { background: rgba(255,0,0,0.22); color: var(--yt-text); border-radius: 2px; padding: 0 2px; }
+.sheet-foot { padding: 10px 18px 14px; color: var(--yt-muted); border-top: 1px solid var(--yt-line); font-size: 13px; }
+
+/* FAQ */
+.faq details { border-bottom: 1px solid var(--yt-line); }
+.faq details:first-of-type { border-top: 1px solid var(--yt-line); }
+.faq summary {
+  cursor: pointer; list-style: none; padding: 18px 36px 18px 0; position: relative;
+  font-weight: 700; font-size: 17px; color: var(--yt-text);
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after {
+  content: '+'; position: absolute; right: 4px; top: 14px; font-size: 24px; font-weight: 400; color: var(--yt-faint);
+  transition: transform 0.2s;
+}
+.faq details[open] summary::after { transform: rotate(45deg); }
+.faq details > div { padding: 0 0 18px; }
+.faq details > div p:last-child { margin-bottom: 0; }
+
+/* Related guides */
+.related { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin: 16px 0 0; }
+.related a {
+  display: block; padding: 18px 20px; border: 1px solid var(--yt-line); border-radius: 12px; text-decoration: none;
+  color: var(--yt-text); background: rgba(24,24,24,0.6); transition: border-color 0.2s;
+}
+.related a:hover { border-color: rgba(255,0,0,0.45); }
+.related .rel-title { font-weight: 700; font-size: 16px; margin-bottom: 4px; line-height: 1.35; }
+.related .rel-desc { font-size: 14px; color: var(--yt-muted); line-height: 1.5; }
+
+/* ── Footer (same as index.html) ── */
+footer {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  max-width: 1080px; margin: 0 auto; padding: 24px; border-top: 1px solid var(--yt-line);
+}
+.footer-links { display: flex; gap: 24px; flex-wrap: wrap; }
+footer a { color: rgba(255,255,255,0.35); text-decoration: none; font-size: 13px; }
+footer a:hover { color: var(--yt-text); }
+.built-by { font-size: 13px; color: rgba(255,255,255,0.2); }
+.built-by a { color: rgba(255,255,255,0.35); }
+
+@media (max-width: 600px) {
+  body { font-size: 16px; }
+  .topbar { padding: 16px; }
+  main.article { padding: 12px 16px 60px; }
+  .article h1 { font-size: 32px; letter-spacing: -1px; }
+  .article h2 { font-size: 23px; margin-top: 44px; }
+  .article h3 { font-size: 18px; }
+  .callout { flex-direction: column; align-items: flex-start; }
+  th, td { padding: 10px 12px; }
+  footer { flex-direction: column; text-align: center; padding: 24px 16px; }
+}

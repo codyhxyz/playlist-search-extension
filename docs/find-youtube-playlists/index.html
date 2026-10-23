@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Find Your Playlists on YouTube (and Missing Ones)</title>
+<meta name="description" content="Your YouTube playlists live in the You tab or at youtube.com/feed/playlists. Steps for desktop, phone and YouTube Music, plus why a playlist goes missing.">
+<link rel="canonical" href="https://playlist.codyh.xyz/find-youtube-playlists/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="YouTube Playlist Search">
+<meta property="og:title" content="How to Find Your Playlists on YouTube (and Missing Ones)">
+<meta property="og:description" content="Your YouTube playlists live in the You tab or at youtube.com/feed/playlists. Steps for desktop, phone and YouTube Music, plus why a playlist goes missing.">
+<meta property="og:url" content="https://playlist.codyh.xyz/find-youtube-playlists/">
+<meta property="og:image" content="https://playlist.codyh.xyz/og-website-preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="How to Find Your Playlists on YouTube (and Missing Ones)">
+<meta name="twitter:description" content="Your YouTube playlists live in the You tab or at youtube.com/feed/playlists. Steps for desktop, phone and YouTube Music, plus why a playlist goes missing.">
+<meta name="twitter:image" content="https://playlist.codyh.xyz/og-website-preview.png">
+<meta property="article:published_time" content="2026-10-23">
+<meta property="article:modified_time" content="2026-10-23">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Article",
+      "headline": "How to find your playlists on YouTube (and the ones that went missing)",
+      "description": "Your YouTube playlists live in the You tab or at youtube.com/feed/playlists. Steps for desktop, phone and YouTube Music, plus why a playlist goes missing.",
+      "url": "https://playlist.codyh.xyz/find-youtube-playlists/",
+      "datePublished": "2026-10-23",
+      "dateModified": "2026-10-23",
+      "image": "https://playlist.codyh.xyz/og-website-preview.png",
+      "author": { "@type": "Person", "name": "Cody Hergenroeder", "url": "https://codyh.xyz" },
+      "publisher": { "@type": "Person", "name": "Cody Hergenroeder", "url": "https://codyh.xyz" },
+      "mainEntityOfPage": "https://playlist.codyh.xyz/find-youtube-playlists/"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "YouTube Playlist Search", "item": "https://playlist.codyh.xyz/" },
+        { "@type": "ListItem", "position": 2, "name": "Find your playlists", "item": "https://playlist.codyh.xyz/find-youtube-playlists/" }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        { "@type": "Question", "name": "Why can't I find a playlist on YouTube?", "acceptedAnswer": { "@type": "Answer", "text": "The usual causes, in order: you are signed in to a different account or a different channel (playlists belong to a channel, so a Brand Account has its own set), you are signed out, the playlist was saved from someone who has since deleted it or made it private, or you are looking in YouTube Music, which only shows the music videos from your playlists. If the playlist is on youtube.com/feed/playlists but missing from the Save menu, that is YouTube's Save menu only loading 200 playlists." } },
+        { "@type": "Question", "name": "Where did my playlist go?", "acceptedAnswer": { "@type": "Answer", "text": "Check youtube.com/feed/playlists on a computer first, with the Owned or Saved filter, while signed in to the right account and channel. If it is there, it never left; it is just not in the menu you were looking at. If it was a playlist you saved from another creator and it is gone, the creator most likely deleted it or made it private. If you deleted it yourself, I don't know of any way to restore it from YouTube's side." } },
+        { "@type": "Question", "name": "How to find a specific playlist on YouTube?", "acceptedAnswer": { "@type": "Answer", "text": "For one of your own, open youtube.com/feed/playlists, sort A-Z, scroll to the bottom so every playlist loads, then press Ctrl+F (Cmd+F on a Mac) and type part of the name. For someone else's public playlist, search YouTube, click Filters, and choose Playlist under the result type, or open the creator's channel and check its Playlists tab." } },
+        { "@type": "Question", "name": "How to get on YouTube playlists?", "acceptedAnswer": { "@type": "Answer", "text": "To get to your playlists, go to youtube.com/feed/playlists on a computer, or tap You (your profile picture, bottom right) in the app and tap View all next to Playlists. If you mean getting your video onto other people's playlists, only a playlist's owner, or people they invite to collaborate, can add videos to it." } },
+        { "@type": "Question", "name": "Where are my saved playlists on YouTube?", "acceptedAnswer": { "@type": "Answer", "text": "Saved playlists sit in the same Playlists page as the ones you made. On a computer, open youtube.com/feed/playlists and click the Saved filter to show only playlists you saved from other channels, or Owned to show only your own." } },
+        { "@type": "Question", "name": "Why doesn't my playlist show up when I click Save?", "acceptedAnswer": { "@type": "Answer", "text": "YouTube's Save to playlist menu loads at most 200 playlists. I confirmed the cap by reading YouTube's own API: playlist 201 is not further down, it is not in the list at all. The 200 it does show appear to be your most recently updated ones, so an old playlist can exist and still be missing from the menu. Playlists you saved from other people never appear there either, because you can't add videos to them." } },
+        { "@type": "Question", "name": "Is there a YouTube playlist finder?", "acceptedAnswer": { "@type": "Answer", "text": "YouTube's own option is the Playlists page with its A-Z sort and Owned and Saved filters, plus Ctrl+F. I built a free Chrome extension, YouTube Playlist Search, whose Alt+P shortcut opens a search box over every playlist in your library and opens the one you pick. It works on desktop Chrome on youtube.com only, not on phones or YouTube Music." } }
+      ]
+    }
+  ]
+}
+</script>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/guides.css">
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="/"><img src="/favicon.png" alt="">YouTube Playlist Search</a>
+  <a class="cta-sm" href="https://chromewebstore.google.com/detail/efgbkmnooapcpdpgmihemfpedchhmmek" target="_blank" rel="noopener">Add to Chrome</a>
+</header>
+
+<main class="article">
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">YouTube Playlist Search</a> / Find your playlists</nav>
+  <h1>How to find your playlists on YouTube (and the ones that went missing)</h1>
+  <p class="byline">By <a href="https://codyh.xyz" target="_blank" rel="noopener">Cody Hergenroeder</a>, who builds <a href="/">YouTube Playlist Search</a> and reads YouTube's playlist API for a living · Updated October 23, 2026</p>
+
+  <div class="answer">
+    <div class="answer-label">Quick answer</div>
+    <p>On a computer, go to <strong>youtube.com/feed/playlists</strong>, or open the menu (<strong>☰</strong>) and click <strong>Playlists</strong> under <strong>You</strong>. In the YouTube app on Android or iPhone, tap <strong>You</strong> (your profile picture, bottom right), then tap <strong>View all</strong> next to Playlists. In YouTube Music, tap <strong>Library</strong> and pick the <strong>Playlists</strong> filter. If a playlist still isn't there, you are probably signed in to a different account or channel.</p>
+  </div>
+
+  <nav class="toc" aria-label="On this page">
+    <div class="toc-label">On this page</div>
+    <ol>
+      <li><a href="#computer">Find your playlists on a computer</a></li>
+      <li><a href="#phone">Find your playlists on Android, iPhone and iPad</a></li>
+      <li><a href="#youtube-music">Find your playlists on YouTube Music</a></li>
+      <li><a href="#saved">Where your saved playlists are</a></li>
+      <li><a href="#specific">Find one specific playlist fast</a></li>
+      <li><a href="#missing">Why you can't find your playlist</a></li>
+      <li><a href="#faq">Questions people ask</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="computer">How do I find my playlists on YouTube? <span class="tag">Desktop</span></h2>
+  <p>The fastest way is the address bar. Bookmark this and you never have to click through a menu again:</p>
+  <p><code>youtube.com/feed/playlists</code></p>
+  <p>If you'd rather click:</p>
+  <ol class="steps">
+    <li>Open <a href="https://www.youtube.com" target="_blank" rel="noopener">youtube.com</a> and make sure you're signed in (your profile picture is top right, not a Sign in button).</li>
+    <li>Click the menu icon (<strong>☰</strong>) at the top left if the sidebar is collapsed.</li>
+    <li>Under the <strong>You</strong> section, click <strong>Playlists</strong>.</li>
+  </ol>
+  <p>That page holds everything: playlists you made, playlists you saved from other channels, Watch later, and Liked videos. When I checked it this week, the top of the page had a sort menu set to <strong>A-Z</strong> and filter chips for <strong>Playlists</strong>, <strong>Music</strong>, <strong>Courses</strong>, <strong>Owned</strong> and <strong>Saved</strong>. YouTube's other sort option is <strong>Recently added</strong>. Those filters are the most useful thing on the page and almost nobody notices them.</p>
+
+  <h2 id="phone">How to find your playlists in the YouTube app <span class="tag">Android</span> <span class="tag">iPhone</span></h2>
+  <p>The old Library tab is gone. Its contents moved into the <strong>You</strong> tab, which is your profile picture in the bottom right corner. Same steps on Android, iPhone and iPad:</p>
+  <ol class="steps">
+    <li>Open the YouTube app and tap <strong>You</strong> (your profile picture, bottom right).</li>
+    <li>Scroll to the <strong>Playlists</strong> row. It's a sideways carousel that only shows a handful.</li>
+    <li>Tap <strong>View all</strong> next to the Playlists heading to see the full list, then use the sort option (Recently added or A-Z) if it's long.</li>
+  </ol>
+  <p>On the mobile website (m.youtube.com) it's the same idea: tap your profile picture, and your playlists are listed there.</p>
+  <div class="note"><strong>The carousel is not the list.</strong> A lot of "my playlist disappeared" panic comes from the You tab showing only your recent playlists. The rest are behind View all.</div>
+
+  <h2 id="youtube-music">How do I find my playlists on YouTube Music? <span class="tag">Music</span></h2>
+  <ol class="steps">
+    <li>In the YouTube Music app, tap <strong>Library</strong> at the bottom of the screen.</li>
+    <li>Tap the <strong>Playlists</strong> filter at the top of your library.</li>
+    <li>On a computer, your playlists also show in the left sidebar at music.youtube.com, or go straight to <code>music.youtube.com/library/playlists</code>.</li>
+  </ol>
+  <p>YouTube and YouTube Music share one set of playlists. A playlist you make in either app shows up in both. The catch, per YouTube's own help page: YouTube Music only shows the <em>music videos</em> from a playlist. Your "woodworking tutorials" playlist will look empty or missing in Music. It's fine. Open it on YouTube.</p>
+
+  <h2 id="saved">Where are my saved playlists on YouTube?</h2>
+  <p>There are two kinds of playlist in your library, and they behave differently:</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th></th><th>Playlists you made</th><th>Playlists you saved</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Where</strong></td><td>Playlists page, <strong>Owned</strong> filter</td><td>Playlists page, <strong>Saved</strong> filter</td></tr>
+        <tr><td><strong>Can you add videos?</strong></td><td>Yes</td><td>No, it belongs to someone else</td></tr>
+        <tr><td><strong>In the Save menu?</strong></td><td>Yes, if it's one of the 200 YouTube loads</td><td>Never</td></tr>
+        <tr><td><strong>Can it vanish?</strong></td><td>Only if you delete it</td><td>Yes, if the owner deletes it or makes it private</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Watch later and Liked videos are playlists too. They live on the same page and in the You tab.</p>
+
+  <h2 id="specific">How to find a specific playlist on YouTube</h2>
+  <p>Fine with 15 playlists. Annoying with 300. I have a few hundred, which is why I ended up writing software about it.</p>
+
+  <h3>One of your own playlists <span class="tag">Desktop</span></h3>
+  <ol class="steps">
+    <li>Go to <code>youtube.com/feed/playlists</code>.</li>
+    <li>Click <strong>Owned</strong> to hide everything you saved from other people.</li>
+    <li>Set the sort to <strong>A-Z</strong> if you know how the name starts, or <strong>Recently added</strong> if you used it lately.</li>
+    <li>Scroll to the bottom until no more playlists load. The page loads in batches, and the browser can only search what's loaded.</li>
+    <li>Press <kbd>Ctrl</kbd>+<kbd>F</kbd> (<kbd>⌘</kbd>+<kbd>F</kbd> on a Mac) and type part of the name.</li>
+  </ol>
+  <p>Long term, naming helps more than any tool. Prefixes like <code>music /</code>, <code>learn /</code>, <code>recipes /</code> group related playlists together under A-Z sort.</p>
+
+  <h3>Someone else's playlist</h3>
+  <ul>
+    <li><strong>Search with the Playlist filter.</strong> Search YouTube, click <strong>Filters</strong>, and choose <strong>Playlist</strong> under the result type. Now every result is a playlist, not a video.</li>
+    <li><strong>Check the channel.</strong> Open the creator's channel and look at its <strong>Playlists</strong> tab.</li>
+    <li>Search only finds public playlists. A private playlist is invisible to everyone but its owner, and an unlisted one only opens from its link.</li>
+  </ul>
+
+  <div class="callout">
+    <img src="/favicon.png" alt="">
+    <div class="callout-body">
+      <div class="callout-title">Press Alt+P, type three letters, done</div>
+      <p>I built <a href="/">YouTube Playlist Search</a> because Ctrl+F after scrolling gets old. Press <kbd>Alt</kbd>+<kbd>P</kbd> on any YouTube page and it opens a search box over every playlist in your library, words in any order, then opens the one you pick. Free, desktop Chrome on youtube.com only.</p>
+      <a class="cta-sm" href="https://chromewebstore.google.com/detail/efgbkmnooapcpdpgmihemfpedchhmmek" target="_blank" rel="noopener">Add to Chrome, free</a>
+    </div>
+  </div>
+
+  <h2 id="missing">Why can't I find my playlist on YouTube?</h2>
+  <p>Work down this list. In my experience the first one explains most cases.</p>
+
+  <h3>1. You're on the wrong account or channel</h3>
+  <p>Playlists belong to a <em>channel</em>, not just to your Google login. If you have a Brand Account (a second channel under the same login), it has its own playlists, and switching to it makes your personal ones look gone. Click your profile picture, choose <strong>Switch account</strong>, and check each channel listed. If you're signed in to more than one Google account in the same browser, check those too.</p>
+
+  <h3>2. You're signed out</h3>
+  <p>Signed out, the You tab and the Playlists page have nothing to show. This catches people most in private windows, on a new device, or on a shared computer.</p>
+
+  <h3>3. It's on your Playlists page but not in the Save menu</h3>
+  <p>This is the one nobody explains, so here's what I found while building my extension. YouTube's <strong>Save to playlist</strong> menu loads at most <strong>200 playlists</strong>. I tested it against YouTube's own API on an account with over 250: no scrolling, no "show more", no setting changes it. Playlist 201 isn't further down the list. It isn't in the list at all.</p>
+  <p>Which 200 you get appears to be your most recently updated playlists, with Watch later always first. So the old playlist you haven't touched in a year can exist on <code>/feed/playlists</code> and be absent from Save. The menu also never shows playlists you saved from other people, or Liked videos, because you can't add to those.</p>
+
+  <figure class="ui">
+    <div class="sheet">
+      <div class="sheet-head">Save video to...</div>
+      <div class="sheet-row"><span class="box"></span>Watch later</div>
+      <div class="sheet-row"><span class="box"></span>gym rotation</div>
+      <div class="sheet-row"><span class="box"></span>recipes to try</div>
+      <div class="sheet-row"><span class="box"></span>synth tutorials</div>
+      <div class="sheet-row fade"><span class="box"></span>... 196 more, then nothing</div>
+      <div class="sheet-foot">+ New playlist</div>
+    </div>
+    <figcaption>Drawn mockup. If "bird calls (2019)" is your 230th most recently touched playlist, it simply isn't in this menu.</figcaption>
+  </figure>
+
+  <p>Workarounds without installing anything: save the video to Watch later now and sort it out later, or open the old playlist and edit it (reorder a video, change its description). Since the menu seems to favor recently updated playlists, that may pull it back into the 200. That last part is my inference from testing, not something YouTube documents. More on the cap in <a href="/youtube-playlist-limits/">YouTube playlist limits</a>, and every way to save a video in <a href="/add-video-to-youtube-playlist/">how to add a video to a playlist on YouTube</a>.</p>
+
+  <div class="callout">
+    <img src="/favicon.png" alt="">
+    <div class="callout-body">
+      <div class="callout-title">A Save menu with all of your playlists</div>
+      <p>YouTube Playlist Search replaces the Save menu with a searchable one that loads your playlists from a different YouTube endpoint, one with no 200 cap. It also shows which playlists already have the video. Desktop Chrome only, youtube.com only.</p>
+      <a class="cta-sm" href="https://chromewebstore.google.com/detail/efgbkmnooapcpdpgmihemfpedchhmmek" target="_blank" rel="noopener">Add to Chrome, free</a>
+    </div>
+  </div>
+
+  <h3>4. The owner deleted it or made it private</h3>
+  <p>If it was a playlist you <em>saved</em>, not one you made, you were only ever holding a link to someone else's playlist. When the owner deletes it or makes it private, it stops working for you. YouTube doesn't keep a copy for you, so there's nothing to restore. If a playlist matters, make your own copy of it.</p>
+
+  <h3>5. You're looking in YouTube Music</h3>
+  <p>As above, YouTube Music only shows music videos. A playlist of anything else can look empty or missing there. Check on YouTube instead.</p>
+
+  <h3>6. It was deleted</h3>
+  <p>Deleting a playlist on YouTube asks you to confirm and then it's gone. I don't know of any way to bring a deleted playlist back from YouTube's side, so check the five causes above before you assume this one.</p>
+
+  <h2 id="faq">Questions people ask</h2>
+  <div class="faq">
+    <details>
+      <summary>Why can't I find a playlist on YouTube?</summary>
+      <div><p>The usual causes, in order: you are signed in to a different account or a different channel (playlists belong to a channel, so a Brand Account has its own set), you are signed out, the playlist was saved from someone who has since deleted it or made it private, or you are looking in YouTube Music, which only shows the music videos from your playlists. If the playlist is on youtube.com/feed/playlists but missing from the Save menu, that is YouTube's Save menu only loading 200 playlists.</p></div>
+    </details>
+    <details>
+      <summary>Where did my playlist go?</summary>
+      <div><p>Check youtube.com/feed/playlists on a computer first, with the Owned or Saved filter, while signed in to the right account and channel. If it is there, it never left; it is just not in the menu you were looking at. If it was a playlist you saved from another creator and it is gone, the creator most likely deleted it or made it private. If you deleted it yourself, I don't know of any way to restore it from YouTube's side.</p></div>
+    </details>
+    <details>
+      <summary>How to find a specific playlist on YouTube?</summary>
+      <div><p>For one of your own, open youtube.com/feed/playlists, sort A-Z, scroll to the bottom so every playlist loads, then press Ctrl+F (Cmd+F on a Mac) and type part of the name. For someone else's public playlist, search YouTube, click Filters, and choose Playlist under the result type, or open the creator's channel and check its Playlists tab.</p></div>
+    </details>
+    <details>
+      <summary>How to get on YouTube playlists?</summary>
+      <div><p>To get to your playlists, go to youtube.com/feed/playlists on a computer, or tap You (your profile picture, bottom right) in the app and tap View all next to Playlists. If you mean getting your video onto other people's playlists, only a playlist's owner, or people they invite to collaborate, can add videos to it.</p></div>
+    </details>
+    <details>
+      <summary>Where are my saved playlists on YouTube?</summary>
+      <div><p>Saved playlists sit in the same Playlists page as the ones you made. On a computer, open youtube.com/feed/playlists and click the Saved filter to show only playlists you saved from other channels, or Owned to show only your own.</p></div>
+    </details>
+    <details>
+      <summary>Why doesn't my playlist show up when I click Save?</summary>
+      <div><p>YouTube's Save to playlist menu loads at most 200 playlists. I confirmed the cap by reading YouTube's own API: playlist 201 is not further down, it is not in the list at all. The 200 it does show appear to be your most recently updated ones, so an old playlist can exist and still be missing from the menu. Playlists you saved from other people never appear there either, because you can't add videos to them.</p></div>
+    </details>
+    <details>
+      <summary>Is there a YouTube playlist finder?</summary>
+      <div><p>YouTube's own option is the Playlists page with its A-Z sort and Owned and Saved filters, plus Ctrl+F. I built a free Chrome extension, YouTube Playlist Search, whose Alt+P shortcut opens a search box over every playlist in your library and opens the one you pick. It works on desktop Chrome on youtube.com only, not on phones or YouTube Music.</p></div>
+    </details>
+  </div>
+
+  <h2 id="related">More guides</h2>
+  <div class="related">
+    <a href="/add-video-to-youtube-playlist/"><div class="rel-title">How to add a video to a playlist on YouTube</div><div class="rel-desc">Every way to save a video, including Shorts and multiple playlists at once.</div></a>
+    <a href="/youtube-playlist-limits/"><div class="rel-title">YouTube playlist limits</div><div class="rel-desc">The 5,000-video cap, and the 200-playlist cap YouTube doesn't document.</div></a>
+  </div>
+</main>
+
+<footer>
+  <div class="footer-links">
+    <a href="/">Home</a>
+    <a href="/find-youtube-playlists/">Find your playlists</a>
+    <a href="/add-video-to-youtube-playlist/">Add to a playlist</a>
+    <a href="/youtube-playlist-limits/">Playlist limits</a>
+    <a href="/privacy-policy.html">Privacy Policy</a>
+    <a href="https://github.com/codyhxyz/playlist-search-extension">GitHub</a>
+  </div>
+  <span class="built-by">built by <a href="https://codyh.xyz" target="_blank" rel="noopener">cody h</a></span>
+</footer>
+
+<script defer src="/_vercel/insights/script.js"></script>
+</body>
+</html>

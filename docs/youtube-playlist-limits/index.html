@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YouTube Playlist Limits: 5,000 Videos and the 200 Cap</title>
+<meta name="description" content="Every YouTube playlist limit, sourced: 5,000 videos per playlist, no published cap on playlists, and a Save menu that only loads 200 of them. How we tested.">
+<link rel="canonical" href="https://playlist.codyh.xyz/youtube-playlist-limits/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="YouTube Playlist Search">
+<meta property="og:title" content="YouTube Playlist Limits: 5,000 Videos and the 200 Cap">
+<meta property="og:description" content="Every YouTube playlist limit, sourced: 5,000 videos per playlist, no published cap on playlists, and a Save menu that only loads 200 of them. How we tested.">
+<meta property="og:url" content="https://playlist.codyh.xyz/youtube-playlist-limits/">
+<meta property="og:image" content="https://playlist.codyh.xyz/og-website-preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="YouTube Playlist Limits: 5,000 Videos and the 200 Cap">
+<meta name="twitter:description" content="Every YouTube playlist limit, sourced: 5,000 videos per playlist, no published cap on playlists, and a Save menu that only loads 200 of them. How we tested.">
+<meta name="twitter:image" content="https://playlist.codyh.xyz/og-website-preview.png">
+<meta property="article:published_time" content="2026-10-23">
+<meta property="article:modified_time" content="2026-10-23">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Article",
+      "headline": "YouTube playlist limits: every cap, with sources",
+      "description": "Every YouTube playlist limit, sourced: 5,000 videos per playlist, no published cap on playlists, and a Save menu that only loads 200 of them. How we tested.",
+      "url": "https://playlist.codyh.xyz/youtube-playlist-limits/",
+      "datePublished": "2026-10-23",
+      "dateModified": "2026-10-23",
+      "image": "https://playlist.codyh.xyz/og-website-preview.png",
+      "author": { "@type": "Person", "name": "Cody Hergenroeder", "url": "https://codyh.xyz" },
+      "publisher": { "@type": "Person", "name": "Cody Hergenroeder", "url": "https://codyh.xyz" },
+      "mainEntityOfPage": "https://playlist.codyh.xyz/youtube-playlist-limits/"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "YouTube Playlist Search", "item": "https://playlist.codyh.xyz/" },
+        { "@type": "ListItem", "position": 2, "name": "YouTube playlist limits", "item": "https://playlist.codyh.xyz/youtube-playlist-limits/" }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {"@type": "Question", "name": "Is there a limit for playlists on YouTube?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Each playlist holds up to 5,000 videos. There is no published cap on how many playlists you can own, but YouTube limits how many public playlists a channel can create per day. And the Save menu only loads 200 of your playlists, which YouTube doesn't document."}},
+        {"@type": "Question", "name": "Why does my YouTube playlist only show 200 videos?", "acceptedAnswer": {"@type": "Answer", "text": "There's no documented 200-video limit. On desktop, a playlist page loads 100 videos at a time and keeps going past 200 as you scroll. Usually the rest haven't loaded yet, you're looking at the side panel next to a playing video, or unavailable videos are hidden."}},
+        {"@type": "Question", "name": "Does YouTube Music have a playlist cap?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, 5,000 songs per playlist, raised from 1,000 in May 2020. Liked Music was also capped at 5,000. Reports in August 2023 said it grew to at least 10,000, but YouTube never announced a number."}},
+        {"@type": "Question", "name": "How many playlists can you have on YouTube?", "acceptedAnswer": {"@type": "Answer", "text": "YouTube doesn't publish a maximum. Its API has an error for a channel that already has the maximum number of playlists allowed, so a ceiling exists, but the number is unknown. 256 playlists work fine. The limit you'll hit first is the Save menu, which only shows 200."}},
+        {"@type": "Question", "name": "What happens when Watch Later reaches 5,000 videos?", "acceptedAnswer": {"@type": "Answer", "text": "New saves stop going in, and users report the save can look successful while the video never appears. YouTube doesn't document Watch Later's limit separately, but it behaves like any playlist capped at 5,000. Remove watched videos to make room."}},
+        {"@type": "Question", "name": "Why is my playlist missing when I click Save on YouTube?", "acceptedAnswer": {"@type": "Answer", "text": "With more than about 200 playlists, YouTube's Save menu only loads 200, which appear to be the most recently updated. The rest aren't further down; they aren't there at all. Open the missing playlist and use Add videos with the video's URL, or use a picker that loads every playlist."}},
+        {"@type": "Question", "name": "Can a YouTube playlist have more than 5,000 videos?", "acceptedAnswer": {"@type": "Answer", "text": "Not one you build. YouTube Help says a maximum of 5,000 videos can be displayed in a playlist, and the Data API rejects adds past the maximum. A channel's automatic uploads list is different: I loaded one showing 7,339 videos."}}
+      ]
+    }
+  ]
+}
+</script>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/guides.css">
+<style>
+  .limits td:nth-child(2) { min-width: 96px; font-weight: 700; color: var(--yt-text); }
+  .limits td:nth-child(3), .limits td:nth-child(4) { font-size: 14px; color: var(--yt-muted); }
+  .v { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; border: 1px solid var(--yt-line); margin-bottom: 4px; }
+  .v.doc { color: #7ee2a8; border-color: rgba(126,226,168,0.35); }
+  .v.meas { color: #ff8a8a; border-color: rgba(255,90,90,0.4); }
+  .v.rep { color: #f2c46d; border-color: rgba(242,196,109,0.35); }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="/"><img src="/favicon.png" alt="">YouTube Playlist Search</a>
+  <a class="cta-sm" href="https://chromewebstore.google.com/detail/efgbkmnooapcpdpgmihemfpedchhmmek" target="_blank" rel="noopener">Add to Chrome</a>
+</header>
+
+<main class="article">
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">YouTube Playlist Search</a> / YouTube playlist limits</nav>
+  <h1>YouTube playlist limits: every cap, with sources</h1>
+  <p class="byline">By <a href="https://codyh.xyz" target="_blank" rel="noopener">Cody Hergenroeder</a>, who builds <a href="/">YouTube Playlist Search</a> and reads YouTube's playlist API for a living · Updated October 23, 2026</p>
+
+  <div class="answer">
+    <div class="answer-label">Quick answer</div>
+    <p>A YouTube playlist holds up to 5,000 videos, Watch Later is capped at 5,000 too, and Liked videos only displays 5,000. YouTube publishes no limit on how many playlists you can own, only a daily limit on creating public ones. The cap nobody documents: the Save menu loads just 200 of your playlists, so playlist 201 and beyond never appear there. YouTube Music playlists top out at 5,000 songs.</p>
+  </div>
+
+  <nav class="toc" aria-label="On this page">
+    <div class="toc-label">On this page</div>
+    <ol>
+      <li><a href="#all-limits">Every YouTube playlist limit at a glance</a></li>
+      <li><a href="#videos-per-playlist">How many videos can a YouTube playlist have?</a></li>
+      <li><a href="#how-many-playlists">How many playlists can you have on YouTube?</a></li>
+      <li><a href="#save-menu-200">The Save menu only shows 200 playlists</a></li>
+      <li><a href="#only-200-videos">Why does my playlist only show 200 videos?</a></li>
+      <li><a href="#watch-later-liked">Watch Later and Liked videos limits</a></li>
+      <li><a href="#youtube-music">Does YouTube Music have a playlist cap?</a></li>
+      <li><a href="#what-to-do">What to do when you hit each limit</a></li>
+      <li><a href="#how-we-know">How we know: the testing behind this page</a></li>
+      <li><a href="#faq">Questions people ask</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="all-limits">Every YouTube playlist limit at a glance</h2>
+  <p>Most pages stop at "5,000 videos, unlimited playlists." True, and it misses the limit people actually hit. <strong>Documented</strong> means YouTube or Google says it in writing. <strong>Measured</strong> means I tested it. <strong>Reported</strong> means users or press say it and YouTube hasn't confirmed.</p>
+
+  <div class="table-wrap">
+    <table class="limits">
+      <thead>
+        <tr><th>Limit</th><th>Number</th><th>Source</th><th>Verified how</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Videos per playlist</td><td>5,000</td><td><a href="https://support.google.com/youtube/answer/9209643?hl=en&amp;co=GENIE.Platform%3DDesktop" target="_blank" rel="noopener">YouTube Help: Explore the You tab</a>; <a href="https://developers.google.com/youtube/v3/docs/errors" target="_blank" rel="noopener">Data API errors</a></td><td><span class="v doc">Documented</span><br>"A maximum of 5,000 videos can be displayed in a playlist." The API refuses adds past it.</td></tr>
+        <tr><td>Playlists in the Save menu</td><td>200</td><td>Our own API testing</td><td><span class="v meas">Measured</span><br>Server returns at most 200, Watch Later included. <a href="#how-we-know">How</a>.</td></tr>
+        <tr><td>"Already saved" checkmarks in the Save menu</td><td>Those 200 only</td><td>Our own API testing</td><td><span class="v meas">Measured</span><br>Playlists past 200 show no checkmark.</td></tr>
+        <tr><td>Playlists per account</td><td>No published number</td><td><a href="https://developers.google.com/youtube/v3/docs/errors" target="_blank" rel="noopener">Data API errors</a></td><td><span class="v rep">Unconfirmed</span><br>The API has a <code>maxPlaylistExceeded</code> error, so a ceiling exists. 256 work fine.</td></tr>
+        <tr><td>Public playlists created per day</td><td>Limited, number not published</td><td><a href="https://support.google.com/youtube/answer/57792?hl=en&amp;co=GENIE.Platform%3DDesktop" target="_blank" rel="noopener">YouTube Help: Create &amp; manage playlists</a>; <a href="https://support.google.com/youtube/answer/9890437?hl=en" target="_blank" rel="noopener">Feature access</a></td><td><span class="v doc">Documented</span><br>Shared across YouTube, YouTube Music and the API.</td></tr>
+        <tr><td>Watch Later</td><td>5,000</td><td><a href="https://chromeunboxed.com/for-elearners-youtube-has-no-way-to-search-playlists-while-saving-and-organizing-videos/" target="_blank" rel="noopener">Chrome Unboxed</a>; <a href="https://support.google.com/youtube/thread/273306931" target="_blank" rel="noopener">YouTube Help Community</a></td><td><span class="v rep">Reported</span><br>Not stated for Watch Later on its own.</td></tr>
+        <tr><td>Liked videos</td><td>5,000 shown</td><td><a href="https://support.google.com/youtube/answer/6083270?hl=en&amp;co=GENIE.Platform%3DDesktop" target="_blank" rel="noopener">YouTube Help: Like or dislike a video</a></td><td><span class="v doc">Documented</span><br>"A maximum of 5,000 videos can be displayed in the Liked Videos playlist."</td></tr>
+        <tr><td>Playlist title</td><td>150 characters</td><td><a href="https://support.google.com/youtube/answer/10232933?hl=en&amp;co=GENIE.Platform%3DDesktop" target="_blank" rel="noopener">YouTube Help: Manage playlists in Studio</a></td><td><span class="v doc">Documented</span><br>No <code>&lt;</code> or <code>&gt;</code> allowed.</td></tr>
+        <tr><td>Playlist description</td><td>5,000 characters</td><td><a href="https://support.google.com/youtube/answer/10232933?hl=en&amp;co=GENIE.Platform%3DDesktop" target="_blank" rel="noopener">YouTube Help: Manage playlists in Studio</a></td><td><span class="v doc">Documented</span></td></tr>
+        <tr><td>YouTube Music playlist</td><td>5,000 songs</td><td><a href="https://blog.google/intl/en-in/products/platforms/youtube-music-is-making-it-simple-to/" target="_blank" rel="noopener">Google blog, May 2020</a></td><td><span class="v doc">Documented</span><br>"We've increased playlist length from 1,000 to 5,000 songs."</td></tr>
+        <tr><td>YouTube Music Liked Music</td><td>At least 10,000 (reported)</td><td><a href="https://www.androidpolice.com/youtube-music-liked-playlist-limit-extended/" target="_blank" rel="noopener">Android Police, Aug 2023</a></td><td><span class="v rep">Reported</span><br>Was 5,000. No official number.</td></tr>
+        <tr><td>Videos loaded per scroll on a playlist page</td><td>100</td><td>Our own test</td><td><span class="v meas">Measured</span><br>Desktop, October 2026. Keeps going past 200.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="videos-per-playlist">How many videos can a YouTube playlist have?</h2>
+  <p><strong>5,000.</strong> YouTube's Help Center says "a maximum of 5,000 videos can be displayed in a playlist," and the official YouTube Data API rejects adds to a playlist that already holds the maximum. It applies on every device, because the limit lives on YouTube's servers, not in the app.</p>
+  <p>Two details the other pages skip:</p>
+  <ul>
+    <li><strong>A channel's automatic uploads list is not capped the same way.</strong> I loaded one for a large tech channel that reported 7,339 videos. The 5,000 rule is about playlists you build.</li>
+    <li><strong>Duplicates count.</strong> YouTube lets the same video sit in a playlist twice, and each copy takes a slot. That is easy to do by accident, for reasons the <a href="#save-menu-200">200 section</a> explains.</li>
+  </ul>
+
+  <h2 id="how-many-playlists">How many playlists can you have on YouTube?</h2>
+  <p>YouTube does not publish a number. A product expert in the <a href="https://support.google.com/youtubemusic/thread/47531193" target="_blank" rel="noopener">YouTube Music Help Community</a> said "there's no limit on how many playlists you can create." The API docs are less sure: creating a playlist can fail because "the channel already has the maximum number of playlists allowed." So a ceiling exists. Nobody outside YouTube knows where.</p>
+  <p>What is documented is a <strong>daily limit on creating public playlists</strong>, per channel, counted across YouTube, YouTube Music and the API. The number isn't published. Verifying your channel raises it.</p>
+  <p>Some sites list "about 200 playlists" as a channel limit. That's the Save menu cap leaking into folklore. My test account has 256 playlists, and YouTube stores and lists all of them. They just don't all fit in one menu.</p>
+
+  <h2 id="save-menu-200">The Save menu only shows 200 playlists <span class="tag">Desktop</span><span class="tag">Mobile web</span></h2>
+  <p>This is the one that bites people with too many playlists, and it isn't in YouTube's help pages. When you click <strong>Save</strong>, YouTube asks its server for your playlists, and the server returns <strong>at most 200</strong>. Watch Later is always one of them, so you get Watch Later plus 199 of your own.</p>
+  <p>If you own 230 playlists, the other 30 are not further down the list. They are not in it at all. Scrolling won't find them, and neither will <kbd>Ctrl</kbd>+<kbd>F</kbd>.</p>
+
+  <figure class="ui">
+    <div class="sheet">
+      <div class="sheet-head">Save video to...</div>
+      <div class="sheet-row"><span class="box"></span>Watch later</div>
+      <div class="sheet-row"><span class="box"></span>guitar lessons</div>
+      <div class="sheet-row"><span class="box"></span>recipes to try</div>
+      <div class="sheet-row"><span class="box"></span>home office ideas<span class="muted">... 196 more</span></div>
+      <div class="sheet-row fade"><span class="box"></span>old synth tutorials<span class="muted">#201, not loaded</span></div>
+      <div class="sheet-foot">+ New playlist</div>
+    </div>
+    <figcaption>Drawn illustration with made-up names. Row 201 is shown faded to make the point: in YouTube's real menu it simply isn't there, and the video it already contains gets no checkmark.</figcaption>
+  </figure>
+
+  <h3>Which 200 do you get?</h3>
+  <p>They appear to be the 200 most recently updated playlists. That's inference, not proof: it fits nearly everything I've seen, but I've seen one counterexample. What is proven is the count, and that the same 200 come back whichever video you're saving.</p>
+
+  <h3>The checkmarks lie by omission</h3>
+  <p>YouTube only reports "already in this playlist" for those 200. In testing, a video whose only playlist sat outside the window got a Save menu with every row unchecked and that playlist missing. Easy way to save something twice.</p>
+
+  <h3>Which devices have the 200 cap?</h3>
+  <p>The desktop site, the mobile website and YouTube's TV client all got 200 in my tests. Requests made as the Android and iPhone apps were rejected, so I can't tell you what the apps show.</p>
+
+  <div class="callout">
+    <img src="/favicon.png" alt="">
+    <div class="callout-body">
+      <div class="callout-title">Every playlist, not 200</div>
+      <p>I built YouTube Playlist Search because I hit this cap. It loads your library from a YouTube endpoint that isn't capped, adds search, and checks playlists past 200 for "already saved" in the background. Free, open source, desktop Chrome only.</p>
+      <a class="cta-sm" href="https://chromewebstore.google.com/detail/efgbkmnooapcpdpgmihemfpedchhmmek" target="_blank" rel="noopener">Add to Chrome, free</a>
+    </div>
+  </div>
+
+  <h2 id="only-200-videos">Why does my YouTube playlist only show 200 videos?</h2>
+  <p>A different 200, about videos, and I couldn't reproduce it as a hard limit. YouTube doesn't document one, and the Product Expert reply in the <a href="https://support.google.com/youtube/thread/274177783" target="_blank" rel="noopener">YouTube Help Community thread</a> agrees. On desktop, I walked a public 7,339-video list: the page loads 100 videos, then 100 more each time you near the bottom, straight past 200, 300 and 400. When a playlist seems to stop at 200, it's usually one of these:</p>
+  <ul>
+    <li><strong>The rest haven't loaded.</strong> Scroll to the very bottom and wait for the next batch.</li>
+    <li><strong>You're looking at the side panel, not the playlist.</strong> The panel next to a playing video loads a slice around the current video (79 rows of 7,339 in my test). Click the playlist title to open the full page.</li>
+    <li><strong>Unavailable videos are hidden.</strong> Deleted and private videos still count toward the total but aren't shown, so the count and the list disagree.</li>
+  </ul>
+
+  <h2 id="watch-later-liked">Watch Later and Liked videos limits</h2>
+  <h3>Watch Later: 5,000</h3>
+  <p>Watch Later is a playlist, and it fills up at 5,000 like one. YouTube's Watch Later help page doesn't mention a limit, so this is <strong>reported</strong>, but the reports are consistent going back years. The nasty part: users describe saves that seem to work while the video never shows up.</p>
+  <h3>Liked videos: 5,000 shown</h3>
+  <p>Documented: "A maximum of 5,000 videos can be displayed in the Liked Videos playlist." Note <em>displayed</em>. You can keep liking past 5,000. The list just won't show them all.</p>
+
+  <h2 id="youtube-music">Does YouTube Music have a playlist cap?</h2>
+  <p><strong>Yes, 5,000 songs per playlist.</strong> Google raised it from 1,000 to 5,000 in May 2020, during the Google Play Music move, and I found no official change since. The <strong>Liked Music</strong> list was capped at 5,000 for years; in August 2023 users and Android Police reported it had quietly grown to at least 10,000. YouTube never confirmed a number, so treat 10,000 as reported.</p>
+  <p>The daily limit on new public playlists covers YouTube Music too, since it's counted across both apps. The Save menu cap above is a youtube.com finding; I haven't measured YouTube Music's own add-to-playlist list.</p>
+
+  <h2 id="what-to-do">What to do when you hit each limit</h2>
+  <h3>A playlist is full at 5,000</h3>
+  <p>It can't be raised. Make "Part 2", or split by topic or year. First clear dead weight: deleted and private videos still hold slots, and so do accidental duplicates.</p>
+  <h3>Watch Later is full</h3>
+  <p>On desktop, open Watch Later and use <strong>Remove watched videos</strong> in the <strong>⋮</strong> menu at the top. Users report it timing out on huge lists. Move anything worth keeping into a real playlist. Watch Later is a queue, not an archive.</p>
+  <h3>You hit the daily public playlist limit</h3>
+  <p>Wait 24 hours, or verify your channel for higher limits under <a href="https://support.google.com/youtube/answer/9890437?hl=en" target="_blank" rel="noopener">feature access</a>.</p>
+  <h3>A playlist is missing from the Save menu <span class="tag">Desktop</span></h3>
+  <ol class="steps">
+    <li><strong>Add from the playlist's side.</strong> Find the missing playlist at <code>youtube.com/feed/playlists</code> (scroll to the bottom, then <kbd>Ctrl</kbd>+<kbd>F</kbd>, or <kbd>⌘</kbd>+<kbd>F</kbd> on a Mac) and open it. In its details, click <strong>More</strong> (⋮), then <strong>Add videos</strong>, and paste the video's URL.</li>
+    <li><strong>Get under 200.</strong> Delete or merge playlists you no longer use. With 199 or fewer of your own, every one fits.</li>
+    <li><strong>Name for search.</strong> Prefixes like "music: " or "learn: " make <kbd>Ctrl</kbd>+<kbd>F</kbd> far more useful. More in <a href="/find-youtube-playlists/">how to find your playlists on YouTube</a>.</li>
+  </ol>
+  <p>If you do this a lot, <a href="/">YouTube Playlist Search</a> opens from any Save button and searches every playlist you own. <kbd>Alt</kbd>+<kbd>S</kbd> saves the current video, <kbd>Alt</kbd>+<kbd>P</kbd> jumps to a playlist. Desktop Chrome on youtube.com only, not the apps or YouTube Music. Other ways to save are in <a href="/add-video-to-youtube-playlist/">how to add a video to a playlist on YouTube</a>.</p>
+
+  <h2 id="how-we-know">How we know: the testing behind this page</h2>
+  <p>The 200-playlist cap came out of building <a href="/">YouTube Playlist Search</a>. Early versions filtered YouTube's own Save list, and people with big libraries kept reporting missing playlists. So I went looking, trying hard to prove it was just paging.</p>
+  <ul>
+    <li><strong>YouTube's own request.</strong> I captured what the youtube.com Save button sends, on a test account with 256 playlists (253 real, plus Watch Later, Liked and Favorites). The reply held exactly 200. The endpoint behind it, <code>get_add_to_playlist</code>, did the same.</li>
+    <li><strong>No next page.</strong> No continuation token. <code>maxResults</code>, <code>pageSize</code>, <code>offset</code> and <code>includeAllPlaylists</code> are ignored, and fuzzing every field of the request's encoded parameters still returned 200.</li>
+    <li><strong>Same 200 every time,</strong> byte-identical across different videos.</li>
+    <li><strong>Other clients.</strong> Mobile web and TV also returned 200. Requests posing as the Android and iOS apps were rejected.</li>
+    <li><strong>Membership.</strong> A video in two playlists came back marked for exactly those two and unmarked for the other 198. A video whose only playlist sat outside the window came back unmarked everywhere, in YouTube's own menu too.</li>
+    <li><strong>The fix proves the cap.</strong> YouTube's playlist library endpoint returned all 253 in one response, then said it was done. Same account, different endpoint, no ceiling.</li>
+  </ul>
+  <p>Those measurements are from August 2026 and are written up in the extension's <a href="https://github.com/codyhxyz/playlist-search-extension" target="_blank" rel="noopener">open source repository</a>. On October 23, 2026 I re-read every YouTube Help page cited here and walked a public 7,339-video list page by page to check the batching. Anything I couldn't confirm is labelled that way.</p>
+
+  <h2 id="faq">Questions people ask</h2>
+  <div class="faq">
+    <details>
+      <summary>Is there a limit for playlists on YouTube?</summary>
+      <div><p>Yes. Each playlist holds up to 5,000 videos. There is no published cap on how many playlists you can own, but YouTube limits how many public playlists a channel can create per day. And the Save menu only loads 200 of your playlists, which YouTube doesn't document.</p></div>
+    </details>
+    <details>
+      <summary>Why does my YouTube playlist only show 200 videos?</summary>
+      <div><p>There's no documented 200-video limit. On desktop, a playlist page loads 100 videos at a time and keeps going past 200 as you scroll. Usually the rest haven't loaded yet, you're looking at the side panel next to a playing video, or unavailable videos are hidden.</p></div>
+    </details>
+    <details>
+      <summary>Does YouTube Music have a playlist cap?</summary>
+      <div><p>Yes, 5,000 songs per playlist, raised from 1,000 in May 2020. Liked Music was also capped at 5,000. Reports in August 2023 said it grew to at least 10,000, but YouTube never announced a number.</p></div>
+    </details>
+    <details>
+      <summary>How many playlists can you have on YouTube?</summary>
+      <div><p>YouTube doesn't publish a maximum. Its API has an error for a channel that already has the maximum number of playlists allowed, so a ceiling exists, but the number is unknown. 256 playlists work fine. The limit you'll hit first is the Save menu, which only shows 200.</p></div>
+    </details>
+    <details>
+      <summary>What happens when Watch Later reaches 5,000 videos?</summary>
+      <div><p>New saves stop going in, and users report the save can look successful while the video never appears. YouTube doesn't document Watch Later's limit separately, but it behaves like any playlist capped at 5,000. Remove watched videos to make room.</p></div>
+    </details>
+    <details>
+      <summary>Why is my playlist missing when I click Save on YouTube?</summary>
+      <div><p>With more than about 200 playlists, YouTube's Save menu only loads 200, which appear to be the most recently updated. The rest aren't further down; they aren't there at all. Open the missing playlist and use Add videos with the video's URL, or use a picker that loads every playlist.</p></div>
+    </details>
+    <details>
+      <summary>Can a YouTube playlist have more than 5,000 videos?</summary>
+      <div><p>Not one you build. YouTube Help says a maximum of 5,000 videos can be displayed in a playlist, and the Data API rejects adds past the maximum. A channel's automatic uploads list is different: I loaded one showing 7,339 videos.</p></div>
+    </details>
+  </div>
+
+  <h2 id="related">More guides</h2>
+  <div class="related">
+    <a href="/find-youtube-playlists/"><div class="rel-title">How to find your playlists on YouTube</div><div class="rel-desc">Where they live on every device, and what to do when one goes missing.</div></a>
+    <a href="/add-video-to-youtube-playlist/"><div class="rel-title">How to add a video to a playlist on YouTube</div><div class="rel-desc">Every way to save a video, including Shorts and multiple playlists at once.</div></a>
+  </div>
+</main>
+
+<footer>
+  <div class="footer-links">
+    <a href="/">Home</a>
+    <a href="/find-youtube-playlists/">Find your playlists</a>
+    <a href="/add-video-to-youtube-playlist/">Add to a playlist</a>
+    <a href="/youtube-playlist-limits/">Playlist limits</a>
+    <a href="/privacy-policy.html">Privacy Policy</a>
+    <a href="https://github.com/codyhxyz/playlist-search-extension">GitHub</a>
+  </div>
+  <span class="built-by">built by <a href="https://codyh.xyz" target="_blank" rel="noopener">cody h</a></span>
+</footer>
+
+<script defer src="/_vercel/insights/script.js"></script>
+</body>
+</html>

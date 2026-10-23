@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>YouTube Playlist Search — Find any playlist instantly</title>
-<meta name="description" content="Search and filter your YouTube playlists from the save dialog. Break the 200 playlist limit.">
+<title>YouTube Playlist Search: find any playlist instantly</title>
+<meta name="description" content="Free Chrome extension that adds search to YouTube's Save to playlist menu. Type to find any playlist, even past the 200 playlists YouTube shows.">
 <link rel="canonical" href="https://playlist.codyh.xyz/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="YouTube Playlist Search">
-<meta property="og:title" content="YouTube Playlist Search — Find any playlist instantly">
-<meta property="og:description" content="Search and filter your YouTube playlists from the save dialog. Break the 200 playlist limit.">
+<meta property="og:title" content="YouTube Playlist Search: find any playlist instantly">
+<meta property="og:description" content="Free Chrome extension that adds search to YouTube's Save to playlist menu. Type to find any playlist, even past the 200 playlists YouTube shows.">
 <meta property="og:url" content="https://playlist.codyh.xyz/">
 <meta property="og:image" content="https://playlist.codyh.xyz/og-website-preview.png">
 <meta property="og:image:type" content="image/png">
@@ -17,35 +17,68 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="YouTube Playlist Search website: We added a search bar for playlists, beside a searchable YouTube Save dialog.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="YouTube Playlist Search — Find any playlist instantly">
-<meta name="twitter:description" content="Search and filter your YouTube playlists from the save dialog. Break the 200 playlist limit.">
+<meta name="twitter:title" content="YouTube Playlist Search: find any playlist instantly">
+<meta name="twitter:description" content="Free Chrome extension that adds search to YouTube's Save to playlist menu. Type to find any playlist, even past the 200 playlists YouTube shows.">
 <meta name="twitter:image" content="https://playlist.codyh.xyz/og-website-preview.png">
 <meta name="twitter:image:alt" content="YouTube Playlist Search website: We added a search bar for playlists, beside a searchable YouTube Save dialog.">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
-  "name": "YouTube Playlist Search",
-  "url": "https://playlist.codyh.xyz/",
-  "downloadUrl": "https://chromewebstore.google.com/detail/efgbkmnooapcpdpgmihemfpedchhmmek",
-  "operatingSystem": "Chrome",
-  "applicationCategory": "BrowserApplication",
-  "description": "Search and filter your YouTube playlists from the save dialog. Break the 200 playlist limit.",
-  "offers": {
-    "@type": "Offer",
-    "price": "0",
-    "priceCurrency": "USD"
-  },
-  "aggregateRating": {
-    "@type": "AggregateRating",
-    "ratingValue": "4.6",
-    "ratingCount": "5"
-  },
-  "author": {
-    "@type": "Person",
-    "name": "Cody Hergenroeder",
-    "url": "https://codyh.xyz"
-  }
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "name": "YouTube Playlist Search",
+      "url": "https://playlist.codyh.xyz/"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "name": "YouTube Playlist Search",
+      "url": "https://playlist.codyh.xyz/",
+      "downloadUrl": "https://chromewebstore.google.com/detail/efgbkmnooapcpdpgmihemfpedchhmmek",
+      "operatingSystem": "Chrome",
+      "applicationCategory": "BrowserApplication",
+      "softwareVersion": "2.0.11",
+      "description": "Free Chrome extension that adds search to YouTube's Save to playlist menu. Type to find any playlist, even past the 200 playlists YouTube shows.",
+      "featureList": [
+        "Search every playlist you own from YouTube's Save button",
+        "No 200-playlist cap",
+        "Alt+S saves the current video from anywhere",
+        "Alt+P finds and opens any playlist",
+        "Sort playlists by recent, A to Z, or Z to A",
+        "Shows which playlists already contain the video",
+        "Undo any save, and create playlists without leaving the picker",
+        "Works with brand-channel accounts"
+      ],
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.6",
+        "ratingCount": "5"
+      },
+      "author": {
+        "@type": "Person",
+        "name": "Cody Hergenroeder",
+        "url": "https://codyh.xyz"
+      }
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        { "@type": "Question", "name": "How do I search my playlists when saving a YouTube video?", "acceptedAnswer": { "@type": "Answer", "text": "YouTube's Save to playlist menu has no search box. With YouTube Playlist Search installed, clicking Save opens a searchable picker instead: type a few letters of the playlist name and press Enter. It covers every playlist you own." } },
+        { "@type": "Question", "name": "Why can't I see all my playlists in YouTube's Save menu?", "acceptedAnswer": { "@type": "Answer", "text": "YouTube's Save to playlist menu loads at most 200 playlists. If you have more, the rest are not hidden further down, they are missing from the menu entirely. The extension loads your whole library, so every playlist is searchable." } },
+        { "@type": "Question", "name": "Is there a keyboard shortcut to save a video to a playlist on YouTube?", "acceptedAnswer": { "@type": "Answer", "text": "YouTube has no shortcut for Save to playlist. The extension adds two: Alt+S opens the save picker for the video you are on, and Alt+P finds and opens any of your playlists." } },
+        { "@type": "Question", "name": "Can I sort my YouTube playlists alphabetically?", "acceptedAnswer": { "@type": "Answer", "text": "In the extension's picker, yes: sort by YouTube's recent order, A to Z, or Z to A, and it remembers your choice. YouTube's own Save menu has no sort option." } },
+        { "@type": "Question", "name": "How do I add YouTube Shorts to a playlist on a computer?", "acceptedAnswer": { "@type": "Answer", "text": "On a computer, open the Short, click the three-dot menu at the top right of the player, and choose Save to playlist. With the extension, press Alt+S on a Short or right-click its link to get the searchable picker instead." } },
+        { "@type": "Question", "name": "Can it search for videos inside a playlist?", "acceptedAnswer": { "@type": "Answer", "text": "No. It searches your playlists by name, not the videos inside them. To find a video inside a playlist, open the playlist on youtube.com, scroll to the bottom so every video loads, then press Ctrl+F (Cmd+F on Mac)." } },
+        { "@type": "Question", "name": "Does it work on Firefox, Edge, or my phone?", "acceptedAnswer": { "@type": "Answer", "text": "It is built and tested for desktop Chrome 123 or later. Other Chromium browsers that install from the Chrome Web Store may work, but I don't test them. There is no Firefox or mobile version. On a phone, this site has a paste-a-link shortcut to YouTube's Save sheet." } },
+        { "@type": "Question", "name": "Is it safe? What can it see?", "acceptedAnswer": { "@type": "Answer", "text": "It talks only to YouTube, using the session you already have, and never to me or any third party. There is no analytics and no third-party code. It is free and open source, so you can read every line on GitHub." } }
+      ]
+    }
+  ]
 }
 </script>
 <link rel="icon" type="image/png" href="favicon.png">
@@ -605,6 +638,133 @@
     background: linear-gradient(90deg, var(--yt-dark-red), var(--yt-red));
   }
 
+  .problem-text a { color: var(--yt-red); text-decoration: none; }
+  .problem-text a:hover { color: var(--yt-text); }
+
+  kbd {
+    display: inline-block;
+    min-width: 20px;
+    padding: 0 6px;
+    font: 600 0.8em/1.6 'Inter', system-ui, sans-serif;
+    color: var(--yt-text);
+    background: #222;
+    border: 1px solid #3a3a3a;
+    border-bottom-width: 2px;
+    border-radius: 5px;
+    text-align: center;
+  }
+
+  /* ── Features ── */
+  .features-sec {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 80px 40px 40px;
+  }
+  .features-sec h2,
+  .faq-sec h2,
+  .guides-sec h2 {
+    font-size: 32px;
+    font-weight: 900;
+    letter-spacing: -0.5px;
+    text-align: center;
+    margin-bottom: 36px;
+  }
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+  }
+  .feature {
+    background: rgba(24,24,24,0.8);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px;
+    padding: 22px 24px;
+  }
+  .feature h3 {
+    font-size: 17px;
+    font-weight: 800;
+    margin-bottom: 8px;
+  }
+  .feature p {
+    font-size: 14px;
+    color: var(--yt-muted);
+    line-height: 1.6;
+  }
+
+  /* ── FAQ ── */
+  .faq-sec {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 40px 40px 60px;
+  }
+  .faq details { border-bottom: 1px solid rgba(255,255,255,0.08); }
+  .faq details:first-of-type { border-top: 1px solid rgba(255,255,255,0.08); }
+  .faq summary {
+    cursor: pointer;
+    list-style: none;
+    padding: 18px 36px 18px 0;
+    position: relative;
+    font-weight: 700;
+    font-size: 16px;
+  }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::after {
+    content: '+';
+    position: absolute;
+    right: 4px; top: 13px;
+    font-size: 24px;
+    font-weight: 400;
+    color: rgba(255,255,255,0.35);
+    transition: transform 0.2s;
+  }
+  .faq details[open] summary::after { transform: rotate(45deg); }
+  .faq details > div {
+    padding: 0 0 18px;
+    font-size: 15px;
+    color: var(--yt-muted);
+    line-height: 1.7;
+  }
+  .faq a { color: var(--yt-red); text-decoration: none; }
+  .faq a:hover { color: var(--yt-text); }
+
+  /* ── Guides ── */
+  .guides-sec {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 40px 40px 100px;
+  }
+  .guide-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+  }
+  .guide-card {
+    display: block;
+    padding: 22px 24px;
+    background: rgba(24,24,24,0.6);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px;
+    text-decoration: none;
+    color: var(--yt-text);
+    transition: border-color 0.2s;
+  }
+  .guide-card:hover { border-color: rgba(255,0,0,0.4); }
+  .guide-title {
+    display: block;
+    font-size: 16px;
+    font-weight: 800;
+    line-height: 1.35;
+    margin-bottom: 6px;
+  }
+  .guide-desc {
+    display: block;
+    font-size: 14px;
+    color: var(--yt-muted);
+    line-height: 1.5;
+  }
+
   /* ── Bottom CTA ── */
   .bottom-cta {
     text-align: center;
@@ -699,12 +859,16 @@
     .bottom-cta h2 { font-size: 28px; }
     .slab-near-1, .slab-near-2, .slab-near-3 { display: none; }
     .slab-mid-1, .slab-mid-2, .slab-mid-3, .slab-mid-4 { opacity: 0.5; }
+    .features-sec, .faq-sec, .guides-sec { padding-left: 24px; padding-right: 24px; }
+    .feature-grid, .guide-grid { grid-template-columns: 1fr; }
+    .features-sec h2, .faq-sec h2, .guides-sec h2 { font-size: 26px; margin-bottom: 24px; }
     footer {
       flex-direction: column;
       gap: 16px;
       text-align: center;
       padding: 24px 20px;
     }
+    .footer-links { flex-wrap: wrap; justify-content: center; gap: 12px 20px; }
   }
 
   /* ── Mobile hero takeover ── */
@@ -859,6 +1023,7 @@
     .oss p { font-size: 14px; }
     .bottom-cta { padding: 40px 16px 60px; }
     .bottom-cta h2 { font-size: 24px; }
+    .features-sec, .faq-sec, .guides-sec { padding-left: 16px; padding-right: 16px; }
     .slab-far-1, .slab-far-2, .slab-far-3,
     .slab-mid-1, .slab-mid-2, .slab-mid-3, .slab-mid-4 { display: none; }
     footer { padding: 20px 16px; }
@@ -924,7 +1089,7 @@
     <div class="hero-text">
       <div class="hero-label">You'll only like this if you have a ton of playlists</div>
       <h1>Don't worry, YouTube. We added a search bar for playlists.</h1>
-      <p>Ctrl+F for your playlist collection. Built right into YouTube.</p>
+      <p>Ctrl+F for your playlist collection. Click Save on any YouTube video, type a few letters, hit Enter. Every playlist you own, not just the 200 YouTube shows you.</p>
       <a class="cta" href="https://chromewebstore.google.com/detail/efgbkmnooapcpdpgmihemfpedchhmmek" target="_blank">Add to Chrome</a>
     </div>
     <div class="dialog-wrap">
@@ -989,7 +1154,7 @@
   <section class="problem">
     <div class="problem-text">
       <h2>Break the 200 playlist limit</h2>
-      <p>YouTube's save dialog silently caps at 200 playlists... hope the rest weren't important to you. If they were, then boy do I have the extension for you. This extension lets you search your entire playlist library directly from YouTube.</p>
+      <p>YouTube's save dialog silently caps at 200 playlists... hope the rest weren't important to you. If they were, then boy do I have the extension for you. This extension lets you search your entire playlist library directly from YouTube. <a href="/youtube-playlist-limits/">Every YouTube playlist limit, explained.</a></p>
     </div>
     <div class="compare">
       <div class="compare-card">
@@ -1007,16 +1172,99 @@
     </div>
   </section>
 
+  <!-- Features -->
+  <section class="features-sec">
+    <h2>Everything the Save menu should have had</h2>
+    <div class="feature-grid">
+      <div class="feature">
+        <h3>Search every playlist</h3>
+        <p>Type a few letters, in any order. Case and accents don't matter. No 200-playlist ceiling.</p>
+      </div>
+      <div class="feature">
+        <h3>Save with <kbd>Alt</kbd>+<kbd>S</kbd></h3>
+        <p>A keyboard shortcut for Save to playlist, which YouTube never shipped. Or right-click any video link.</p>
+      </div>
+      <div class="feature">
+        <h3>Find a playlist with <kbd>Alt</kbd>+<kbd>P</kbd></h3>
+        <p>Jump straight to any playlist you own. Faster than scrolling your library page.</p>
+      </div>
+      <div class="feature">
+        <h3>Sort A to Z</h3>
+        <p>Recent, A to Z, or Z to A. It remembers which one you like.</p>
+      </div>
+      <div class="feature">
+        <h3>See where it's already saved</h3>
+        <p>Playlists that already have the video are marked, including the ones past 200 that YouTube can't tell you about.</p>
+      </div>
+      <div class="feature">
+        <h3>Undo, and new playlists</h3>
+        <p>Saved to the wrong one? <kbd>Ctrl</kbd>+<kbd>Z</kbd>. Need a new playlist? Type its name and create it right there.</p>
+      </div>
+    </div>
+  </section>
+
   <!-- Bottom CTA -->
   <section class="bottom-cta">
     <h2>Your playlists miss you.</h2>
     <a class="cta" href="https://chromewebstore.google.com/detail/efgbkmnooapcpdpgmihemfpedchhmmek" target="_blank">Add to Chrome, free forever</a>
   </section>
 
+  <!-- FAQ: mirrored in the FAQPage JSON-LD in <head>; keep the two in sync -->
+  <section class="faq-sec" id="faq">
+    <h2>Questions</h2>
+    <div class="faq">
+      <details>
+        <summary>How do I search my playlists when saving a YouTube video?</summary>
+        <div><p>YouTube's Save to playlist menu has no search box. With YouTube Playlist Search installed, clicking Save opens a searchable picker instead: type a few letters of the playlist name and press <kbd>Enter</kbd>. It covers every playlist you own.</p></div>
+      </details>
+      <details>
+        <summary>Why can't I see all my playlists in YouTube's Save menu?</summary>
+        <div><p>YouTube's Save to playlist menu loads at most 200 playlists. If you have more, the rest are not hidden further down, they are missing from the menu entirely. The extension loads your whole library, so every playlist is searchable. More in <a href="/youtube-playlist-limits/">YouTube playlist limits</a>.</p></div>
+      </details>
+      <details>
+        <summary>Is there a keyboard shortcut to save a video to a playlist on YouTube?</summary>
+        <div><p>YouTube has no shortcut for Save to playlist. The extension adds two: <kbd>Alt</kbd>+<kbd>S</kbd> opens the save picker for the video you are on, and <kbd>Alt</kbd>+<kbd>P</kbd> finds and opens any of your playlists.</p></div>
+      </details>
+      <details>
+        <summary>Can I sort my YouTube playlists alphabetically?</summary>
+        <div><p>In the extension's picker, yes: sort by YouTube's recent order, A to Z, or Z to A, and it remembers your choice. YouTube's own Save menu has no sort option.</p></div>
+      </details>
+      <details>
+        <summary>How do I add YouTube Shorts to a playlist on a computer?</summary>
+        <div><p>On a computer, open the Short, click the three-dot menu at the top right of the player, and choose Save to playlist. With the extension, press <kbd>Alt</kbd>+<kbd>S</kbd> on a Short or right-click its link to get the searchable picker instead. More ways in <a href="/add-video-to-youtube-playlist/">how to add a video to a playlist on YouTube</a>.</p></div>
+      </details>
+      <details>
+        <summary>Can it search for videos inside a playlist?</summary>
+        <div><p>No. It searches your playlists by name, not the videos inside them. To find a video inside a playlist, open the playlist on youtube.com, scroll to the bottom so every video loads, then press <kbd>Ctrl</kbd>+<kbd>F</kbd> (<kbd>Cmd</kbd>+<kbd>F</kbd> on Mac).</p></div>
+      </details>
+      <details>
+        <summary>Does it work on Firefox, Edge, or my phone?</summary>
+        <div><p>It is built and tested for desktop Chrome 123 or later. Other Chromium browsers that install from the Chrome Web Store may work, but I don't test them. There is no Firefox or mobile version. On a phone, this site has a paste-a-link shortcut to YouTube's Save sheet.</p></div>
+      </details>
+      <details>
+        <summary>Is it safe? What can it see?</summary>
+        <div><p>It talks only to YouTube, using the session you already have, and never to me or any third party. There is no analytics and no third-party code. It is free and open source, so you can <a href="https://github.com/codyhxyz/playlist-search-extension" target="_blank" rel="noopener">read every line on GitHub</a>. Details in the <a href="privacy-policy.html">privacy policy</a>.</p></div>
+      </details>
+    </div>
+  </section>
+
+  <!-- Guides -->
+  <section class="guides-sec">
+    <h2>Guides</h2>
+    <div class="guide-grid">
+      <a class="guide-card" href="/find-youtube-playlists/"><span class="guide-title">How to find your playlists on YouTube</span><span class="guide-desc">Where they live on every device, and what to do when one goes missing.</span></a>
+      <a class="guide-card" href="/add-video-to-youtube-playlist/"><span class="guide-title">How to add a video to a playlist on YouTube</span><span class="guide-desc">Every way to save a video, including Shorts and several playlists at once.</span></a>
+      <a class="guide-card" href="/youtube-playlist-limits/"><span class="guide-title">YouTube playlist limits</span><span class="guide-desc">The 5,000-video cap, and the 200-playlist cap YouTube doesn't document.</span></a>
+    </div>
+  </section>
+
   <!-- Footer -->
   <footer>
     <div class="footer-links">
       <a href="privacy-policy.html"><svg class="footer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>Privacy Policy</a>
+      <a href="/find-youtube-playlists/">Find your playlists</a>
+      <a href="/add-video-to-youtube-playlist/">Add to a playlist</a>
+      <a href="/youtube-playlist-limits/">Playlist limits</a>
       <a href="https://github.com/codyhxyz/playlist-search-extension"><svg class="footer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>GitHub</a>
     </div>
     <span class="built-by"><svg class="footer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>built by <a href="https://codyh.xyz" target="_blank" rel="noopener">cody h</a></span>
