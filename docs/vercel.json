@@ -1,0 +1,7 @@
+{
+  "redirects": [
+    { "source": "/find-youtube-playlists", "destination": "/find-youtube-playlists/", "permanent": true },
+    { "source": "/add-video-to-youtube-playlist", "destination": "/add-video-to-youtube-playlist/", "permanent": true },
+    { "source": "/youtube-playlist-limits", "destination": "/youtube-playlist-limits/", "permanent": true }
+  ]
+}
