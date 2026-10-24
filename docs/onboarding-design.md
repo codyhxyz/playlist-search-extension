@@ -17,6 +17,19 @@ The factual headline and brief description precede Open YouTube. A separate
 Shortcuts section gives Alt+S and Alt+P readable labels. There is no pinning
 disclosure, fake dialog, numbered explainer, setup reassurance, or reload copy.
 
+The one exception is a collapsed native `<details>`, "What it can access", in
+the footer row after Privacy and Get help. It needs no JavaScript. Open, it
+explains the single install warning ("Read and change your data on
+www.youtube.com") and what it enables, that requests go only to www.youtube.com
+with thumbnails from i.ytimg.com, what is stored on the device, and the one
+right-click item, then links to the source on GitHub and the privacy policy.
+Each statement must stay true against the code and `PRIVACY.md`. It stays
+closed by default so the desktop page still fits one screen; open, the page may
+scroll but must not overflow horizontally. Its zero flex basis keeps the
+summary in place when it opens; below 600px it sits on its own row. The
+restricted-access notice adds one line saying access is used only on
+www.youtube.com, to search and save to your playlists.
+
 On desktop, the introduction and recording share a row. Shortcuts and help
 remain visible below them without scrolling, including at 800×600 and 1366×768.
 The layout keeps 16px body text, the 72px logo, and full-size action buttons.
@@ -38,4 +51,5 @@ loading, keyboard operation, reduced-motion startup, and horizontal overflow.
 Screenshots are review artifacts outside the repository; no remote assets or
 new dependencies are used.
 `tests/test-welcome-layout.mjs` prevents desktop scrolling and horizontal
-overflow, and runs as part of `npm test`.
+overflow with the access disclosure closed, checks horizontal overflow again
+with it open at every size, and runs as part of `npm test`.

@@ -71,11 +71,13 @@
         { "@type": "Question", "name": "How do I search my playlists when saving a YouTube video?", "acceptedAnswer": { "@type": "Answer", "text": "YouTube's Save to playlist menu has no search box. With YouTube Playlist Search installed, clicking Save opens a searchable picker instead: type a few letters of the playlist name and press Enter. It covers every playlist you own." } },
         { "@type": "Question", "name": "Why can't I see all my playlists in YouTube's Save menu?", "acceptedAnswer": { "@type": "Answer", "text": "YouTube's Save to playlist menu loads at most 200 playlists. If you have more, the rest are not hidden further down, they are missing from the menu entirely. The extension loads your whole library, so every playlist is searchable." } },
         { "@type": "Question", "name": "Is there a keyboard shortcut to save a video to a playlist on YouTube?", "acceptedAnswer": { "@type": "Answer", "text": "YouTube has no shortcut for Save to playlist. The extension adds two: Alt+S opens the save picker for the video you are on, and Alt+P finds and opens any of your playlists." } },
-        { "@type": "Question", "name": "Can I sort my YouTube playlists alphabetically?", "acceptedAnswer": { "@type": "Answer", "text": "In the extension's picker, yes: sort by YouTube's recent order, A to Z, or Z to A, and it remembers your choice. YouTube's own Save menu has no sort option." } },
-        { "@type": "Question", "name": "How do I add YouTube Shorts to a playlist on a computer?", "acceptedAnswer": { "@type": "Answer", "text": "On a computer, open the Short, click the three-dot menu at the top right of the player, and choose Save to playlist. With the extension, press Alt+S on a Short or right-click its link to get the searchable picker instead." } },
+        { "@type": "Question", "name": "Can I sort my YouTube playlists alphabetically?", "acceptedAnswer": { "@type": "Answer", "text": "YouTube's Playlists page (youtube.com/feed/playlists) has an A-Z sort, but the Save to playlist menu has no sort option. In the extension's picker you can sort by YouTube's recent order, A to Z, or Z to A, and it remembers your choice." } },
+        { "@type": "Question", "name": "How do I add YouTube Shorts to a playlist on a computer?", "acceptedAnswer": { "@type": "Answer", "text": "On a computer, open the Short, click the three-dot menu at the top right of the player, and choose Save to playlist. With the extension installed, that opens the searchable picker. Alt+S on a Short, or right-clicking its link, does the same." } },
         { "@type": "Question", "name": "Can it search for videos inside a playlist?", "acceptedAnswer": { "@type": "Answer", "text": "No. It searches your playlists by name, not the videos inside them. To find a video inside a playlist, open the playlist on youtube.com, scroll to the bottom so every video loads, then press Ctrl+F (Cmd+F on Mac)." } },
         { "@type": "Question", "name": "Does it work on Firefox, Edge, or my phone?", "acceptedAnswer": { "@type": "Answer", "text": "It is built and tested for desktop Chrome 123 or later. Other Chromium browsers that install from the Chrome Web Store may work, but I don't test them. There is no Firefox or mobile version. On a phone, this site has a paste-a-link shortcut to YouTube's Save sheet." } },
-        { "@type": "Question", "name": "Is it safe? What can it see?", "acceptedAnswer": { "@type": "Answer", "text": "It talks only to YouTube, using the session you already have, and never to me or any third party. There is no analytics and no third-party code. It is free and open source, so you can read every line on GitHub." } }
+        { "@type": "Question", "name": "Does it work on YouTube Music?", "acceptedAnswer": { "@type": "Answer", "text": "No. It runs only on www.youtube.com, not music.youtube.com. Playlists you make in YouTube Music are ordinary YouTube playlists, though, so they show up in the picker when you save a video on youtube.com." } },
+        { "@type": "Question", "name": "Is it safe? What can it see?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. It runs only on www.youtube.com, connects only to YouTube, and sends nothing to me or any third party. The extension has no analytics and no third-party code, and every line is on GitHub. Chrome shows one warning at install, \"Read and change your data on www.youtube.com\", which lets it add search to YouTube's Save menu and save with the session you already have. Its other permissions add no warning: storage keeps your sort order, new-playlist privacy choice, a review-prompt counter, and a playlist list erased when Chrome quits; contextMenus adds the right-click Save to playlist item; scripting loads it into YouTube pages. Thumbnails load from ytimg.com, YouTube's image server." } },
+        { "@type": "Question", "name": "Is YouTube Playlist Search free?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. It is free, with no paid tier, no account to create, and no ads. It is open source under the AGPL-3.0 license." } }
       ]
     }
   ]
@@ -726,6 +728,9 @@
     color: var(--yt-muted);
     line-height: 1.7;
   }
+  .faq details > div p + p, .faq details > div ul + p { margin-top: 10px; }
+  .faq details > div ul { margin: 10px 0 0 20px; }
+  .faq details > div li + li { margin-top: 4px; }
   .faq a { color: var(--yt-red); text-decoration: none; }
   .faq a:hover { color: var(--yt-text); }
 
@@ -1227,11 +1232,11 @@
       </details>
       <details>
         <summary>Can I sort my YouTube playlists alphabetically?</summary>
-        <div><p>In the extension's picker, yes: sort by YouTube's recent order, A to Z, or Z to A, and it remembers your choice. YouTube's own Save menu has no sort option.</p></div>
+        <div><p>YouTube's Playlists page (youtube.com/feed/playlists) has an A-Z sort, but the Save to playlist menu has no sort option. In the extension's picker you can sort by YouTube's recent order, A to Z, or Z to A, and it remembers your choice. More in <a href="/find-youtube-playlists/">how to find your playlists on YouTube</a>.</p></div>
       </details>
       <details>
         <summary>How do I add YouTube Shorts to a playlist on a computer?</summary>
-        <div><p>On a computer, open the Short, click the three-dot menu at the top right of the player, and choose Save to playlist. With the extension, press <kbd>Alt</kbd>+<kbd>S</kbd> on a Short or right-click its link to get the searchable picker instead. More ways in <a href="/add-video-to-youtube-playlist/">how to add a video to a playlist on YouTube</a>.</p></div>
+        <div><p>On a computer, open the Short, click the three-dot menu at the top right of the player, and choose Save to playlist. With the extension installed, that opens the searchable picker. <kbd>Alt</kbd>+<kbd>S</kbd> on a Short, or right-clicking its link, does the same. More ways in <a href="/add-video-to-youtube-playlist/">how to add a video to a playlist on YouTube</a>.</p></div>
       </details>
       <details>
         <summary>Can it search for videos inside a playlist?</summary>
@@ -1242,8 +1247,26 @@
         <div><p>It is built and tested for desktop Chrome 123 or later. Other Chromium browsers that install from the Chrome Web Store may work, but I don't test them. There is no Firefox or mobile version. On a phone, this site has a paste-a-link shortcut to YouTube's Save sheet.</p></div>
       </details>
       <details>
+        <summary>Does it work on YouTube Music?</summary>
+        <div><p>No. It runs only on www.youtube.com, not music.youtube.com. Playlists you make in YouTube Music are ordinary YouTube playlists, though, so they show up in the picker when you save a video on youtube.com.</p></div>
+      </details>
+      <details>
         <summary>Is it safe? What can it see?</summary>
-        <div><p>It talks only to YouTube, using the session you already have, and never to me or any third party. There is no analytics and no third-party code. It is free and open source, so you can <a href="https://github.com/codyhxyz/playlist-search-extension" target="_blank" rel="noopener">read every line on GitHub</a>. Details in the <a href="privacy-policy.html">privacy policy</a>.</p></div>
+        <div>
+          <p>Yes. It runs only on www.youtube.com, connects only to YouTube, and sends nothing to me or any third party. The extension has no analytics and no third-party code, and you can <a href="https://github.com/codyhxyz/playlist-search-extension" target="_blank" rel="noopener">read every line on GitHub</a>.</p>
+          <ul>
+            <li><strong>Site access:</strong> Chrome's one install warning, "Read and change your data on www.youtube.com". It lets the extension add search to YouTube's Save menu and save with the session you already have.</li>
+            <li><strong>storage:</strong> your sort order, new-playlist privacy choice, a review-prompt counter, and a playlist list erased when Chrome quits.</li>
+            <li><strong>contextMenus:</strong> the right-click Save to playlist item.</li>
+            <li><strong>scripting:</strong> loads the extension into YouTube pages.</li>
+            <li><strong>Thumbnails</strong> load from ytimg.com, YouTube's image server.</li>
+          </ul>
+          <p>Details in the <a href="privacy-policy.html">privacy policy</a>.</p>
+        </div>
+      </details>
+      <details>
+        <summary>Is YouTube Playlist Search free?</summary>
+        <div><p>Yes. It is free, with no paid tier, no account to create, and no ads. It is open source under the AGPL-3.0 license.</p></div>
       </details>
     </div>
   </section>

@@ -16,7 +16,7 @@ Your username, email, and profile photo are ignored. The extension reads only th
 
 ## External Services
 
-The extension calls YouTube's internal "InnerTube" API (`https://www.youtube.com/youtubei/v1/*`) as a same-origin request from your open YouTube tab. It also loads playlist thumbnails from YouTube's image server (`i.ytimg.com`), using the addresses YouTube returns. No data is sent to the extension developer. If you click "Rate extension", a new tab opens the extension's reviews page on the Chrome Web Store. The extension sends no playlist data, usage counters, or rating to that page. You choose whether to submit a review there.
+The extension calls YouTube's internal "InnerTube" API (`https://www.youtube.com/youtubei/v1/*`) as a same-origin request from your open YouTube tab. It also loads playlist thumbnails from YouTube's image servers (`i.ytimg.com` and numbered hosts such as `i9.ytimg.com`), using the addresses YouTube returns. No data is sent to the extension developer. If you click "Rate extension", a new tab opens the extension's reviews page on the Chrome Web Store. The extension sends no playlist data, usage counters, or rating to that page. You choose whether to submit a review there.
 
 ## Authentication
 
@@ -58,9 +58,9 @@ All searching and filtering happens locally in your browser. So that the playlis
 
 The extension declares three Chrome API permissions in `manifest.json`:
 
-- `scripting` — to dynamically register its content scripts when YouTube site access is allowed.
-- `contextMenus` — to add a single "Save to playlist" item to the right-click menu on YouTube video links.
-- `storage` — used for the in-memory playlist list, display preferences, local review-prompt state, and removal of records from earlier versions:
+- `scripting`: to dynamically register its content scripts when YouTube site access is allowed.
+- `contextMenus`: to add a single "Save to playlist" item to the right-click menu on YouTube pages (links, videos and the page itself).
+- `storage`: used for the in-memory playlist list, display preferences, local review-prompt state, and removal of records from earlier versions:
   - **Playlist list** (`chrome.storage.session`, memory only, cleared when the browser quits): the last list of your playlists for one signed-in account, so the picker opens without waiting.
   - **Display preferences** (`chrome.storage.local`): the sort order you last chose (for example "A → Z") and the privacy setting new playlists are created with (Private, Unlisted or Public). These are two fixed words, not playlist names, IDs or searches, and they never leave your browser.
   - **Review prompt** (`plsReview` in `chrome.storage.local`): a successful-save count capped at five, a usage-day count capped at three, and the first and latest save days. Days are UTC day numbers, not exact times. A flag prevents another prompt after the first request. These values contain no account, video, or playlist identifiers and never leave your browser. The extension cannot tell whether you submitted a review.

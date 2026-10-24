@@ -18,7 +18,7 @@ Status: ✅ verified live · ⚠️ known broken/missing · ❓ never tested · 
 | A4 | Watch sidebar recommendation ⋮ → Save | ✅ | captured live |
 | A5 | Channel page video ⋮ → Save | ✅ | captured live |
 | A6 | Playlist page row ⋮ → Save | ✅ | captured live |
-| A7 | Shorts (`/shorts/<id>`) | ⚠️ | **No save affordance exists** — rail is Like/Comment/Share/Remix/Sound. Nothing to observe. Floor-only (toolbar / right-click / Alt+S) |
+| A7 | Shorts (`/shorts/<id>`) | ✅ | Player's top-right ⋮ → Save to playlist opens the picker (checked live 2026-10-24). The side rail itself has no Save button. Toolbar, right-click and Alt+S also work |
 | A8 | Subscriptions / Library / History feeds | ✅ | all three captured live |
 | A9 | Toolbar action icon | ✅ | URL-only; the zero-DOM floor |
 | A10 | Keyboard shortcut (`chrome.commands`) | ✅ | Alt+S registered; resolution path identical to toolbar. Accelerator itself not injectable over CDP |

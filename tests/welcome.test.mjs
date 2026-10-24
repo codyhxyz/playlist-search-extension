@@ -98,6 +98,9 @@ test('default HTML welcomes users to first success without a permission gate', (
   assert.doesNotMatch(html, /Keep it handy|jump right in|no extra setup|tabs already open|reload YouTube|Less scrolling|More saving|Optional shortcuts|<svg|class="sheet"|class="steps"|Type a name/);
   assert.match(html, /cannot work while YouTube site access is restricted/);
   assert.match(html, /Extensions → YouTube Playlist Search → Site access/);
+  assert.match(html, /Access is used only on www\.youtube\.com, to search and save to your playlists\./);
+  assert.match(html, /<details id="access">\s*<summary>What it can access<\/summary>/, 'access disclosure is native and collapsed by default');
+  assert.match(html, /“Read and change your data on www\.youtube\.com” warning Chrome showed at install/);
   assert.match(html, /www\.youtube\.com/);
   assert.match(html, /background: var\(--required-bg\)/);
   assert.match(html, /#open \{ background: var\(--red\)/);

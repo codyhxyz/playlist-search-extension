@@ -49,11 +49,13 @@ try {
       scrollWidth: document.documentElement.scrollWidth,
       scrollHeight: document.documentElement.scrollHeight,
       sections: [...document.querySelectorAll('header,.intro,figure,.shortcuts,footer')].map(e => e.getBoundingClientRect().toJSON()),
+      accessOpen: document.querySelector('#access').open,
       font: parseFloat(getComputedStyle(document.body).fontSize),
       logo: document.querySelector('.logo').getBoundingClientRect().width,
       button: document.querySelector('#open').getBoundingClientRect().height,
       video: document.querySelector('video').getBoundingClientRect().width
     })`)));
+    assert.equal(result.accessOpen, false, 'The access disclosure starts collapsed');
     assert.ok(result.scrollWidth <= width, `${width}×${height}: horizontal overflow`);
     assert.ok(result.font >= 16 && result.logo >= 64 && result.button >= 44, 'Do not fit by shrinking text, branding or controls');
     if (width >= 760) {
@@ -64,7 +66,18 @@ try {
     if (width === 1366 || width === 360) {
       await ab('screenshot', `/tmp/playlist-welcome-compact-${width}.png`);
     }
-    console.log(`✓ Welcome layout ${width}×${height}: ${result.scrollHeight}px document, no horizontal overflow`);
+    // Open, the access disclosure may make the page scroll, but never sideways.
+    await ab('click', '#access summary');
+    await ab('wait', '--fn', 'document.querySelector("#access").open');
+    await ab('wait', '--fn', 'document.getAnimations().every((a) => a.playState !== "running")');
+    const open = JSON.parse(JSON.parse(await ab('eval', `JSON.stringify({
+      scrollWidth: document.documentElement.scrollWidth,
+      scrollHeight: document.documentElement.scrollHeight,
+      body: document.querySelector('.access-body').getBoundingClientRect().toJSON()
+    })`)));
+    assert.ok(open.scrollWidth <= width, `${width}×${height}: horizontal overflow with the access disclosure open`);
+    assert.ok(open.body.left >= 0 && open.body.right <= width && open.body.height > 0, `${width}×${height}: access disclosure content must be visible and within the viewport width`);
+    console.log(`✓ Welcome layout ${width}×${height}: ${result.scrollHeight}px document (${open.scrollHeight}px open), no horizontal overflow`);
   }
 } finally {
   try { await ab('close'); } finally { server.closeAllConnections(); server.close(); }
