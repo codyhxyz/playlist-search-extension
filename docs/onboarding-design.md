@@ -14,7 +14,8 @@ the static poster instead. Native video controls allow pausing or playing
 without a separate demo button. The video retains its aspect ratio on narrow screens.
 
 The factual headline and brief description precede Open YouTube. A separate
-Shortcuts section gives Alt+S and Alt+P readable labels. There is no pinning
+Shortcuts section gives the two commands readable labels, with keys read from
+chrome.commands so they match the OS and any rebinding. There is no pinning
 disclosure, fake dialog, numbered explainer, setup reassurance, or reload copy.
 
 The one exception is a collapsed native `<details>`, "What it can access", in

@@ -147,7 +147,7 @@ setTimeout(() => {
   if (plsHookAlive) return;
   console.error(
     '[pls] the MAIN-world intent hook did not answer. Clicking YouTube’s Save button ' +
-      'will do nothing — use the toolbar icon, the right-click menu, or Alt+S. ' +
+      'will do nothing — use the toolbar icon, the right-click menu, or the Save shortcut. ' +
       '(Check that intent-hook.js is still registered as a world:"MAIN" content script.)'
   );
 }, 3000);

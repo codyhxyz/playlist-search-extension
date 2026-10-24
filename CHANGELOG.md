@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.14
+
+- The welcome page shows the shortcuts Chrome actually has bound, in this OS's notation (⌥S and ⌥P on a Mac, Alt+S and Alt+P elsewhere). A shortcut you removed or changed in chrome://extensions/shortcuts shows as it is, or as "Not set".
+- Store summary, website and README give the Mac keys (Option+S, Option+P) next to Alt+S and Alt+P.
+
 ## 2.0.13
 
 - **Row hover no longer flickers.** The hovered row and the keyboard-cursor row stay lit while the list refreshes. Before, every refresh rebuilt the rows and faded their highlight back in, so on large libraries (where membership past 200 playlists arrives one at a time) the hovered row strobed.

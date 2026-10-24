@@ -15,7 +15,8 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
-function harness({ granted = true, contains = async () => granted, version = 'test', reducedMotion = false, playbackFails = false } = {}) {
+function harness({ granted = true, contains = async () => granted, version = 'test', reducedMotion = false, playbackFails = false,
+  commands = [{ name: 'open-save-sheet', shortcut: '⌥S' }, { name: 'find-playlist', shortcut: '⌥P' }] } = {}) {
   const nodes = {};
   const mediaCalls = [];
   let motionListener;
@@ -56,6 +57,7 @@ function harness({ granted = true, contains = async () => granted, version = 'te
       onRemoved: { addListener: (fn) => { handlers.removed = fn; } },
     },
     tabs: { create: (value) => { calls.push(['open', value]); return behavior.open(); } },
+    commands: { getAll: async () => commands },
   };
   const body = { dataset: {} };
   runInNewContext(source, {
@@ -93,8 +95,9 @@ test('default HTML welcomes users to first success without a permission gate', (
   assert.match(html, />Open YouTube<\/button>/);
   assert.match(html, /src="icons\/icon128.png" width="72" height="72"/);
   assert.match(html, />Shortcuts<\/h2>/);
-  assert.match(html, /Alt\+S.*Save the current video or Short/);
-  assert.match(html, /Alt\+P.*Find a playlist/);
+  assert.match(html, /<kbd id="key-open-save-sheet"><\/kbd>.*Save the current video or Short/);
+  assert.match(html, /<kbd id="key-find-playlist"><\/kbd>.*Find a playlist/);
+  assert.doesNotMatch(html, /Alt\+/, 'shortcuts come from Chrome, which formats them per OS');
   assert.doesNotMatch(html, /Keep it handy|jump right in|no extra setup|tabs already open|reload YouTube|Less scrolling|More saving|Optional shortcuts|<svg|class="sheet"|class="steps"|Type a name/);
   assert.match(html, /cannot work while YouTube site access is restricted/);
   assert.match(html, /Extensions → YouTube Playlist Search → Site access/);
@@ -108,6 +111,21 @@ test('default HTML welcomes users to first success without a permission gate', (
   assert.match(html, /:focus-visible/);
   assert.match(html, /prefers-color-scheme: light/);
   assert.doesNotMatch(html, /<table|Required:|Setup isn’t finished|Checking YouTube access/);
+});
+
+test('shortcuts show what Chrome reports for this OS, including a removed one', async () => {
+  const mac = harness();
+  await tick();
+  assert.equal(mac.nodes['key-open-save-sheet'].textContent, '⌥S');
+  assert.equal(mac.nodes['key-find-playlist'].textContent, '⌥P');
+  const other = harness({ commands: [
+    { name: '_execute_action', shortcut: '' },
+    { name: 'open-save-sheet', shortcut: 'Alt+S' },
+    { name: 'find-playlist', shortcut: '' },
+  ] });
+  await tick();
+  assert.equal(other.nodes['key-open-save-sheet'].textContent, 'Alt+S');
+  assert.equal(other.nodes['key-find-playlist'].textContent, 'Not set');
 });
 
 test('the real recording autoplays muted with native controls and no demo button', async () => {

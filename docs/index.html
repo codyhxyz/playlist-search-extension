@@ -37,13 +37,12 @@
       "downloadUrl": "https://chromewebstore.google.com/detail/efgbkmnooapcpdpgmihemfpedchhmmek",
       "operatingSystem": "Chrome",
       "applicationCategory": "BrowserApplication",
-      "softwareVersion": "2.0.13",
       "description": "Free Chrome extension that adds search to YouTube's Save to playlist menu. Type to find any playlist, even past the 200 playlists YouTube shows.",
       "featureList": [
         "Search every playlist you own from YouTube's Save button",
         "No 200-playlist cap",
-        "Alt+S saves the current video from anywhere",
-        "Alt+P finds and opens any playlist",
+        "Alt+S (Option+S on Mac) saves the current video from anywhere",
+        "Alt+P (Option+P on Mac) finds and opens any playlist",
         "Sort playlists by recent, A to Z, or Z to A",
         "Shows which playlists already contain the video",
         "Undo any save, and create playlists without leaving the picker",
@@ -70,9 +69,9 @@
       "mainEntity": [
         { "@type": "Question", "name": "How do I search my playlists when saving a YouTube video?", "acceptedAnswer": { "@type": "Answer", "text": "YouTube's Save to playlist menu has no search box. With YouTube Playlist Search installed, clicking Save opens a searchable picker instead: type a few letters of the playlist name and press Enter. It covers every playlist you own." } },
         { "@type": "Question", "name": "Why can't I see all my playlists in YouTube's Save menu?", "acceptedAnswer": { "@type": "Answer", "text": "YouTube's Save to playlist menu loads at most 200 playlists. If you have more, the rest are not hidden further down, they are missing from the menu entirely. The extension loads your whole library, so every playlist is searchable." } },
-        { "@type": "Question", "name": "Is there a keyboard shortcut to save a video to a playlist on YouTube?", "acceptedAnswer": { "@type": "Answer", "text": "YouTube has no shortcut for Save to playlist. The extension adds two: Alt+S opens the save picker for the video you are on, and Alt+P finds and opens any of your playlists." } },
+        { "@type": "Question", "name": "Is there a keyboard shortcut to save a video to a playlist on YouTube?", "acceptedAnswer": { "@type": "Answer", "text": "YouTube has no shortcut for Save to playlist. The extension adds two: Alt+S opens the save picker for the video you are on, and Alt+P finds and opens any of your playlists. On a Mac they are Option+S and Option+P." } },
         { "@type": "Question", "name": "Can I sort my YouTube playlists alphabetically?", "acceptedAnswer": { "@type": "Answer", "text": "YouTube's Playlists page (youtube.com/feed/playlists) has an A-Z sort, but the Save to playlist menu has no sort option. In the extension's picker you can sort by YouTube's recent order, A to Z, or Z to A, and it remembers your choice." } },
-        { "@type": "Question", "name": "How do I add YouTube Shorts to a playlist on a computer?", "acceptedAnswer": { "@type": "Answer", "text": "On a computer, open the Short, click the three-dot menu at the top right of the player, and choose Save to playlist. With the extension installed, that opens the searchable picker. Alt+S on a Short, or right-clicking its link, does the same." } },
+        { "@type": "Question", "name": "How do I add YouTube Shorts to a playlist on a computer?", "acceptedAnswer": { "@type": "Answer", "text": "On a computer, open the Short, click the three-dot menu at the top right of the player, and choose Save to playlist. With the extension installed, that opens the searchable picker. Alt+S (Option+S on Mac) on a Short, or right-clicking its link, does the same." } },
         { "@type": "Question", "name": "Can it search for videos inside a playlist?", "acceptedAnswer": { "@type": "Answer", "text": "No. It searches your playlists by name, not the videos inside them. To find a video inside a playlist, open the playlist on youtube.com, scroll to the bottom so every video loads, then press Ctrl+F (Cmd+F on Mac)." } },
         { "@type": "Question", "name": "Does it work on Firefox, Edge, or my phone?", "acceptedAnswer": { "@type": "Answer", "text": "It is built and tested for desktop Chrome 123 or later. Other Chromium browsers that install from the Chrome Web Store may work, but I don't test them. There is no Firefox or mobile version. On a phone, this site has a paste-a-link shortcut to YouTube's Save sheet." } },
         { "@type": "Question", "name": "Does it work on YouTube Music?", "acceptedAnswer": { "@type": "Answer", "text": "No. It runs only on www.youtube.com, not music.youtube.com. Playlists you make in YouTube Music are ordinary YouTube playlists, though, so they show up in the picker when you save a video on youtube.com." } },
@@ -1186,11 +1185,11 @@
         <p>Type a few letters, in any order. Case and accents don't matter. No 200-playlist ceiling.</p>
       </div>
       <div class="feature">
-        <h3>Save with <kbd>Alt</kbd>+<kbd>S</kbd></h3>
+        <h3>Save with <kbd>Alt</kbd>+<kbd>S</kbd> (<kbd>Option</kbd>+<kbd>S</kbd> on Mac)</h3>
         <p>A keyboard shortcut for Save to playlist, which YouTube never shipped. Or right-click any video link.</p>
       </div>
       <div class="feature">
-        <h3>Find a playlist with <kbd>Alt</kbd>+<kbd>P</kbd></h3>
+        <h3>Find a playlist with <kbd>Alt</kbd>+<kbd>P</kbd> (<kbd>Option</kbd>+<kbd>P</kbd> on Mac)</h3>
         <p>Jump straight to any playlist you own. Faster than scrolling your library page.</p>
       </div>
       <div class="feature">
@@ -1228,7 +1227,7 @@
       </details>
       <details>
         <summary>Is there a keyboard shortcut to save a video to a playlist on YouTube?</summary>
-        <div><p>YouTube has no shortcut for Save to playlist. The extension adds two: <kbd>Alt</kbd>+<kbd>S</kbd> opens the save picker for the video you are on, and <kbd>Alt</kbd>+<kbd>P</kbd> finds and opens any of your playlists.</p></div>
+        <div><p>YouTube has no shortcut for Save to playlist. The extension adds two: <kbd>Alt</kbd>+<kbd>S</kbd> opens the save picker for the video you are on, and <kbd>Alt</kbd>+<kbd>P</kbd> finds and opens any of your playlists. On a Mac they are <kbd>Option</kbd>+<kbd>S</kbd> and <kbd>Option</kbd>+<kbd>P</kbd>.</p></div>
       </details>
       <details>
         <summary>Can I sort my YouTube playlists alphabetically?</summary>
@@ -1236,7 +1235,7 @@
       </details>
       <details>
         <summary>How do I add YouTube Shorts to a playlist on a computer?</summary>
-        <div><p>On a computer, open the Short, click the three-dot menu at the top right of the player, and choose Save to playlist. With the extension installed, that opens the searchable picker. <kbd>Alt</kbd>+<kbd>S</kbd> on a Short, or right-clicking its link, does the same. More ways in <a href="/add-video-to-youtube-playlist/">how to add a video to a playlist on YouTube</a>.</p></div>
+        <div><p>On a computer, open the Short, click the three-dot menu at the top right of the player, and choose Save to playlist. With the extension installed, that opens the searchable picker. <kbd>Alt</kbd>+<kbd>S</kbd> (<kbd>Option</kbd>+<kbd>S</kbd> on Mac) on a Short, or right-clicking its link, does the same. More ways in <a href="/add-video-to-youtube-playlist/">how to add a video to a playlist on YouTube</a>.</p></div>
       </details>
       <details>
         <summary>Can it search for videos inside a playlist?</summary>

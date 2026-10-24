@@ -10,8 +10,8 @@ This extension opens a searchable picker covering **every** playlist you own, in
 
 - **Search every playlist you own.** The library comes from an endpoint that isn't capped, so the 200 ceiling doesn't apply. Type to narrow; with hundreds of playlists you type rather than scroll.
 - **Works from every save surface.** The watch page, the home feed `⋮`, search results, channel pages, the watch sidebar, subscriptions, history, playlist rows.
-- **Ways in that don't depend on YouTube's page:** the toolbar icon, right-click on a video link or a watch page, and `Alt`+`S`. These use only the URL, so they survive a YouTube redesign, and they're the only way to save a Short (which has no Save button of its own).
-- **Find a playlist** with `Alt`+`P`, or the toolbar icon on a YouTube page with no video. Same picker; choosing a row opens the playlist.
+- **Ways in that don't depend on YouTube's page:** the toolbar icon, right-click on a video link or a watch page, and `Alt`+`S` (`Option`+`S` on Mac). These use only the URL, so they survive a YouTube redesign, and they're the only way to save a Short (which has no Save button of its own).
+- **Find a playlist** with `Alt`+`P` (`Option`+`P` on Mac), or the toolbar icon on a YouTube page with no video. Same picker; choosing a row opens the playlist.
 - **Shows what's already saved.** YouTube reports membership for 200 playlists. The rest are checked in the background by reading each playlist, and rows gain their "already in" mark as answers arrive.
 - **Brand-channel accounts work.** If your playlists live on a channel rather than your personal account, the extension acts as that channel.
 - **Search by words, in any order**, ignoring case and accents. Rows show each playlist's privacy and video count.

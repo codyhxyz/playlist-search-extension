@@ -20,7 +20,8 @@ const mock = `<script>globalThis.chrome = {
   runtime: {getManifest: () => ({version: ${JSON.stringify(version)}}), sendMessage: async () => ({ok: true})},
   permissions: {contains: async () => true, request: async () => true,
     onAdded: {addListener() {}}, onRemoved: {addListener() {}}},
-  tabs: {create: async () => ({})}
+  tabs: {create: async () => ({})},
+  commands: {getAll: async () => [{name: 'open-save-sheet', shortcut: 'Alt+S'}, {name: 'find-playlist', shortcut: 'Alt+P'}]}
 };</script>`;
 const server = http.createServer((req, res) => {
   const file = new URL(req.url, 'http://127.0.0.1').pathname.slice(1);

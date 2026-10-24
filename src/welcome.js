@@ -10,6 +10,15 @@ import { YOUTUBE_ORIGIN, hasYouTubePermission, touchesYouTube } from "./onboardi
   const version = document.getElementById("version");
   version.textContent = `v${chrome.runtime.getManifest().version}`;
 
+  // Chrome formats each shortcut for this OS (⌥S on a Mac, Alt+S elsewhere) and
+  // reports the user's own rebinding, or none, from chrome://extensions/shortcuts.
+  void chrome.commands.getAll().then((commands) => {
+    for (const { name, shortcut } of commands) {
+      const key = document.getElementById(`key-${name}`);
+      if (key) key.textContent = shortcut || "Not set";
+    }
+  });
+
   const demo = /** @type {HTMLVideoElement} */ (document.getElementById("demo-video"));
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   function syncDemoMotion() {
