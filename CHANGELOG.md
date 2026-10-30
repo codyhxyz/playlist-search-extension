@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.13
+
+- **Row hover no longer flickers.** The hovered row and the keyboard-cursor row stay lit while the list refreshes. Before, every refresh rebuilt the rows and faded their highlight back in, so on large libraries (where membership past 200 playlists arrives one at a time) the hovered row strobed.
+
 ## 2.0.12
 
 - Store listing summary now names the keyboard shortcuts. No code changes.

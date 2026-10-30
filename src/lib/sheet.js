@@ -336,9 +336,14 @@ input::placeholder { color: var(--fg-2); }
 .row.busy, .row.removed { cursor: default; }
 /* Full-bleed and square, exactly as YouTube's own rows hover. The keyboard
    cursor wears the same wash — it is the same "you are here" — and moves
-   instantly: a fading wash trails behind a held arrow key. */
-.row.on { background-color: var(--hov); }
+   instantly: a fading wash trails behind a held arrow key. Arriving, it never
+   fades in either: every render rebuilds the cursor row, and a fade there
+   blinks it on each refresh. */
+.row.on { background-color: var(--hov); transition: none; }
 @media (hover: hover) { :where(.list:not(.kb)) .row:not(.busy,.removed):hover { background-color: var(--hov); } }
+/* A rebuilt row under a resting pointer: the hover wash, there on its first
+   frame, so a refresh cannot blink it out and fade it back. */
+:where(.list:not(.kb)) .row.held:where(:not(.busy,.removed)) { background-color: var(--hov); transition: none; }
 .list.kb .row { transition: none; }
 .row:not(.busy,.removed):active { background-color: var(--tonal-hov); }
 /* A row gliding past others rides above them on the sheet's own colour, so two
@@ -1100,6 +1105,10 @@ export function createSheet({
   let pressedPointer = null;
   let renderPending = false;
   let releaseTimer;
+  // Where a hovering pointer last was over the list, so a re-render can hand the
+  // hover wash straight to the new row under it (see holdHover).
+  /** @type {{x: number, y: number} | null} */
+  let pointerAt = null;
   // The status line is an aria-live region, so what it currently asserts matters
   // beyond the pixels. `restingStatus` is the last thing the caller set: an
   // operation's own line (a failure, "Saved to …", a removal prompt) may
@@ -1488,8 +1497,21 @@ export function createSheet({
     list.scrollTop = keepScroll;
     paint(false);
     if (before) glide(before);
+    holdHover();
     reveal();
     sizeList();
+  }
+
+  // Every render builds fresh rows, and a fresh row is not :hover until the
+  // engine's next hit test, then fades its wash back in. A burst of renders (the
+  // membership tail answers one playlist at a time) strobed the hovered row. The
+  // row now under the pointer wears the wash from its first frame instead; the
+  // next pointer move hands it back to :hover, which paints the same colour.
+  function holdHover() {
+    if (!pointerAt || list.classList.contains('kb')) return;
+    const hit = shadow.elementFromPoint(pointerAt.x, pointerAt.y);
+    const row = hit && list.contains(hit) ? hit.closest('.row') : null;
+    row?.classList.add('held');
   }
 
   // What the list holds changing kind gets a little motion; within a kind, the
@@ -1864,7 +1886,16 @@ export function createSheet({
   window.addEventListener('pointercancel', releaseRows, true);
 
   input.addEventListener('input', () => { cancelRemoval(false); steered = false; render(); });
-  list.addEventListener('pointermove', () => list.classList.remove('kb'), { passive: true });
+  list.addEventListener('pointermove', (e) => {
+    list.classList.remove('kb');
+    // Touch has no hover to carry over: :hover latches there, so nothing to hold.
+    pointerAt = e.pointerType === 'touch' ? null : { x: e.clientX, y: e.clientY };
+    for (const n of list.querySelectorAll('.held')) n.classList.remove('held');
+  }, { passive: true });
+  list.addEventListener('pointerleave', () => {
+    pointerAt = null;
+    for (const n of list.querySelectorAll('.held')) n.classList.remove('held');
+  });
   // Scrolling by hand is steering too: a list refresh must not yank it to the top.
   list.addEventListener('wheel', () => { steered = true; }, { passive: true });
   closeBtn.addEventListener('click', () => dlg.close());
