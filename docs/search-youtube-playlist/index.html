@@ -57,12 +57,12 @@
     {
       "@type": "FAQPage",
       "mainEntity": [
-        { "@type": "Question", "name": "Is there a way to search inside my YouTube playlists?", "acceptedAnswer": { "@type": "Answer", "text": "Not with a search box. A playlist page on youtube.com has no search of its own. On a computer, open the playlist, scroll until every video has loaded, then press Ctrl+F (Cmd+F on a Mac) and type part of the title. YouTube Music has been rolling out a Find in playlist option in a playlist's three-dot menu, but it only covers music." } },
+        { "@type": "Question", "name": "Is there a way to search inside my YouTube playlists?", "acceptedAnswer": { "@type": "Answer", "text": "Not with a search box. A playlist page on youtube.com has no search of its own. On a computer, open the playlist, scroll until every video has loaded, then press Ctrl+F (Cmd+F on a Mac) and type part of the title. The YouTube Music app has been testing a Find in playlist option with a small group of users, but it isn't generally available." } },
         { "@type": "Question", "name": "How do I find a video I saved to a playlist?", "acceptedAnswer": { "@type": "Answer", "text": "If you know which playlist, open it, load every video by scrolling to the end, and press Ctrl+F. If you don't know which playlist, but watched the video, search your watch history at youtube.com/feed/history, open the video, and click Save: the playlists that already contain it are ticked. YouTube's Save menu only lists 200 playlists, so if you have more, a playlist past that point won't show up there." } },
         { "@type": "Question", "name": "Why doesn't Ctrl+F find a video that I know is in the playlist?", "acceptedAnswer": { "@type": "Answer", "text": "Because it hasn't loaded yet. YouTube loads a playlist about 100 videos at a time as you scroll, and find-in-page only sees what is on the page. Scroll to the very end first. Ctrl+F also only matches the title and channel name YouTube shows, not the description, and a video that was deleted or made private shows up under a placeholder title." } },
         { "@type": "Question", "name": "Can I search a YouTube playlist on my phone?", "acceptedAnswer": { "@type": "Answer", "text": "Not in the YouTube app, which has no search inside a playlist and no find-in-page. In a phone browser you can open the playlist on m.youtube.com and use the browser's Find in page option, after scrolling to load every video. A computer is much easier for a long playlist." } },
         { "@type": "Question", "name": "How do I find which playlist a video is in?", "acceptedAnswer": { "@type": "Answer", "text": "Open the video and click Save. YouTube ticks every playlist in the menu that already contains it. The menu only covers 200 of your playlists, so with more than that a playlist can be missing from the list. The free YouTube Playlist Search extension for Chrome shows the same ticks across every playlist you own, past 200." } },
-        { "@type": "Question", "name": "Is there an extension that searches the videos inside a YouTube playlist?", "acceptedAnswer": { "@type": "Answer", "text": "Several extensions on the Chrome and Firefox stores claim to. I haven't tested them, so I can't vouch for any. My own extension, YouTube Playlist Search, does something adjacent: it searches your playlists by name and shows which of them already contain a video. It does not search the video titles inside a playlist." } }
+        { "@type": "Question", "name": "Is there an extension that searches the videos inside a YouTube playlist?", "acceptedAnswer": { "@type": "Answer", "text": "Several extensions on the Chrome and Firefox stores claim to. I haven't tested them, so I can't vouch for any. My own extension, YouTube Playlist Search, does something adjacent: it searches your playlists by name and shows which of them already contain a video." } }
       ]
     }
   ]
@@ -84,7 +84,7 @@
 <main class="article">
   <nav class="crumbs" aria-label="Breadcrumb"><a href="/">YouTube Playlist Search</a> / Search within a playlist</nav>
   <h1>How to search within a YouTube playlist</h1>
-  <p class="byline">By <a href="https://codyh.xyz" target="_blank" rel="noopener">Cody Hergenroeder</a>, who builds <a href="/">YouTube Playlist Search</a> and reads YouTube's playlist API for a living · Updated November 7, 2026</p>
+  <p class="byline">By <a href="https://codyh.xyz" target="_blank" rel="noopener">Cody Hergenroeder</a>, who builds <a href="/">YouTube Playlist Search</a> · Updated November 7, 2026</p>
 
   <div class="answer">
     <div class="answer-label">Quick answer</div>
@@ -106,8 +106,8 @@
 
   <h2 id="search-inside">Is there a way to search inside my YouTube playlists?</h2>
   <p>Not a built-in one, on youtube.com. A playlist page has a title, a Play all button, a sort menu on your own playlists, and the list of videos. No search field. The search bar at the top of the page searches all of YouTube, not the playlist you're looking at.</p>
-  <p>The one exception is <strong>YouTube Music</strong>. Since late 2025 it has been rolling out a <strong>Find in playlist</strong> option in a playlist's three-dot menu, which searches song titles, artists and albums. Reports say the rollout is gradual, so your account may not have it yet. It only helps with music: YouTube Music only shows the music videos from a playlist, so it can't search your "cooking" or "lectures" playlists.</p>
-  <p>Everywhere else, the browser's own find-in-page is the tool.</p>
+  <p>One thing to watch: in late 2025, tech sites reported that the <strong>YouTube Music</strong> app was <em>testing</em> a <strong>Find in playlist</strong> option in a playlist's three-dot menu, seen by a small group of iPhone users. It's a limited test, not a feature you can count on. It's also in the YouTube Music app, not on youtube.com, and YouTube Music <a href="https://support.google.com/youtubemusic/answer/7205933" target="_blank" rel="noopener">only shows the music videos</a> from a playlist you made on YouTube.</p>
+  <p>So on youtube.com, the only tool you have is your browser's find-in-page (<kbd>Ctrl</kbd>+<kbd>F</kbd>). It works, but it was never built for this, and it misses more than you'd expect.</p>
 
   <h2 id="ctrl-f">How to search a YouTube playlist with Ctrl+F <span class="tag">Desktop</span></h2>
   <ol class="steps">
@@ -118,18 +118,33 @@
   <p>That's it. For a playlist of a few hundred videos it takes under a minute.</p>
 
   <h2 id="ctrl-f-limits">Why doesn't Ctrl+F find a video I know is in the playlist?</h2>
-  <p>Find-in-page searches the text on the page, nothing more. With a YouTube playlist that leaves real gaps:</p>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>What goes wrong</th><th>Why</th><th>What to do</th></tr></thead>
-      <tbody>
-        <tr><td><strong>No match, but the video is there</strong></td><td>It hasn't loaded. The page holds about 100 videos until you scroll.</td><td>Scroll to the true end before searching.</td></tr>
-        <tr><td><strong>Huge playlists are slow</strong></td><td>A playlist can hold 5,000 videos, which is about 50 rounds of loading.</td><td>Use the sort menu first (below) so the video is near the top.</td></tr>
-        <tr><td><strong>You remember what it was about, not the title</strong></td><td>Only the title and channel name are on the page, not the description or captions.</td><td>Search by channel name, or try the watch history search below.</td></tr>
-        <tr><td><strong>The video shows as deleted or private</strong></td><td>YouTube replaces its title with a placeholder like "[Private video]".</td><td>Search for the placeholder. The original title is gone from the playlist.</td></tr>
-        <tr><td><strong>Watch later or Liked videos</strong></td><td>Same as any playlist, and they tend to be the longest ones.</td><td>Same steps. They're at <code>youtube.com/playlist?list=WL</code> and <code>?list=LL</code>.</td></tr>
-      </tbody>
-    </table>
+  <p>Ctrl+F can only find text that's already on the page, and YouTube never puts a long playlist on the page all at once. It shows the first 100 or so videos and loads the rest only as you scroll, so a video further down is invisible to Ctrl+F, even though it's in the playlist. That's the most common reason it comes up empty. Here's everything that can go wrong:</p>
+  <div class="gaps">
+    <div class="gap">
+      <div class="gap-title">No match, but the video is there</div>
+      <p><span class="gap-k">Why</span><span>It hasn't loaded yet. YouTube shows about 100 videos at a time and adds more as you scroll, so the rest of the playlist isn't on the page for Ctrl+F to find.</span></p>
+      <p><span class="gap-k">Fix</span><span>Scroll all the way to the end until no more videos appear, then search.</span></p>
+    </div>
+    <div class="gap">
+      <div class="gap-title">Huge playlists take forever</div>
+      <p><span class="gap-k">Why</span><span>A playlist can hold up to 5,000 videos. That's about 50 rounds of scrolling and waiting before Ctrl+F can see them all.</span></p>
+      <p><span class="gap-k">Fix</span><span>Sort the playlist first (see below) so the video you want is near the top.</span></p>
+    </div>
+    <div class="gap">
+      <div class="gap-title">You remember what it was about, but not the title</div>
+      <p><span class="gap-k">Why</span><span>Ctrl+F only sees the title and channel name. It can't search descriptions or what was said in the video.</span></p>
+      <p><span class="gap-k">Fix</span><span>Search by the channel's name, or search your watch history instead (below).</span></p>
+    </div>
+    <div class="gap">
+      <div class="gap-title">The video shows as deleted or private</div>
+      <p><span class="gap-k">Why</span><span>YouTube replaces its title with a placeholder like "[Private video]", so the original title is gone.</span></p>
+      <p><span class="gap-k">Fix</span><span>Search for the placeholder text. The original title can't be recovered from the playlist.</span></p>
+    </div>
+    <div class="gap">
+      <div class="gap-title">It's in Watch later or Liked videos</div>
+      <p><span class="gap-k">Why</span><span>These work like any other playlist, and they're usually the longest ones you have.</span></p>
+      <p><span class="gap-k">Fix</span><span>Same steps. They live at <code>youtube.com/playlist?list=WL</code> and <code>?list=LL</code>.</span></p>
+    </div>
   </div>
   <p>More on the 5,000 cap, and the less obvious ones, in <a href="/youtube-playlist-limits/">YouTube playlist limits</a>.</p>
 
@@ -152,8 +167,7 @@
     <img src="/favicon.png" alt="">
     <div class="callout-body">
       <div class="callout-title">See every playlist a video is in, past 200</div>
-      <p><a href="/">YouTube Playlist Search</a> is a free Chrome extension that replaces the Save menu with a searchable one covering every playlist you own. It ticks each playlist that already has the video, including the ones past 200 that YouTube can't tell you about. <kbd>Alt</kbd>+<kbd>P</kbd> (<kbd>Option</kbd>+<kbd>P</kbd> on Mac) searches your playlists by name and opens the one you pick, so you can get to the right playlist and then Ctrl+F inside it.</p>
-      <p>To be clear about what it doesn't do: it doesn't search the video titles <em>inside</em> a playlist. Desktop Chrome on youtube.com only.</p>
+      <p><a href="/">YouTube Playlist Search</a> is a free, <a href="https://github.com/codyhxyz/playlist-search-extension" target="_blank" rel="noopener">open-source</a> Chrome extension that replaces the Save menu with a searchable one covering every playlist you own. It ticks each playlist that already has the video, including the ones past 200 that YouTube can't show you.</p>
       <a class="cta-sm" href="https://chromewebstore.google.com/detail/efgbkmnooapcpdpgmihemfpedchhmmek" target="_blank" rel="noopener">Add to Chrome, free</a>
     </div>
   </div>
@@ -170,7 +184,7 @@
   <div class="faq">
     <details>
       <summary>Is there a way to search inside my YouTube playlists?</summary>
-      <div><p>Not with a search box. A playlist page on youtube.com has no search of its own. On a computer, open the playlist, scroll until every video has loaded, then press Ctrl+F (Cmd+F on a Mac) and type part of the title. YouTube Music has been rolling out a Find in playlist option in a playlist's three-dot menu, but it only covers music.</p></div>
+      <div><p>Not with a search box. A playlist page on youtube.com has no search of its own. On a computer, open the playlist, scroll until every video has loaded, then press Ctrl+F (Cmd+F on a Mac) and type part of the title. The YouTube Music app has been testing a Find in playlist option with a small group of users, but it isn't generally available.</p></div>
     </details>
     <details>
       <summary>How do I find a video I saved to a playlist?</summary>
@@ -190,7 +204,7 @@
     </details>
     <details>
       <summary>Is there an extension that searches the videos inside a YouTube playlist?</summary>
-      <div><p>Several extensions on the Chrome and Firefox stores claim to. I haven't tested them, so I can't vouch for any. My own extension, YouTube Playlist Search, does something adjacent: it searches your playlists by name and shows which of them already contain a video. It does not search the video titles inside a playlist.</p></div>
+      <div><p>Several extensions on the Chrome and Firefox stores claim to. I haven't tested them, so I can't vouch for any. My own extension, YouTube Playlist Search, does something adjacent: it searches your playlists by name and shows which of them already contain a video.</p></div>
     </details>
   </div>
 

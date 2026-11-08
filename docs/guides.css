@@ -133,6 +133,14 @@ ol.steps > li::before {
 }
 .note strong { color: var(--yt-text); }
 
+/* Problem cards: what goes wrong, why, and the fix */
+.gaps { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin: 8px 0 24px; }
+.gap { border: 1px solid var(--yt-line); border-radius: 12px; padding: 14px 18px; background: rgba(255,255,255,0.02); }
+.gap-title { font-weight: 800; font-size: 16px; color: var(--yt-text); margin-bottom: 8px; }
+.gap p { margin: 4px 0 0; font-size: 15px; color: var(--yt-muted); display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; }
+.gap code { overflow-wrap: anywhere; }
+.gap-k { font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--yt-faint); padding-top: 3px; }
+
 /* Tables */
 .table-wrap { overflow-x: auto; margin: 8px 0 24px; border: 1px solid var(--yt-line); border-radius: 12px; }
 table { width: 100%; border-collapse: collapse; font-size: 15px; }
