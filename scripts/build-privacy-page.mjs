@@ -143,6 +143,7 @@ const page = `<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>YouTube Playlist Search Privacy Policy</title>
+  <link rel="canonical" href="https://playlist.codyh.xyz/privacy-policy.html">
   <style>
     :root { color-scheme: light dark; }
     body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
