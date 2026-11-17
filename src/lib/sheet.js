@@ -1173,6 +1173,7 @@ export function createSheet({
     clearTimeout(releaseTimer);
     window.removeEventListener('pointerup', releaseRows, true);
     window.removeEventListener('pointercancel', releaseRows, true);
+    window.removeEventListener('wheel', ownWheel, true);
     window.removeEventListener('resize', sizeList);
     resized?.disconnect();
     if (dlg.open) dlg.close();
@@ -1896,8 +1897,33 @@ export function createSheet({
     pointerAt = null;
     for (const n of list.querySelectorAll('.held')) n.classList.remove('held');
   });
-  // Scrolling by hand is steering too: a list refresh must not yank it to the top.
-  list.addEventListener('wheel', () => { steered = true; }, { passive: true });
+  // ── The wheel is ours too ─────────────────────────────────────────────────
+  // YouTube's own Save popup stays open under the sheet, and it is a
+  // tp-yt-iron-dropdown with scroll-action="lock". While it is open, a
+  // capture-phase wheel listener on `document` cancels every wheel event that
+  // did not start inside that dropdown. Ours never do, so the list would not
+  // scroll by wheel or trackpad at all, only by dragging the scrollbar
+  // (measured 2026-11-16: preventDefault from _scrollInteractionHandler in
+  // tp_yt_iron_scroll_manager).
+  //
+  // Nothing inside the tree can get ahead of a capture listener on `document`,
+  // but `window` is one step earlier. Stopping the event there keeps it from
+  // YouTube's lock; the scroll itself is the default action and still happens.
+  // Only a wheel over the list is taken. Out here the event is retargeted to
+  // the host, so the list is found by its box. A wheel anywhere else, the
+  // backdrop included, goes to YouTube exactly as before.
+  //
+  // The event never reaches the list now, so this is also where scrolling by
+  // hand counts as steering: a list refresh must not yank it to the top.
+  /** @param {WheelEvent} e */
+  function ownWheel(e) {
+    if (e.target !== host) return;
+    const r = list.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
+    e.stopPropagation();
+    steered = true;
+  }
+  window.addEventListener('wheel', ownWheel, { capture: true, passive: true });
   closeBtn.addEventListener('click', () => dlg.close());
   sortBtn.addEventListener('click', () => setSort(sortIdx + 1));
   cancelRemoveBtn.addEventListener('click', () => cancelRemoval());

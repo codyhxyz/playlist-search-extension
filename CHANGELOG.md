@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.15
+
+- **The mouse wheel scrolls the playlist list.** After clicking YouTube's Save button, the wheel and trackpad did nothing over the list. Only dragging the scrollbar worked. YouTube's own Save popup stays open under the sheet and blocks scrolling everywhere outside itself. The sheet now keeps wheel events over its list away from that block.
+
 ## 2.0.14
 
 - The welcome page shows the shortcuts Chrome actually has bound, in this OS's notation (⌥S and ⌥P on a Mac, Alt+S and Alt+P elsewhere). A shortcut you removed or changed in chrome://extensions/shortcuts shows as it is, or as "Not set".
