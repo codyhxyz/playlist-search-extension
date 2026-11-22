@@ -273,7 +273,8 @@ input::placeholder { color: var(--fg-2); }
 .sort, .priv { background-color: var(--tonal); }              /* tonal */
 .sort { grid-area: sort; margin: 12px 8px 0 0; }
 .sort svg.i, .priv svg.i { width: 16px; height: 16px; margin: 0 4px 0 -4px; }
-.confirm .danger { background-color: var(--filled); color: var(--on-filled); } /* filled */
+.confirm :is(.danger, .primary) { background-color: var(--filled); color: var(--on-filled); } /* filled */
+.confirm .primary:disabled { background-color: var(--tonal); color: var(--fg-2); cursor: default; }
 .undo, .review-button:first-child { color: var(--cta); }
 .review-prompt { flex: none; padding: 12px 16px; border-top: 1px solid var(--line); }
 .review-prompt p { margin: 0; color: var(--fg-2); }
@@ -283,24 +284,24 @@ input::placeholder { color: var(--fg-2); }
 @media (hover: hover) {
   .sort:hover, .priv:hover { background-color: var(--tonal-hov); }
   .confirm button:hover, .undo:hover, .review-button:hover { background-color: var(--line); } /* text */
-  .confirm .danger:hover { background-color: var(--filled-hov); }
+  .confirm :is(.danger, .primary:not(:disabled)):hover { background-color: var(--filled-hov); }
 }
 /* Every pill and the close button: the wash eases, and a press scales to .96
    over 150ms. Never while disabled or busy. */
-:is(.x, .sort, .priv, .confirm button, .undo, .new-btn, .create-btn, .review-button) {
+:is(.x, .sort, .priv, .confirm button, .undo, .new-btn, .review-button) {
   transition-property: scale, background-color;
   transition-duration: 150ms; transition-timing-function: ease-out;
   -webkit-tap-highlight-color: transparent;
 }
 @media (prefers-reduced-motion: no-preference) {
-  :is(.x, .sort, .priv, .confirm button, .undo, .new-btn, .create-btn, .review-button):not(:disabled, .busy):active { scale: .96; }
+  :is(.x, .sort, .priv, .confirm button, .undo, .new-btn, .review-button):not(:disabled):active { scale: .96; }
 }
 /* Focus rings: pills wear theirs outside; the full-bleed list items and the
    round close button wear theirs inset, where nothing clips it. */
-:is(.sort, .priv, .confirm button, .undo, .new-btn, .create-btn, .review-button):focus-visible {
+:is(.sort, .priv, .confirm button, .undo, .new-btn, .review-button):focus-visible {
   outline: 2px solid var(--fg); outline-offset: 2px;
 }
-:is(.x, .row, .create-action):focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
+:is(.x, .row):focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
 /* Held to one width so cycling cannot move the query field. */
 .sl { min-width: 40px; text-align: left; }
 
@@ -399,41 +400,38 @@ input::placeholder { color: var(--fg-2); }
 .note .s { display: block; }
 .note .q { overflow-wrap: anywhere; }
 
-/* Tonal, size M: the same pill as YouTube's "New playlist". */
-.create-btn, .new-btn {
-  all: initial; box-sizing: border-box;
+/* Tonal, size M: YouTube's "New playlist", full width in the panel footer. It
+   is the sheet's only create control. */
+.new-btn {
+  all: initial; box-sizing: border-box; width: 100%;
   display: inline-flex; align-items: center; justify-content: center;
   height: 40px; padding: 0 16px; border-radius: 20px;
   background-color: var(--tonal); color: var(--fg);
   font: 500 14px/40px var(--sans); white-space: nowrap; cursor: pointer;
 }
-@media (hover: hover) { .create-btn:hover, .new-btn:hover { background-color: var(--tonal-hov); } }
-.create-btn svg.i, .new-btn svg.i { margin: 0 6px 0 -6px; }
-.create-btn.busy { opacity: .6; cursor: default; }
-.new-btn { width: 100%; }
+@media (hover: hover) { .new-btn:hover { background-color: var(--tonal-hov); } }
+.new-btn svg.i { margin: 0 6px 0 -6px; }
 
-/* "Create playlist …" under a result list is a list item like the rest, with
-   YouTube's plus as its leading icon. */
-.create-action {
-  all: initial; box-sizing: border-box; flex: 1 1 auto; min-width: 0;
-  display: flex; align-items: center; gap: 12px;
-  min-height: 40px; padding: 2px 16px;
-  font: 400 14px/20px var(--sans); color: var(--fg); cursor: pointer;
-  transition: background-color 100ms ease-out;
-  -webkit-tap-highlight-color: transparent;
+/* What that button opens: the two things YouTube's New-playlist dialog asks
+   for, a title and who can see it, in the footer the button was in. */
+.compose { flex: 1 1 auto; min-width: 0; display: grid; gap: 12px; }
+/* Its heading, as the dialog has one: without it a title carried over from the
+   query reads as a second search field. */
+.compose label { font: 500 14px/20px var(--sans); color: var(--fg); margin: 0 0 -4px 4px; }
+.compose input { grid-area: auto; margin: 0; width: 100%; }
+.compose-row { display: flex; align-items: center; gap: 8px; }
+/* A native select wearing the tonal pill; the chevron is drawn, not fetched. */
+.vis { position: relative; display: inline-flex; margin-right: auto; }
+.vis select {
+  appearance: none; padding-right: 30px; color-scheme: light;
 }
-@media (hover: hover) { .create-action:hover { background-color: var(--hov); } }
-.create-action:not(.busy):active { background-color: var(--tonal-hov); }
-.create-action.busy { opacity: .6; cursor: default; }
-
-/* The create control plus the privacy it will create with, side by side. The
-   privacy chip is a real, separately focusable button: nesting it inside the
-   create button would be invalid, and hiding the choice would make "Private"
-   a secret. */
-.create-row { display: flex; align-items: center; gap: 8px; }
-.create-wrap { border-top: 1px solid var(--line); }
-.create-wrap .create-row { padding-right: 16px; }
-.note .create-row { justify-content: center; margin-top: 16px; }
+:host-context(html[dark]) .vis select { color-scheme: dark; }
+.vis option { background-color: var(--bg); color: var(--fg); }
+.vis::after {
+  content: ''; position: absolute; right: 13px; top: 50%; width: 5px; height: 5px;
+  border: solid var(--fg); border-width: 0 1.5px 1.5px 0;
+  translate: 0 -75%; rotate: 45deg; pointer-events: none;
+}
 
 /* Row-height placeholders, so the list resolves into place instead of popping.
    The resting opacity is declared, not implied by the keyframes — otherwise
@@ -777,7 +775,7 @@ const PLS_SORTS = [
 
 // Privacy for a playlist created from the sheet. Private is the default because
 // it is the choice nobody regrets: a playlist made public by accident has already
-// been seen. The chip beside every create control says which one is live.
+// been seen. The new-playlist form shows which one is live before it creates.
 const PLS_PRIVACY = [
   { id: 'PRIVATE', label: 'Private' },
   { id: 'UNLISTED', label: 'Unlisted' },
@@ -1030,21 +1028,48 @@ export function createSheet({
   }
   paintSort();
 
+  // ── New playlist ─────────────────────────────────────────────────────────
+  // One create control, where YouTube puts it. It opens what YouTube's own
+  // dialog asks for (a title and a visibility) in the footer it sits in, with
+  // the title taken from the query. Enter on a query that matches nothing opens
+  // the same form. Nothing in the list creates: the list is playlists only, and
+  // the search field is never also a name field.
   const newBtn = onCreate ? plsEl('button', 'new-btn') : null;
-  if (newBtn) {
+  const composer = onCreate ? plsEl('div', 'compose') : null;
+  const titleIn = document.createElement('input');
+  const visSel = document.createElement('select');
+  const cancelCreateBtn = plsEl('button', null, 'Cancel');
+  const createBtn = plsEl('button', 'primary', 'Create');
+  if (newBtn && composer) {
     newBtn.type = 'button';
-    newBtn.setAttribute('aria-label', 'Create new playlist');
     newBtn.append(plsIcon(PLS_PLUS), plsEl('span', null, 'New playlist'));
-    newBtn.addEventListener('click', () => {
-      cancelRemoval(false);
-      const raw = input.value.trim();
-      if (raw) {
-        create(raw);
-      } else {
-        input.focus();
-        setStatus('Type a playlist name and press Enter to create.');
-      }
-    });
+    newBtn.addEventListener('click', () => openCompose(input.value.trim()));
+
+    composer.hidden = true;
+    composer.setAttribute('role', 'group');
+    titleIn.type = 'text';
+    titleIn.placeholder = 'Choose a title';       // YouTube's wording
+    titleIn.maxLength = 150;                      // YouTube's limit for a title
+    titleIn.autocomplete = 'off';
+    titleIn.id = uid + '-t';
+    const titleLbl = plsEl('label', null, 'New playlist');
+    titleLbl.htmlFor = titleIn.id;
+    titleIn.addEventListener('input', paintCompose);
+    visSel.className = 'priv';
+    visSel.setAttribute('aria-label', 'Visibility');
+    for (const x of PLS_PRIVACY) visSel.append(new Option(x.label, x.id));
+    visSel.addEventListener('change', () => onPrivacy?.(visSel.value));
+    const vis = plsEl('span', 'vis');
+    vis.append(visSel);
+    cancelCreateBtn.type = 'button';
+    cancelCreateBtn.addEventListener('click', () => closeCompose());
+    createBtn.type = 'button';
+    createBtn.addEventListener('click', submitCompose);
+    const acts = plsEl('div', 'confirm');
+    acts.append(cancelCreateBtn, createBtn);
+    const row = plsEl('div', 'compose-row');
+    row.append(vis, acts);
+    composer.append(titleLbl, titleIn, row);
   }
 
   // DOM order is tab order: close, then the field, then — one Tab away — the sort.
@@ -1055,7 +1080,7 @@ export function createSheet({
 
   // "New playlist" sits where YouTube puts it: a full-width button in the footer.
   const pfoot = plsEl('div', 'pfoot');
-  if (newBtn) pfoot.append(newBtn);
+  if (newBtn && composer) pfoot.append(newBtn, composer);
 
   const reviewPrompt = plsEl('section', 'review-prompt');
   reviewPrompt.hidden = true;
@@ -1092,7 +1117,7 @@ export function createSheet({
   /** @type {any[]} */
   const made = [];
   let steered = false;           // the user has put the cursor somewhere themselves
-  let privIdx = Math.max(0, PLS_PRIVACY.findIndex((x) => x.id === privacy));
+  visSel.selectedIndex = Math.max(0, PLS_PRIVACY.findIndex((x) => x.id === privacy));
   let dead = false;
   let loaded = false;
   let patience = false;          // load took long enough to stop promising rows
@@ -1125,6 +1150,7 @@ export function createSheet({
 
   function canOfferReview() {
     return !finding && !dead && loaded && !creating && !armedRemove && !restingStatus && !reviewOffered &&
+      (!composer || composer.hidden) &&
       pressedPointer === null &&
       reviewPrompt.hidden && ![...state.values()].some(
         (s) => s === 'adding' || s === 'removing' || s === 'error' || s === 'remove-error',
@@ -1390,28 +1416,40 @@ export function createSheet({
     });
   }
 
-  // A create control plus the privacy chip that says what it will create. Used by
-  // both the empty/no-match note and the trailing action under a result list.
-  function createControls(raw, cls) {
-    const btn = plsEl('button', cls);
-    btn.type = 'button';
-    btn.tabIndex = -1;
-    if (creating) { btn.disabled = true; btn.classList.add('busy'); }
-    btn.append(plsIcon(PLS_PLUS), plsEl('span', cls === 'create-action' ? 't' : null, `Create playlist “${raw}”`));
-    btn.addEventListener('click', () => create(raw));
-    const priv = plsEl('button', 'priv', PLS_PRIVACY[privIdx].label);
-    priv.type = 'button';
-    priv.setAttribute('aria-label', `New playlist privacy: ${PLS_PRIVACY[privIdx].label}. Activate to change.`);
-    priv.title = 'Who can see the new playlist. Click to change.';
-    priv.addEventListener('click', () => {
-      privIdx = (privIdx + 1) % PLS_PRIVACY.length;
-      onPrivacy?.(PLS_PRIVACY[privIdx].id);
-      render();
-      /** @type {HTMLElement | null} */ (shadow.querySelector('.priv'))?.focus();
-    });
-    const row = plsEl('div', 'create-row');
-    row.append(btn, priv);
-    return row;
+  // The form replaces the button it came from, and gives it back on Cancel,
+  // Escape or Create. `focus: false` is for a failed create coming back while
+  // the user is typing somewhere else.
+  /** @param {string} name @param {{focus?: boolean}} [how] */
+  function openCompose(name, { focus = true } = {}) {
+    if (!newBtn || !composer || dead) return;
+    hideReview();
+    cancelRemoval(false);
+    titleIn.value = name.slice(0, titleIn.maxLength);
+    paintCompose();
+    if (composer.hidden) {
+      newBtn.hidden = true;
+      composer.hidden = false;
+      plsAnimate(composer, plsEnter(4, false), 200);
+    }
+    // Selected, so a title carried over from the query is replaced by typing.
+    if (focus) { titleIn.focus(); titleIn.select(); }
+  }
+  function closeCompose(focus = true) {
+    if (!newBtn || !composer || composer.hidden) return;
+    const held = composer.contains(shadow.activeElement);
+    composer.hidden = true;
+    newBtn.hidden = false;
+    if (focus && held) input.focus();
+  }
+  // Create needs a title, and waits for a create already on its way.
+  function paintCompose() {
+    createBtn.disabled = creating || !titleIn.value.trim();
+  }
+  function submitCompose() {
+    const name = titleIn.value.trim();
+    if (!name || creating) return;
+    closeCompose();
+    create(name);
   }
 
   // A row is drawn in the member group while a save to it is in flight, and out
@@ -1464,24 +1502,17 @@ export function createSheet({
     else if (!loaded) {
       kids.push(note('Still waiting on YouTube.', 'Your playlists haven’t arrived yet.'));
     } else if (!data.length) {
-      if (onCreate && raw) {
-        kids.push(note('No playlists yet.', createControls(raw, 'create-btn')));
-      } else {
-        kids.push(note(
-          'No playlists yet.',
-          onCreate ? 'Type a name above to create your first playlist.' : 'Create one on YouTube and it will show up here.',
-        ));
-      }
+      kids.push(note(
+        'No playlists yet.',
+        onCreate ? 'Make your first with New playlist, below.' : 'Create one on YouTube and it will show up here.',
+      ));
     } else if (!matches.length) {
       kids.push(note(
         ['No playlist matches ', plsEl('span', 'q', '“' + raw + '”')],
-        onCreate ? createControls(raw, 'create-btn') : 'Try a shorter word.',
+        onCreate ? 'Press Enter to make it a new playlist.' : 'Try a shorter word.',
       ));
-    } else if (raw && onCreate) {
-      const wrap = plsEl('div', 'create-wrap');
-      wrap.append(createControls(raw, 'create-action'));
-      kids.push(wrap);
     }
+    paintCompose();
     list.replaceChildren(...kids);
 
     readout.textContent = toks.length && loaded ? `${matches.length} of ${data.length}` : '';
@@ -1675,8 +1706,8 @@ export function createSheet({
     hideReview();
     cancelRemoval(false);
     creating = true;
-    // Read once: the chip can be cycled while the request is in flight.
-    const chosen = PLS_PRIVACY[privIdx];
+    // Read once: the form can be reopened and changed while this is in flight.
+    const chosen = PLS_PRIVACY[visSel.selectedIndex];
     // The playlist joins the list at once, under a stand-in id until YouTube
     // answers with the real one. Until then it cannot be picked or opened.
     const pl = {
@@ -1720,8 +1751,9 @@ export function createSheet({
         lateFailure(base, e, () => onCreate(name, chosen.id), `Created “${name}”.`);
         return;
       }
-      // The name comes back, so trying again is one Enter.
-      if (!input.value) input.value = name;
+      // The name comes back in the form, so trying again is one Enter. Unless
+      // the form is already open on something else the user has started.
+      if (composer?.hidden) openCompose(name, { focus: !input.value });
       setStatus(`${base}${why(e)} Try again.`);
       render();
     }
@@ -1935,6 +1967,17 @@ export function createSheet({
         list.scrollTop + list.clientHeight > list.scrollHeight - PLS_GROW_MARGIN) grow(nodes.length + PLS_PAGE);
   }, { passive: true });
   dlg.addEventListener('keydown', (e) => {
+    // The new-playlist form keeps its own keys: typing, the field's undo, the
+    // select's arrows, Enter on its buttons. Enter in the title creates. Escape
+    // is the one key it hands on, to the peel-one-layer rule below.
+    if (composer?.contains(/** @type {Node} */ (e.target)) && e.key !== 'Escape') {
+      if (e.key === 'Enter' && e.target === titleIn && !e.isComposing && e.keyCode !== 229 &&
+          !e.altKey && !e.ctrlKey && !e.metaKey) {
+        submitCompose();
+        e.preventDefault();
+      }
+      return;
+    }
     // Ctrl/⌘+Enter opens the cursor's playlist, as Ctrl/⌘-click does. Only from
     // the query field: on a focused button, Enter is that button's activation.
     if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'Enter' && e.target === input) {
@@ -1964,7 +2007,9 @@ export function createSheet({
     // dismissal should not depend on a platform behaviour we are deliberately
     // cutting off. destroy() is idempotent, so a UA close on top of ours is fine.
     if (e.key === 'Escape') {
-      if (armedRemove) cancelRemoval(); else dlg.close();
+      if (armedRemove) cancelRemoval();
+      else if (composer && !composer.hidden) { closeCompose(false); input.focus(); }
+      else dlg.close();
       e.preventDefault();
       return;
     }
@@ -2014,7 +2059,7 @@ export function createSheet({
         pick(shown[active]);
       } else if (!shown.length) {
         const raw = input.value.trim();
-        if (raw && onCreate) create(raw);
+        if (raw && loaded) openCompose(raw);
       }
     }
     else return;

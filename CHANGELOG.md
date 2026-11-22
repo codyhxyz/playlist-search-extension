@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.16
+
+- **One way to create a playlist.** The sheet had two create buttons that did the same thing: a "Create playlist …" row under the results and "New playlist" in the footer. Now there is only "New playlist", where YouTube puts it. It opens a small form in the footer, as YouTube's own does: a title (filled in from your search, selected so typing replaces it), a Private / Unlisted / Public menu, Cancel and Create.
+- Pressing Enter on a search that matches nothing opens that form with the name filled in. Enter again creates the playlist and saves the video to it. Creating therefore takes two steps where it took one.
+- Escape closes the form first, then the sheet. A create that fails brings the form back with the name in it.
+- Removed: the "Create playlist …" row, the create button in the "No playlist matches" message, and the privacy chip that cycled on click. The privacy you pick is still remembered.
+
 ## 2.0.15
 
 - **The mouse wheel scrolls the playlist list.** After clicking YouTube's Save button, the wheel and trackpad did nothing over the list. Only dragging the scrollbar worked. YouTube's own Save popup stays open under the sheet and blocks scrolling everywhere outside itself. The sheet now keeps wheel events over its list away from that block.
