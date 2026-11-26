@@ -1,0 +1,22 @@
+# YouTube Playlist Search
+
+Last updated: 2026-11-07
+
+> Free, open-source Chrome extension that adds a search box to YouTube's "Save to playlist" menu. Type a few letters to find any playlist you own, including the ones past the 200 that YouTube's menu loads.
+
+- Install: https://chromewebstore.google.com/detail/efgbkmnooapcpdpgmihemfpedchhmmek
+- Source: https://github.com/codyhxyz/playlist-search-extension
+- Works on desktop Chrome 123+ at www.youtube.com only. Not on Firefox, mobile, or music.youtube.com.
+- Shortcuts: Alt+S (Option+S on Mac) opens the save picker for the current video; Alt+P (Option+P) finds and opens any playlist.
+- Also: sort Recent / A-Z / Z-A, marks playlists that already contain the video, Ctrl+Z to undo a save, create a playlist from the picker, right-click a video link to save it.
+- Privacy: connects only to YouTube, sends nothing to the developer or any third party, no analytics.
+
+## Pages
+
+- [Homepage](https://playlist.codyh.xyz/): features, screenshots and FAQ
+- [How to search within a YouTube playlist](https://playlist.codyh.xyz/search-youtube-playlist/): YouTube playlists have no search box; workarounds and how to find which playlist a video is in
+- [How to find your playlists on YouTube](https://playlist.codyh.xyz/find-youtube-playlists/): desktop, phone and YouTube Music, plus why a playlist goes missing
+- [How to add a video to a playlist on YouTube](https://playlist.codyh.xyz/add-video-to-youtube-playlist/): desktop, Android, iPhone, Shorts, bulk adds and fixes
+- [YouTube playlist limits](https://playlist.codyh.xyz/youtube-playlist-limits/): 5,000 videos per playlist, no published cap on playlists, and a Save menu that loads only 200
+- [Mobile: save to a playlist from your phone](https://playlist.codyh.xyz/m.html): paste a YouTube link and jump straight to the Save sheet
+- [Privacy policy](https://playlist.codyh.xyz/privacy-policy.html)

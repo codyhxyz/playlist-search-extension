@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -43,3 +45,6 @@ jobs:
 
       - name: Published privacy page is in sync with PRIVACY.md
         run: node scripts/build-privacy-page.mjs --check
+
+      - name: Website dates (sitemap lastmod, llms.txt) are current
+        run: node scripts/check-site-dates.mjs
